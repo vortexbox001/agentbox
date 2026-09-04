@@ -1,0 +1,45 @@
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    networks: [agentnet]
+
+  dagster-webserver:
+    build: ./orchestrator
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DAGSTER_HOME: /data/dagster
+    volumes:
+      - ./orchestrator:/opt/agentbox/orchestrator:ro
+      - ./agents:/opt/agentbox/agents:ro
+      - ./prompts:/opt/agentbox/prompts:ro
+      - /data/dagster:/data/dagster
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${DAGSTER_HOST_PORT:-3000}:3000"
+    command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-w", "workspace.yaml"]
+    networks: [agentnet]
+
+  dagster-daemon:
+    build: ./orchestrator
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DAGSTER_HOME: /data/dagster
+    volumes:
+      - ./orchestrator:/opt/agentbox/orchestrator:ro
+      - ./agents:/opt/agentbox/agents:ro
+      - ./prompts:/opt/agentbox/prompts:ro
+      - /data/dagster:/data/dagster
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["dagster-daemon", "run"]
+    networks: [agentnet]
+
+networks:
+  agentnet:
+    name: agentnet
