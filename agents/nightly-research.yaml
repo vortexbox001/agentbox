@@ -1,0 +1,11 @@
+name: nightly-research
+enabled: true
+harness: claude-code
+schedule: "30 2 * * *"       # 2:30am — off-peak for your quota pool
+prompt_file: nightly-research.md
+workspace: /data/workspaces/nightly-research
+output_dir: /data/outputs/nightly-research
+max_turns: 15
+timeout_seconds: 1800
+network: bridge              # needs internet to reach Anthropic
+allowed_tools: ["Read", "Write", "Edit"]

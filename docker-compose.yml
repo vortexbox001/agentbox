@@ -14,6 +14,7 @@ services:
     env_file: .env
     environment:
       DAGSTER_HOME: /data/dagster
+      AGENTBOX_HOST_REPO: ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}
     volumes:
       - ./orchestrator:/opt/agentbox/orchestrator:ro
       - ./agents:/opt/agentbox/agents:ro
@@ -31,6 +32,7 @@ services:
     env_file: .env
     environment:
       DAGSTER_HOME: /data/dagster
+      AGENTBOX_HOST_REPO: ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}
     volumes:
       - ./orchestrator:/opt/agentbox/orchestrator:ro
       - ./agents:/opt/agentbox/agents:ro

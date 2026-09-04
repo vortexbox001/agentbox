@@ -2,7 +2,8 @@
 import os, subprocess
 from dagster import job, op, OpExecutionContext, ScheduleDefinition
 
-REPO = "/opt/agentbox"
+HOST_REPO = os.environ.get("AGENTBOX_HOST_REPO", "/home/vortex/GitHub/agentbox")
+CONTAINER_REPO = "/opt/agentbox"
 
 def make_run_op(cfg: dict):
     @op(name=f"run_{cfg['name'].replace('-', '_')}")
@@ -14,7 +15,7 @@ def make_run_op(cfg: dict):
             "--memory", cfg.get("memory", "1g"),
             "--cpus", cfg.get("cpus", "1.5"),
             "--network", cfg.get("network", "agentnet"),
-            "-v", f"{REPO}/prompts/{cfg['prompt_file']}:/config/prompt.md:ro",
+            "-v", f"{HOST_REPO}/prompts/{cfg['prompt_file']}:/config/prompt.md:ro",
             "-v", f"{cfg['output_dir']}:/output",
         ]
         if cfg["harness"] == "api":
@@ -25,7 +26,7 @@ def make_run_op(cfg: dict):
                 "agentbox/agent-python:latest",
             ]
         elif cfg["harness"] == "claude-code":
-            with open(f"{REPO}/prompts/{cfg['prompt_file']}") as f:
+            with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
                 prompt = f.read()
             cmd += [
                 "-v", "/data/credentials/claude:/creds:ro",
