@@ -1,5 +1,5 @@
 """Turns an agent YAML dict into a Dagster job that docker-runs the agent."""
-import os, re, json, datetime, subprocess
+import os, re, json, shutil, datetime, subprocess
 from dagster import job, op, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive
 
 HOST_REPO = os.environ.get("AGENTBOX_HOST_REPO", "/home/vortex/GitHub/agentbox")
@@ -15,6 +15,18 @@ def make_run_op(cfg: dict):
     def run_agent(context: OpExecutionContext):
         name = cfg["name"]
         runtime_env = context.op_config.get("env", {})
+        ws = cfg.get("workspace", "/data/workspaces/" + name)
+        if cfg.get("wipe_workspace"):
+            # empty the workspace but keep the directory itself so its ownership
+            # (uid 1000, which the agent image's user needs) is preserved.
+            # Done before launch so runs killed by timeout still start clean.
+            os.makedirs(ws, exist_ok=True)
+            for entry in os.scandir(ws):
+                if entry.is_dir(follow_symlinks=False):
+                    shutil.rmtree(entry.path)
+                else:
+                    os.remove(entry.path)
+            context.log.info(f"wiped workspace {ws}")
         cmd = [
             "docker", "run", "--rm",
             "--name", f"agent-{name}-{context.run_id[:8]}",
@@ -51,7 +63,7 @@ def make_run_op(cfg: dict):
                 "-v", "/data/credentials/claude/.credentials.json:/creds/.credentials.json:ro",
                 "-v", "/data/credentials/claude/.claude.json:/creds/.claude.json:ro",
                 "-e", "CLAUDE_CONFIG_DIR=/creds",
-                "-v", f"{cfg.get('workspace', '/data/workspaces/' + name)}:/workspace",
+                "-v", f"{ws}:/workspace",
                 "-w", "/workspace",
                 "agentbox/agent-claude:latest",
                 "claude", "-p", prompt,

@@ -18,6 +18,7 @@ append_system_prompt: ""        # extra text appended to the default system prom
 # --- Workspace ---
 workspace: /data/workspaces/my-agent  # host path mounted at /workspace in the container
                                       # default: /data/workspaces/<name>
+wipe_workspace: false                 # true — empty the workspace before every run (default: false)
 
 # --- Claude Code options ---
 max_turns: 10                   # max agentic turns (default: 10)

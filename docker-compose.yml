@@ -20,6 +20,7 @@ services:
       - ./agents:/opt/agentbox/agents:ro
       - ./prompts:/opt/agentbox/prompts:ro
       - /data/dagster:/data/dagster
+      - /data/workspaces:/data/workspaces
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "${DAGSTER_HOST_PORT:-3000}:3000"
@@ -38,6 +39,7 @@ services:
       - ./agents:/opt/agentbox/agents:ro
       - ./prompts:/opt/agentbox/prompts:ro
       - /data/dagster:/data/dagster
+      - /data/workspaces:/data/workspaces
       - /var/run/docker.sock:/var/run/docker.sock
     command: ["dagster-daemon", "run"]
     networks: [agentnet]

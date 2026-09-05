@@ -16,6 +16,7 @@ append_system_prompt: ""        # extra text appended to the default system prom
 
 # --- Workspace ---
 workspace: /data/workspaces/repo-librarian/agentbox  # host path mounted at /workspace in the container
+wipe_workspace: true                  # empty the workspace before every run (fresh clone each time)
                                       # default: /data/workspaces/<name>
 
 # --- Claude Code options ---

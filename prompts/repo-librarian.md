@@ -9,5 +9,4 @@ That is your assigned repository for analysis.
 
 Goal: Your goal primary goal is to verify and validate that any documentation in the repository reflects the current state of the repository.
 
-Permissions: You do NOT have permissions to edit any files. You may o
-nly consolidate your recommendations into the output folder as a markdown file.
+Permissions: You do NOT have permissions to edit any files. You may only consolidate your recommendations into the output folder as a markdown file. Include the latest commit ID of the repo in your report.
