@@ -7,4 +7,4 @@ prompt_file: hello-world.md
 output_dir: /data/outputs/hello-world
 max_tokens: 1024
 timeout_seconds: 600
-network: agentnet       # LiteLLM-only network; use "bridge" for internet
+network: agentnet-isolated       # LiteLLM-only network; use "bridge" for internet
