@@ -1,0 +1,48 @@
+# Runs the Claude Code CLI in a container with a workspace and tool access.
+
+name: repo-librarian-agentbox                  # unique kebab-case identifier; becomes Dagster job "agent_my_agent"
+enabled: true                  # true | false — disabled agents are skipped at startup
+harness: claude-code            # claude-code — runs Claude Code CLI via agentbox/agent-claude image
+
+# --- Model ---
+model: claude-opus-4-8[1m]                   # Claude model: sonnet | opus | haiku (omit for CLI default)
+effort: high                    # reasoning effort: low | medium | high | xhigh | max (omit for default)
+fallback_model: "claude-opus-4-6[1m]"         # model to try if primary is overloaded (omit to disable)
+
+# --- Prompt & output ---
+prompt_file: repo-librarian.md        # file in prompts/ — read at launch and passed to `claude -p`
+output_dir: /data/outputs/repo-librarian/agentbox  # host path where agent output is written
+append_system_prompt: ""        # extra text appended to the default system prompt (omit if unused)
+
+# --- Workspace ---
+workspace: /data/workspaces/repo-librarian/agentbox  # host path mounted at /workspace in the container
+                                      # default: /data/workspaces/<name>
+
+# --- Claude Code options ---
+max_turns: 50                   # max agentic turns (default: 10)
+permission_mode: default        # default | auto | bypassPermissions | plan | acceptEdits
+allowed_tools:                  # tool allowlist — omit for no restriction
+  - Read
+  - Write
+  - Bash
+#disallowed_tools: []            # tool denylist — omit if unused
+#mcp_config: ""                  # path to MCP server config JSON inside the container (omit if unused)
+
+# --- Scheduling ---
+schedule: "30 2 * * *"          # eg "0 7 * * *"
+
+# --- Container resources ---
+network: bridge                 # bridge — needs internet to reach Anthropic API (required)
+                                # agentnet — if proxying through LiteLLM (not typical)
+memory: 1g                      # container memory limit (default: 1g)
+cpus: 1.5                       # CPU limit (default: 1.5)
+
+# --- Execution ---
+timeout_seconds: 1800           # kill container after this many seconds (default: 900)
+                                # claude-code agents typically need longer than api agents
+
+# --- Environment Variables ---
+env:
+  GITHUB_TOKEN: ${GITHUB_TOKEN}
+  GITHUB_USER: leeclemmer
+  GITHUB_REPONAME: agentbox

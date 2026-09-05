@@ -1,0 +1,35 @@
+# Template: api harness (LiteLLM)
+# Lightweight agent that sends a prompt to LiteLLM and writes the response.
+
+name: my-agent                  # unique kebab-case identifier; becomes Dagster job "agent_my_agent"
+enabled: false                  # true | false — disabled agents are skipped at startup
+harness: api                    # api — calls LiteLLM via agentbox/agent-python image
+
+# --- LiteLLM / model ---
+model: cheap                    # LiteLLM model_name: cheap | smart (see litellm/config.yaml)
+max_tokens: 1024                # max response tokens (default: 1024)
+
+# --- Prompt & output ---
+prompt_file: my-agent.md        # file in prompts/ mounted read-only into the container
+output_dir: /data/outputs/my-agent  # host path where timestamped .md outputs are written
+
+# --- Scheduling ---
+schedule: "0 7 * * *"           # cron expression, or "" for manual-only runs
+                                # examples: "*/30 * * * *" (every 30m), "0 9 * * 1-5" (weekday 9am)
+
+# --- Environment ---
+env_file: ""                        # host path to env file passed via --env-file (secrets stay off Dagster)
+                                    # e.g. /data/credentials/agent-secrets.env
+env:                                # individual env vars passed to the container
+  # SOME_VAR: plain-value           #   inlined in docker command
+  # SECRET_KEY: ${SECRET_KEY}       #   passthrough from Dagster's environment
+
+# --- Container resources ---
+network: agentnet-isolated      # agentnet-isolated — LiteLLM only, no internet (recommended)
+                                # agentnet — same network as Dagster/LiteLLM services
+                                # bridge — full internet access
+memory: 1g                      # container memory limit (default: 1g) — note: ignored if host cgroup unsupported
+cpus: 1.5                       # CPU limit (default: 1.5)
+
+# --- Execution ---
+timeout_seconds: 600            # kill container after this many seconds (default: 900)
