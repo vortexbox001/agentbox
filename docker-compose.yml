@@ -6,7 +6,7 @@ services:
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
-    networks: [agentnet]
+    networks: [agentnet, agentnet-isolated]
 
   dagster-webserver:
     build: ./orchestrator
@@ -45,3 +45,6 @@ services:
 networks:
   agentnet:
     name: agentnet
+  agentnet-isolated:
+    name: agentnet-isolated
+    internal: true
