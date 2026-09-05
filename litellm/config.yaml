@@ -5,7 +5,7 @@ model_list:
       api_key: os.environ/ANTHROPIC_API_KEY
   - model_name: smart        # a step up when a light agent needs it
     litellm_params:
-      model: anthropic/claude-sonnet-4-6
+      model: anthropic/claude-sonnet-5
       api_key: os.environ/ANTHROPIC_API_KEY
 
 litellm_settings:
