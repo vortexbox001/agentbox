@@ -48,7 +48,7 @@ dagster-daemon ──► job agent_<name> ──► docker run --rm agentbox/age
 |---|---|
 | `/data/dagster/` | Dagster state (`DAGSTER_HOME`): run history, compute logs |
 | `/data/dagster/agent-logs/<agent>/<date>/<run-id>.jsonl` | Full Claude Code event stream for every `claude-code` run |
-| `/data/outputs/<agent>/` | Files the agents write (mounted as `/output`) |
+| `/data/outputs/<agent>/` | Files the agents write (mounted as `/output`), named `<YYYY-MM-DD_HH-MM>_<descriptive_name>_<session_id>.md` |
 | `/data/workspaces/<agent>/` | Persistent scratch dir for `claude-code` agents (mounted as `/workspace`) |
 | `/data/credentials/claude/` | `.credentials.json` and `.claude.json` for the `claude-code` harness |
 
@@ -140,8 +140,18 @@ Keys marked *api* or *claude-code* apply only to that harness. Everything else i
 | `mcp_config` | none | *claude-code*: path to an MCP config JSON inside the container. |
 | `append_system_prompt` | none | *claude-code*: extra text appended to the system prompt. |
 
-Every `claude-code` agent also receives a fixed system-prompt addition telling it to write output
-files to `/output`, named `YYYY-MM-DD_description.md`, and never to read or edit existing files there.
+### Output files
+
+For every run the orchestrator mints a timestamp (`YYYY-MM-DD_HH-MM`, in the `TZ` from `.env`) and a
+session id (a UUID, also used as the Claude Code `--session-id`). Every output file is named
+`<timestamp>_<descriptive_name>_<session_id>.md`, for example
+`2026-09-05_20-15_documentation_review_3f2a9c1e-….md`. Both values are logged in the Dagster run
+log and passed into the container as `AGENTBOX_RUN_STAMP` and `AGENTBOX_SESSION_ID`.
+
+- `api` agents: the runner writes one file, `<timestamp>_response_<session_id>.md`.
+- `claude-code` agents: a fixed system-prompt addition tells the agent to write to `/output` using this
+  exact pattern, and never to read or edit existing files there. Prompts should refer to "the filename
+  convention from your system prompt" rather than spelling out a name.
 
 ### Runtime overrides
 

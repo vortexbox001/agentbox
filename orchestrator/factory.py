@@ -1,5 +1,5 @@
 """Turns an agent YAML dict into a Dagster job that docker-runs the agent."""
-import os, re, json, shutil, datetime, subprocess
+import os, re, json, uuid, shutil, datetime, subprocess
 from dagster import job, op, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive
 
 HOST_REPO = os.environ.get("AGENTBOX_HOST_REPO", "/home/vortex/GitHub/agentbox")
@@ -15,6 +15,11 @@ def make_run_op(cfg: dict):
     def run_agent(context: OpExecutionContext):
         name = cfg["name"]
         runtime_env = context.op_config.get("env", {})
+        # every output file this run writes is named <stamp>_<descriptive_name>_<session_id>.md;
+        # the stamp follows the Dagster process clock (set TZ in .env for local time)
+        stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+        session_id = str(uuid.uuid4())
+        context.log.info(f"session_id={session_id} stamp={stamp}")
         ws = cfg.get("workspace", "/data/workspaces/" + name)
         if cfg.get("wipe_workspace"):
             # empty the workspace but keep the directory itself so its ownership
@@ -47,6 +52,7 @@ def make_run_op(cfg: dict):
                 cmd += ["-e", f"{k}={v}"]
         for k, v in runtime_env.items():
             cmd += ["-e", f"{k}={v}"]
+        cmd += ["-e", f"AGENTBOX_RUN_STAMP={stamp}", "-e", f"AGENTBOX_SESSION_ID={session_id}"]
         if cfg["harness"] == "api":
             cmd += [
                 "-e", f"AGENT_MODEL={cfg.get('model', 'cheap')}",
@@ -71,6 +77,8 @@ def make_run_op(cfg: dict):
                 # turn + tool call, every tool result, final summary)
                 "--output-format", "stream-json", "--verbose",
                 "--max-turns", str(cfg.get("max_turns", 10)),
+                # fixed up front so the filename convention below can embed it
+                "--session-id", session_id,
             ]
             if cfg.get("model"):
                 cmd += ["--model", cfg["model"]]
@@ -80,8 +88,9 @@ def make_run_op(cfg: dict):
                 cmd += ["--effort", cfg["effort"]]
             system_extra = (
                 "Write all output files to /output (not /workspace)."
-                " Name every output file starting with today's date:"
-                " YYYY-MM-DD_descriptive_name.md (e.g. 2026-09-05_documentation_review.md)."
+                f" Name every output file exactly {stamp}_<descriptive_name>_{session_id}.md,"
+                f" e.g. {stamp}_documentation_review_{session_id}.md"
+                " (lowercase snake_case descriptive name; keep the prefix and suffix verbatim)."
                 " Never read, list, or edit files in /output — only write new files there."
             )
             if cfg.get("append_system_prompt"):
@@ -104,7 +113,7 @@ def make_run_op(cfg: dict):
             timeout=cfg.get("timeout_seconds", 900),
         )
         # persist the full event stream for this run
-        log_dir = os.path.join(AGENT_LOG_ROOT, name, datetime.date.today().isoformat())
+        log_dir = os.path.join(AGENT_LOG_ROOT, name, stamp[:10])
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, f"{context.run_id}.jsonl")
         with open(log_path, "w") as f:
