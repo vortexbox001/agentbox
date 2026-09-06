@@ -6,7 +6,7 @@ enabled: false                  # true | false — disabled agents are skipped a
 harness: claude-code            # claude-code — runs Claude Code CLI via agentbox/agent-claude image
 
 # --- Model ---
-model: sonnet                   # Claude model: sonnet | opus | haiku (omit for CLI default)
+model: sonnet                   # Claude model alias (sonnet | opus | haiku | fable) or full model id (omit for CLI default)
 effort: high                    # reasoning effort: low | medium | high | xhigh | max (omit for default)
 fallback_model: haiku           # model to try if primary is overloaded (omit to disable)
 
@@ -22,7 +22,7 @@ wipe_workspace: false                 # true — empty the workspace before ever
 
 # --- Claude Code options ---
 max_turns: 10                   # max agentic turns (default: 10)
-permission_mode: default        # default | auto | bypassPermissions | plan | acceptEdits
+permission_mode: default        # default | acceptEdits | auto | bypassPermissions | dontAsk | plan
 allowed_tools:                  # tool allowlist — omit for no restriction
   - Read
   - Write

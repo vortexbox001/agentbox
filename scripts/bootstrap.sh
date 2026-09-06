@@ -7,8 +7,8 @@ sudo usermod -aG docker "$USER"
 sudo mkdir -p /etc/docker
 [ -f /etc/docker/daemon.json ] || echo '{ "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }' | sudo tee /etc/docker/daemon.json
 sudo systemctl restart docker
-sudo mkdir -p /data/{dagster,outputs,workspaces,logs}
-sudo mkdir -p /data/credentials/{claude,keys}
+sudo mkdir -p /data/{dagster,outputs,workspaces}
+sudo mkdir -p /data/credentials/claude
 sudo chown -R "$USER":"$USER" /data
 chmod 700 /data/credentials
 echo "Bootstrap complete."

@@ -64,9 +64,9 @@ dagster-daemon ──► job agent_<name> ──► docker run --rm agentbox/age
    ```bash
    cp .env.example .env
    ```
-   Fill in every variable. In particular set `AGENTBOX_HOST_REPO` to the absolute path of this
-   checkout on the host. The orchestrator uses it to bind-mount prompt files into agent containers,
-   so a wrong value breaks every run.
+   Fill in the secrets and adjust the paths and ports for your host. In particular set
+   `AGENTBOX_HOST_REPO` to the absolute path of this checkout on the host. The orchestrator uses
+   it to bind-mount prompt files into agent containers, so a wrong value breaks every run.
 
 3. **Build the agent images.** Compose does not build these; do it once and again after editing
    `images/`:
@@ -97,8 +97,10 @@ config edits need at most a restart.
 
 ## Adding an agent
 
-1. Copy a template: `agents/_template-api.yaml` or `agents/_template-claude-code.yaml`. Files with
-   `enabled: false` (including the templates) are ignored.
+1. Copy a template: `agents/_template-api.yaml` or `agents/_template-claude-code.yaml`.
+   `agents/_template-repo-librarian.yaml` is a specialised starting point for a `claude-code` agent
+   that clones and reviews a GitHub repo (see `agents/repo-librarian-agentbox.yaml` for a filled-in
+   copy). Files with `enabled: false` (including the templates) are ignored.
 2. Write the prompt in `prompts/<name>.md`.
 3. Create the output directory (and workspace, for `claude-code`) under `/data`.
 4. Restart Dagster so it re-scans `agents/`:
@@ -132,7 +134,7 @@ Keys marked *api* or *claude-code* apply only to that harness. Everything else i
 | `max_turns` | `10` | *claude-code*: cap on agentic turns. |
 | `effort` | CLI default | *claude-code*: `low`, `medium`, `high`, `xhigh`, or `max`. |
 | `fallback_model` | none | *claude-code*: model to use if the primary is overloaded. |
-| `permission_mode` | CLI default | *claude-code*: `default`, `auto`, `bypassPermissions`, `plan`, or `acceptEdits`. |
+| `permission_mode` | CLI default | *claude-code*: `default`, `acceptEdits`, `auto`, `bypassPermissions`, `dontAsk`, or `plan` (passed to `claude --permission-mode`). |
 | `allowed_tools` | unrestricted | *claude-code*: tool allowlist, e.g. `[Read, Write, Bash]`. |
 | `disallowed_tools` | none | *claude-code*: tool denylist. |
 | `mcp_config` | none | *claude-code*: path to an MCP config JSON inside the container. |

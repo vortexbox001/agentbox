@@ -1,11 +1,11 @@
 # Runs the Claude Code CLI in a container with a workspace and tool access.
 
-name: repo-librarian-agentbox                  # unique kebab-case identifier; becomes Dagster job "agent_my_agent"
+name: repo-librarian-agentbox   # unique kebab-case identifier; becomes Dagster job "agent_repo_librarian_agentbox"
 enabled: true                  # true | false — disabled agents are skipped at startup
 harness: claude-code            # claude-code — runs Claude Code CLI via agentbox/agent-claude image
 
 # --- Model ---
-model: claude-opus-4-8[1m]                   # Claude model: sonnet | opus | haiku (omit for CLI default)
+model: claude-opus-4-8[1m]      # Claude model alias (sonnet | opus | haiku | fable) or full model id (omit for CLI default)
 effort: high                    # reasoning effort: low | medium | high | xhigh | max (omit for default)
 fallback_model: "claude-opus-4-6[1m]"         # model to try if primary is overloaded (omit to disable)
 
@@ -21,7 +21,7 @@ wipe_workspace: true                  # empty the workspace before every run (fr
 
 # --- Claude Code options ---
 max_turns: 50                   # max agentic turns (default: 10)
-permission_mode: default        # default | auto | bypassPermissions | plan | acceptEdits
+permission_mode: default        # default | acceptEdits | auto | bypassPermissions | dontAsk | plan
 allowed_tools:                  # tool allowlist — omit for no restriction
   - Read
   - Write
