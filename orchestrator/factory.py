@@ -53,6 +53,9 @@ def make_run_op(cfg: dict):
         for k, v in runtime_env.items():
             cmd += ["-e", f"{k}={v}"]
         cmd += ["-e", f"AGENTBOX_RUN_STAMP={stamp}", "-e", f"AGENTBOX_SESSION_ID={session_id}"]
+        if os.environ.get("TZ"):
+            # same clock inside the container, so `date` agrees with the run stamp
+            cmd += ["-e", f"TZ={os.environ['TZ']}"]
         if cfg["harness"] == "api":
             cmd += [
                 "-e", f"AGENT_MODEL={cfg.get('model', 'cheap')}",
@@ -91,7 +94,8 @@ def make_run_op(cfg: dict):
                 f" Name every output file exactly {stamp}_<descriptive_name>_{session_id}.md,"
                 f" e.g. {stamp}_documentation_review_{session_id}.md"
                 " (lowercase snake_case descriptive name; keep the prefix and suffix verbatim)."
-                " Never read, list, or edit files in /output — only write new files there."
+                " Never read, list, or edit files in /output — only write finished files there,"
+                " each in a single write. Use /workspace for drafts, scratch, and temporary files."
             )
             if cfg.get("append_system_prompt"):
                 system_extra += " " + cfg["append_system_prompt"]

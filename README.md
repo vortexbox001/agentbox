@@ -47,7 +47,7 @@ dagster-daemon ──► job agent_<name> ──► docker run --rm agentbox/age
 | Path | Purpose |
 |---|---|
 | `/data/dagster/` | Dagster state (`DAGSTER_HOME`): run history, compute logs |
-| `/data/dagster/agent-logs/<agent>/<date>/<run-id>.jsonl` | Full Claude Code event stream for every `claude-code` run |
+| `/data/dagster/agent-logs/<agent>/<date>/<run-id>.jsonl` | Container stdout for every run: the full Claude Code event stream for `claude-code` runs, a one-line JSON status for `api` runs |
 | `/data/outputs/<agent>/` | Files the agents write (mounted as `/output`), named `<YYYY-MM-DD_HH-MM>_<descriptive_name>_<session_id>.md` |
 | `/data/workspaces/<agent>/` | Persistent scratch dir for `claude-code` agents (mounted as `/workspace`) |
 | `/data/credentials/claude/` | `.credentials.json` and `.claude.json` for the `claude-code` harness |
@@ -146,12 +146,14 @@ For every run the orchestrator mints a timestamp (`YYYY-MM-DD_HH-MM`, in the `TZ
 session id (a UUID, also used as the Claude Code `--session-id`). Every output file is named
 `<timestamp>_<descriptive_name>_<session_id>.md`, for example
 `2026-09-05_20-15_documentation_review_3f2a9c1e-….md`. Both values are logged in the Dagster run
-log and passed into the container as `AGENTBOX_RUN_STAMP` and `AGENTBOX_SESSION_ID`.
+log and passed into the container as `AGENTBOX_RUN_STAMP` and `AGENTBOX_SESSION_ID`. `TZ` from `.env`
+is forwarded too, so `date` inside the container agrees with the stamp.
 
 - `api` agents: the runner writes one file, `<timestamp>_response_<session_id>.md`.
 - `claude-code` agents: a fixed system-prompt addition tells the agent to write to `/output` using this
-  exact pattern, and never to read or edit existing files there. Prompts should refer to "the filename
-  convention from your system prompt" rather than spelling out a name.
+  exact pattern, to write each file in one go, to keep drafts and scratch files in `/workspace`, and never
+  to read or edit existing files in `/output`. Prompts should refer to "the filename convention from your
+  system prompt" rather than spelling out a name.
 
 ### Runtime overrides
 
@@ -199,8 +201,9 @@ Given a Dagster run id:
 ```
 agents/          agent definitions (YAML); _template-*.yaml are starting points
 prompts/         prompt files referenced by agents
-images/          Dockerfiles for the two agent images
-orchestrator/    Dagster code: factory.py (YAML -> job), definitions.py (discovery), dagster.yaml
+images/          the two agent images: agent-python/ (Dockerfile + runner.py), agent-claude/ (Dockerfile)
+orchestrator/    Dagster code: factory.py (YAML -> job), definitions.py (discovery), dagster.yaml,
+                 workspace.yaml (code location), Dockerfile (orchestrator image)
 litellm/         LiteLLM proxy config (model aliases)
 scripts/         bootstrap.sh — idempotent host setup
 docker-compose.yml
