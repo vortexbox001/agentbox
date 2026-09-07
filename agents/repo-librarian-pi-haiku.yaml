@@ -1,0 +1,41 @@
+# pi-harness twin of the claude-code repo-librarian agent, for comparing harnesses model by model.
+
+name: repo-librarian-pi-haiku       # pi-harness twin of the claude-code librarian; only harness-specific keys differ
+enabled: true                  # true | false — disabled agents are skipped at startup
+harness: pi                     # pi — runs pi via agentbox/agent-pi image
+
+# --- Model ---
+model: cheap                   # LiteLLM alias for the same model the claude-code twin uses
+effort: medium                  # reasoning effort: low | medium | high | xhigh | max (omit for default)
+
+# --- Prompt & output ---
+prompt_file: repo-librarian.md        # file in prompts/ — read at launch and passed to `claude -p`
+output_dir: /data/outputs/repo-librarian-pi/haiku
+append_system_prompt: ""        # extra text appended to the default system prompt (omit if unused)
+
+# --- Workspace ---
+workspace: /data/workspaces/repo-librarian-pi/haiku
+wipe_workspace: true                  # empty the workspace before every run (fresh clone each time)
+                                      # default: /data/workspaces/<name>
+
+# --- Claude Code options ---
+#disallowed_tools: []            # tool denylist — omit if unused
+#mcp_config: ""                  # path to MCP server config JSON inside the container (omit if unused)
+
+# --- Scheduling ---
+schedule: ""                    # manual-only
+
+# --- Container resources ---
+network: agentnet               # agentnet — reaches LiteLLM and the internet
+memory: 1g                      # container memory limit (default: 1g)
+cpus: 1.5                       # CPU limit (default: 1.5)
+
+# --- Execution ---
+timeout_seconds: 1800           # kill container after this many seconds (default: 900)
+                                # claude-code agents typically need longer than api agents
+
+# --- Environment Variables ---
+env:
+  GITHUB_TOKEN: ${GITHUB_TOKEN}
+  GITHUB_USER: leeclemmer
+  GITHUB_REPONAME: agentbox

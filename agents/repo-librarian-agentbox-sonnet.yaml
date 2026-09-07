@@ -1,28 +1,27 @@
-# Template: repo-librarian (claude-code harness)
-# Clones a GitHub repo into a fresh workspace, reviews its documentation, and writes a report to /output.
-# Copy this file, replace the <PLACEHOLDERS>, and set enabled: true.
+# Sonnet copy of repo-librarian-agentbox: same prompt and tools, Sonnet instead of Opus.
+# The api harness cannot do this job (no shell, no git, no tools), so this stays on claude-code.
 
-name: repo-librarian            # unique kebab-case identifier; becomes Dagster job "agent_repo_librarian"
-enabled: false                  # true | false — disabled agents are skipped at startup
+name: repo-librarian-agentbox-sonnet  # Sonnet variant of repo-librarian-agentbox; becomes Dagster job "agent_repo_librarian_agentbox_sonnet"
+enabled: true                  # true | false — disabled agents are skipped at startup
 harness: claude-code            # claude-code — runs Claude Code CLI via agentbox/agent-claude image
 
 # --- Model ---
-model: fable                    # Claude model alias (sonnet | opus | haiku | fable) or full model id (omit for CLI default)
-effort: high                    # reasoning effort: low | medium | high | xhigh | max (omit for default)
-fallback_model: "claude-opus-4-6[1m]"         # model to try if primary is overloaded (omit to disable)
+model: sonnet                   # Claude model alias (sonnet | opus | haiku | fable) or full model id (omit for CLI default)
+effort: medium                  # reasoning effort: low | medium | high | xhigh | max (omit for default)
+fallback_model: haiku           # model to try if primary is overloaded (omit to disable)
 
 # --- Prompt & output ---
 prompt_file: repo-librarian.md        # file in prompts/ — read at launch and passed to `claude -p`
-output_dir: /data/outputs/repo-librarian  # host path where agent output is written
+output_dir: /data/outputs/repo-librarian/agentbox-sonnet  # host path where agent output is written
 append_system_prompt: ""        # extra text appended to the default system prompt (omit if unused)
 
 # --- Workspace ---
-workspace: /data/workspaces/repo-librarian  # host path mounted at /workspace in the container
+workspace: /data/workspaces/repo-librarian/agentbox-sonnet  # host path mounted at /workspace in the container
+wipe_workspace: true                  # empty the workspace before every run (fresh clone each time)
                                       # default: /data/workspaces/<name>
-wipe_workspace: false                 # true — empty the workspace before every run (default: false)
 
 # --- Claude Code options ---
-max_turns: 10                   # max agentic turns (default: 10)
+max_turns: 50                   # max agentic turns (default: 10)
 permission_mode: default        # default | acceptEdits | auto | bypassPermissions | dontAsk | plan
 allowed_tools:                  # tool allowlist — omit for no restriction
   - Read
@@ -32,7 +31,8 @@ allowed_tools:                  # tool allowlist — omit for no restriction
 #mcp_config: ""                  # path to MCP server config JSON inside the container (omit if unused)
 
 # --- Scheduling ---
-schedule: ""                    # cron expression, e.g. "0 7 * * *", or "" for manual-only runs
+schedule: ""                    # manual-only; run from the Dagster UI to compare against the Opus agent
+
 # --- Container resources ---
 network: bridge                 # bridge — needs internet to reach Anthropic API (required)
                                 # agentnet — if proxying through LiteLLM (not typical)
@@ -46,5 +46,5 @@ timeout_seconds: 1800           # kill container after this many seconds (defaul
 # --- Environment Variables ---
 env:
   GITHUB_TOKEN: ${GITHUB_TOKEN}
-  GITHUB_USER: "<USERNAME>"      # e.g. "leeclemmer"
-  GITHUB_REPONAME: "<REPONAME>"      # e.g. "agentbox"
+  GITHUB_USER: leeclemmer
+  GITHUB_REPONAME: agentbox

@@ -1,0 +1,41 @@
+# Template: pi harness
+# Runs pi (https://github.com/earendil-works/pi), a minimal coding agent with read/write/edit/bash/grep/find/ls tools and a
+# full tool loop, in print mode. Talks to the LiteLLM proxy, so it bills the API key and can use any
+# alias in litellm/config.yaml. Same workspace/output conventions as the claude-code harness.
+
+name: my-pi-agent               # unique kebab-case identifier; becomes Dagster job "agent_my_pi_agent"
+enabled: false                  # true | false — disabled agents are skipped at startup
+harness: pi                     # pi — runs pi via agentbox/agent-pi image
+
+# --- Model ---
+model: smart                    # LiteLLM alias (cheap | smart | opus), or provider/model as pi understands it
+effort: medium                  # thinking level: off | minimal | low | medium | high | xhigh (omit for default)
+
+# --- Prompt & output ---
+prompt_file: my-pi-agent.md     # file in prompts/ — read at launch and passed as the prompt
+output_dir: /data/outputs/my-pi-agent  # host path mounted at /output
+append_system_prompt: ""        # extra text appended to the system prompt (omit if unused)
+
+# --- Workspace ---
+workspace: /data/workspaces/my-pi-agent  # host path mounted at /workspace (default: /data/workspaces/<name>)
+wipe_workspace: false           # true — empty the workspace before every run (default: false)
+
+# --- Tools ---
+allowed_tools: []               # allowlist of pi tool names (read, write, edit, bash, grep, find, ls);
+                                # omit for pi's default set. pi has no denylist flag and no max-turns flag:
+                                # timeout_seconds is the only cap on a runaway loop.
+
+# --- Environment ---
+env:
+  # GITHUB_TOKEN: ${GITHUB_TOKEN}   # passthrough from Dagster's environment
+
+# --- Scheduling ---
+schedule: ""                    # cron expression, or "" for manual-only runs
+
+# --- Container resources ---
+network: agentnet               # agentnet — reaches LiteLLM and the internet
+memory: 1g
+cpus: 1.5
+
+# --- Execution ---
+timeout_seconds: 1800           # kill container after this many seconds (default: 900)
