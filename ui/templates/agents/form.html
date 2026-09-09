@@ -52,6 +52,15 @@
         autocomplete="off"
         novalidate>
 
+    {# Sits right-aligned at the top of the form, directly under the Save button. #}
+    <div class="ax-form-actionbar">
+      <label class="ax-toggle" for="ax-reload-checkbox">
+        <input type="checkbox" id="ax-reload-checkbox" checked>
+        <span class="ax-toggle-track" aria-hidden="true"></span>
+        <span>Reload Dagster after saving</span>
+      </label>
+    </div>
+
     {% if mode == "create" %}
     <div class="ax-card ax-form-lead">
       <label class="ax-field" for="ax-template-select">
@@ -70,13 +79,6 @@
       </div>
     </div>
 
-    <div class="ax-form-actionbar">
-      <label class="ax-toggle" for="ax-reload-checkbox">
-        <input type="checkbox" id="ax-reload-checkbox" checked>
-        <span class="ax-toggle-track" aria-hidden="true"></span>
-        <span>Reload Dagster after saving</span>
-      </label>
-    </div>
   </form>
   {% endif %}
 
@@ -92,6 +94,7 @@
   {# Loaded whenever the form is shown, and also in edit mode for an uneditable
      file so the Delete action stays wired even when no form is rendered. #}
   {% if (show_form is not defined or show_form) or mode == "edit" %}
+  <link rel="modulepreload" href="/static/dropdown.js">
   <script type="module" src="/static/agent-form.js"></script>
   {% endif %}
 {% endblock %}

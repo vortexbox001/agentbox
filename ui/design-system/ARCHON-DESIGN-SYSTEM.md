@@ -1,6 +1,6 @@
 # Archon Design System — Agent Instructions
 
-> **Version:** 1.0.0  
+> **Version:** 1.1.0  
 > **Files:** `archon-tokens.css` (tokens), `Archon Design System.dc.html` (specimen/component library), `Archon Prototype.dc.html` (reference implementation)
 
 ## Overview
@@ -134,7 +134,7 @@ Scale from `--ax-space-0` (0) to `--ax-space-14` (48px). Key stops:
 |-------|-------|-----|
 | `--ax-radius-sm` | 4px | Badges, small tags |
 | `--ax-radius-md` | 6px | Buttons, inputs, nav items |
-| `--ax-radius-lg` | 8px | Avatars, icon containers, nested blocks |
+| `--ax-radius-lg` | 8px | Avatars, icon containers, nested blocks, dropdown panels |
 | `--ax-radius-xl` | 10px | Cards |
 | `--ax-radius-2xl` | 12px | Modals |
 | `--ax-radius-pill` | 9999px | Thinking context pills, toggles |
@@ -331,6 +331,43 @@ outline: none;
 
 Read-only display fields use the same structure but with `--ax-border-default` and `--ax-text-mid` color.
 
+### Select / Dropdown
+
+Two variants ship in the reference (Forms → "Select / Dropdown" and "Custom Dropdown (open)"). Both sit on the Input surface; pick the custom one whenever the open option list must match the system, since browsers do not let the native list be styled.
+
+**Native styled select** — a `<select>` with the browser chrome removed (`appearance: none`) and a custom chevron overlaid:
+
+```css
+/* <select> */
+width: 100%;
+padding: 10px 36px 10px 14px;      /* right padding leaves room for the chevron */
+border-radius: var(--ax-radius-md);
+background: var(--ax-bg-input);
+border: 1px solid var(--ax-border-input);
+font: var(--ax-type-body-md);
+color: var(--ax-text-primary);
+appearance: none; outline: none; cursor: pointer;
+
+/* chevron: 12×12 outline SVG (stroke-width 1.4, round caps), absolute,
+   right 12px, vertically centred, pointer-events: none, stroke text-muted */
+```
+
+**Custom dropdown** — a scripted control: a trigger styled like the native select, plus an elevated options panel anchored below it.
+
+| Part | Style |
+|------|-------|
+| Trigger | as the native select; while open `border: 1px solid var(--ax-cyan-border)` |
+| Panel | `position: absolute; top: calc(100% + 4px); left: 0; right: 0` (full trigger width); `background: var(--ax-bg-card)`; `border: 1px solid var(--ax-border-strong)`; `border-radius: var(--ax-radius-lg)`; `padding: 4px`; `box-shadow: var(--ax-shadow-lg)`; `z-index: var(--ax-z-dropdown)` |
+| Option | `padding: 8px 12px`; `border-radius: var(--ax-radius-sm)`; `font: var(--ax-type-body-md)`; `color: var(--ax-text-mid)`; `cursor: pointer` |
+| Selected option | `background: var(--ax-cyan-bg)`; `color: var(--ax-cyan)` |
+| Hovered / keyboard-active option | `background: var(--ax-bg-card-hover)` |
+
+Summary line from the reference: *bg-card · border-strong · shadow-lg · cyan-bg active*.
+
+Because the panel floats over other content rather than sitting in the page flow, it is the one component that uses a shadow (`--ax-shadow-lg`) for elevation. Give long lists a max-height with internal scroll, and flip the panel upward when it would run off the bottom of its scroll region.
+
+When implementing the custom variant, keep a real `<select>` behind it (visually hidden) as the value store so forms, validation and assistive technology keep working, and expose the control as a select-only combobox: trigger `role="combobox"` with `aria-haspopup="listbox"`, `aria-expanded` and `aria-activedescendant`; panel `role="listbox"`; options `role="option"` + `aria-selected`. Keyboard: Enter/Space/arrows open, arrows/Home/End move, Enter/Space choose, Escape closes without changing the value, printable keys type-ahead.
+
 ### Code/Prompt Block
 
 ```css
@@ -513,5 +550,5 @@ Transitions for interactive elements use `--ax-transition-fast` (0.1s) for hover
 - Use more than 2 accent colors in a single component
 - Put sharp corners on cards (always radius-xl minimum)
 - Use solid white backgrounds — everything is dark
-- Use shadows for elevation — use border opacity and background shifts instead
+- Use shadows for elevation on in-flow surfaces (cards, panels, rows) — use border opacity and background shifts instead; `--ax-shadow-lg` is reserved for floating layers such as the custom dropdown panel
 - Mix thinking italic style with non-thinking content

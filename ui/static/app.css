@@ -3,6 +3,10 @@
    /design-system/archon-tokens.css — no literal colours or typeface names live
    here, so the whole UI stays consistent with the design system (FR-015). */
 
+/* The hidden attribute always wins over an author display rule (e.g. a grid or
+   block panel toggled with el.hidden), so nothing "revealed" leaks by default. */
+[hidden] { display: none !important; }
+
 /* ── App shell layout ─────────────────────────────────── */
 .ax-app {
   display: grid;
@@ -89,17 +93,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--ax-space-8);
-  height: var(--ax-topbar-height);
-  padding: 0 var(--ax-space-11);
+  flex-wrap: wrap;
+  gap: var(--ax-space-5) var(--ax-space-8);
+  min-height: var(--ax-topbar-height);
+  padding: var(--ax-space-5) var(--ax-space-11);
   border-bottom: 1px solid var(--ax-border-subtle);
   background: var(--ax-bg-root);
 }
-.ax-topbar-heading { display: flex; align-items: baseline; gap: var(--ax-space-8); min-width: 0; }
+.ax-topbar-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--ax-space-3) var(--ax-space-8); min-width: 0; }
 .ax-page-title { margin: 0; font: var(--ax-type-display-md); color: var(--ax-text-primary); }
 .ax-breadcrumb { font: var(--ax-type-body-sm); color: var(--ax-text-low); }
 .ax-breadcrumb a { color: var(--ax-text-mid); }
-.ax-topbar-actions { display: flex; align-items: center; gap: var(--ax-space-5); }
+.ax-topbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ax-space-5); }
 
 /* ── Content region ───────────────────────────────────── */
 .ax-content { padding: var(--ax-space-11); overflow-y: auto; flex: 1; }
@@ -194,29 +199,33 @@
 .ax-btn--danger:hover:not(:disabled) { background: var(--ax-error); color: var(--ax-text-primary); }
 
 /* ── Toggle ───────────────────────────────────────────── */
+/* Reference: track 36×20 (on: cyan / off: translucent), thumb 16 (on: white at
+   right / off: muted at left), transition-fast. Sizes come from token maths so no
+   literal reaches the stylesheet; the off track uses --ax-border-strong, the
+   nearest token to the reference's 15% white (spec 002 research R4). */
 .ax-toggle { position: relative; display: inline-flex; align-items: center; gap: var(--ax-space-5); cursor: pointer; }
 .ax-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
 .ax-toggle-track {
-  width: var(--ax-space-13);
-  height: var(--ax-space-9);
+  width: calc(var(--ax-space-9) + var(--ax-space-8));   /* 36px */
+  height: var(--ax-space-9);                             /* 20px */
   border-radius: var(--ax-radius-pill);
-  background: var(--ax-bg-input);
-  border: 1px solid var(--ax-border-input);
-  transition: background var(--ax-transition-normal);
+  background: var(--ax-border-strong);
+  transition: background var(--ax-transition-fast), box-shadow var(--ax-transition-fast);
   flex: none;
 }
 .ax-toggle-track::after {
   content: "";
   display: block;
-  width: var(--ax-space-7);
-  height: var(--ax-space-7);
-  margin: var(--ax-space-1);
+  width: var(--ax-space-8);                              /* 16px */
+  height: var(--ax-space-8);
+  margin: var(--ax-space-1);                             /* 2px inset */
   border-radius: var(--ax-radius-round);
-  background: var(--ax-text-mid);
-  transition: transform var(--ax-transition-normal), background var(--ax-transition-normal);
+  background: var(--ax-text-low);
+  transition: transform var(--ax-transition-fast), background var(--ax-transition-fast);
 }
-.ax-toggle input:checked + .ax-toggle-track { background: var(--ax-cyan-bg-strong); border-color: var(--ax-cyan-border); }
-.ax-toggle input:checked + .ax-toggle-track::after { transform: translateX(var(--ax-space-9)); background: var(--ax-cyan); }
+.ax-toggle input:checked + .ax-toggle-track { background: var(--ax-cyan); }
+.ax-toggle input:checked + .ax-toggle-track::after { transform: translateX(var(--ax-space-8)); background: var(--ax-text-primary); }
+.ax-toggle input:focus-visible + .ax-toggle-track { box-shadow: 0 0 0 1px var(--ax-cyan-border); }
 
 /* ── Form sections & help text ────────────────────────── */
 .ax-form-section { margin-bottom: var(--ax-space-12); }
@@ -231,9 +240,11 @@
 }
 .ax-field { margin-bottom: var(--ax-space-8); }
 .ax-field > label { display: block; margin-bottom: var(--ax-space-3); font: var(--ax-type-body-md); color: var(--ax-text-high); }
-.ax-help { margin-top: var(--ax-space-3); font: var(--ax-type-body-sm); color: var(--ax-text-low); }
-.ax-field-error { margin-top: var(--ax-space-3); font: var(--ax-type-body-sm); color: var(--ax-error); }
+.ax-field > label.ax-toggle { display: inline-flex; }   /* a toggle field keeps the pill + text row */
+.ax-help { display: block; margin-top: var(--ax-space-3); font: var(--ax-type-body-sm); color: var(--ax-text-low); overflow-wrap: anywhere; }
+.ax-field-error { margin-top: var(--ax-space-3); font: var(--ax-type-body-sm); color: var(--ax-error); overflow-wrap: anywhere; }
 .ax-new-prompt { margin-top: var(--ax-space-4); display: grid; gap: var(--ax-space-2); }
+.ax-new-prompt[hidden] { display: none; }
 .ax-new-prompt-label { font: var(--ax-type-body-sm); color: var(--ax-text-low); }
 
 /* ── Status banner (persistent until the next action) ─── */
@@ -307,16 +318,17 @@
 /* ── Create/edit form: breadcrumb, layout, action bar ─── */
 .ax-breadcrumb-sep { margin: 0 var(--ax-space-3); color: var(--ax-text-ghost); }
 .ax-form-lead { margin-bottom: var(--ax-space-9); }
-.ax-form-lead .ax-field { margin-bottom: 0; max-width: var(--ax-space-14); }
+.ax-form-lead .ax-field { margin-bottom: 0; max-width: calc(var(--ax-space-14) * 10); }
 .ax-form-actionbar {
   display: flex;
+  justify-content: flex-end;   /* right-aligned, under the top bar's Save button */
   align-items: center;
   gap: var(--ax-space-6);
-  padding: var(--ax-space-7) 0;
+  margin-bottom: var(--ax-space-7);
 }
 
 /* ── Harness picker meta line ─────────────────────────── */
-.ax-harness-meta { margin: var(--ax-space-3) 0 0; font: var(--ax-type-body-sm); color: var(--ax-text-mid); }
+.ax-harness-meta { margin: var(--ax-space-3) 0 0; font: var(--ax-type-body-sm); color: var(--ax-text-mid); overflow-wrap: anywhere; }
 
 /* ── Chip (list) editor ───────────────────────────────── */
 .ax-chips {
@@ -354,6 +366,7 @@
 
 /* ── Secret warning (inline + preview) ────────────────── */
 .ax-secret-warn {
+  display: block;
   margin-top: var(--ax-space-3);
   padding: var(--ax-space-3) var(--ax-space-5);
   background: var(--ax-yellow-bg); color: var(--ax-yellow);
@@ -394,3 +407,86 @@
   color: var(--ax-text-mid);
   cursor: not-allowed;
 }
+
+/* ── Custom dropdown (enhanced <select>; spec 002 US1) ─── */
+/* Structure is built by /static/dropdown.js around the untouched backing select:
+   .ax-dropdown > button.ax-dropdown-trigger + ul.ax-dropdown-panel + select.
+   Reference: "Custom Dropdown (open)" — bg-card · border-strong · shadow-lg ·
+   cyan-bg active. */
+.ax-dropdown { position: relative; }
+/* The backing select stays in the DOM (value store, form semantics, focus
+   redirect from its <label>) but is visually hidden. */
+.ax-dropdown > .ax-dropdown-native {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  opacity: 0; pointer-events: none;
+}
+.ax-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ax-space-5);
+  width: 100%;
+  padding: var(--ax-space-5) var(--ax-space-6);
+  background: var(--ax-bg-input);
+  border: 1px solid var(--ax-border-input);
+  border-radius: var(--ax-radius-md);
+  color: var(--ax-text-primary);
+  font: var(--ax-type-body-md);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--ax-transition-normal), background var(--ax-transition-normal);
+}
+.ax-dropdown-trigger:hover { background: var(--ax-bg-input-hover); }
+.ax-dropdown-trigger:focus-visible { outline: none; border-color: var(--ax-cyan); box-shadow: 0 0 0 1px var(--ax-cyan-border); }
+.ax-dropdown.is-open .ax-dropdown-trigger { border-color: var(--ax-cyan-border); }
+.ax-dropdown.is-invalid .ax-dropdown-trigger { border-color: var(--ax-error); }
+.ax-dropdown.is-disabled .ax-dropdown-trigger { opacity: .5; cursor: not-allowed; }
+.ax-dropdown-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-dropdown-value:empty::before { content: "\00a0"; }
+.ax-dropdown-chevron {
+  width: var(--ax-space-6); height: var(--ax-space-6); flex: none;
+  color: var(--ax-text-muted); stroke: currentColor; fill: none;
+  transition: transform var(--ax-transition-fast);
+}
+.ax-dropdown.is-open .ax-dropdown-chevron { transform: rotate(180deg); }
+.ax-dropdown-panel {
+  position: absolute;
+  left: 0; right: 0;
+  top: calc(100% + var(--ax-space-2));
+  margin: 0;
+  padding: var(--ax-space-2);
+  list-style: none;
+  max-height: min(18rem, 50vh);
+  overflow-y: auto;
+  background: var(--ax-bg-card);
+  border: 1px solid var(--ax-border-strong);
+  border-radius: var(--ax-radius-lg);
+  box-shadow: var(--ax-shadow-lg);
+  z-index: var(--ax-z-dropdown);
+}
+.ax-dropdown-panel[hidden] { display: none; }
+.ax-dropdown-panel.is-up { top: auto; bottom: calc(100% + var(--ax-space-2)); }
+.ax-dropdown-option {
+  padding: var(--ax-space-4) var(--ax-space-6);
+  border-radius: var(--ax-radius-sm);
+  font: var(--ax-type-body-md);
+  color: var(--ax-text-mid);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.ax-dropdown-option:hover, .ax-dropdown-option.is-active { background: var(--ax-bg-card-hover); color: var(--ax-text-high); }
+.ax-dropdown-option[aria-selected="true"] { background: var(--ax-cyan-bg); color: var(--ax-cyan); }
+.ax-dropdown-option[aria-disabled="true"] { color: var(--ax-text-ghost); cursor: not-allowed; }
+
+/* ── Responsive form grid (spec 002 US3) ─────────────── */
+/* Reference ax-grid-form: auto-fill columns at a 280px minimum, 24px gap. The
+   min() guard keeps a single column from overflowing a container narrower than
+   280px (FR-012: no horizontal page scroll at any width). */
+.ax-grid-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+  gap: var(--ax-space-10);
+}
+.ax-grid-form > .ax-field { margin-bottom: 0; min-width: 0; }
+.ax-field--wide { grid-column: 1 / -1; }

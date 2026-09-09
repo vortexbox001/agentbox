@@ -757,3 +757,67 @@ def test_delete_agent_leaves_workspace_and_outputs_untouched(client, dagster_stu
     # The referenced directories and their contents survive.
     assert workspace.is_dir() and (workspace / "scratch.txt").read_text() == "workspace data"
     assert output.is_dir() and (output / "run.log").read_text() == "output data"
+
+
+# ── 002 Design System Compliance: static checks ──────────
+# Interactive/visual fidelity is covered by the quickstart browser checklist; these
+# assert what is statically checkable (specs/002-design-system-compliance/research.md R7).
+def _app_css():
+    with open(os.path.join(UI_DIR, "static", "app.css"), encoding="utf-8") as f:
+        return f.read()
+
+
+def _css_block(text, selector):
+    """The declaration block for one exact selector (anchored so a shorter selector
+    does not match inside a longer one, e.g. `.ax-toggle-track::after` vs. the
+    `input:checked + .ax-toggle-track::after` rule)."""
+    m = re.search(r"(?:^|[}\n])\s*" + re.escape(selector) + r"\s*\{([^}]*)\}", text)
+    assert m, f"no CSS rule for selector {selector!r}"
+    return re.sub(r"\s+", "", m.group(1))
+
+
+# US1 — the custom dropdown is a progressive enhancement over the native select,
+# so the rendered form keeps its backing <select> and loads the enhancement module.
+def test_new_agent_page_keeps_backing_selects_and_loads_dropdown_module(client):
+    html = client.get("/agents/new").text
+    assert "<select" in html                        # backing select (value store) stays
+    assert "/static/dropdown.js" in html            # enhancement module is loaded
+    assert client.get("/static/dropdown.js").status_code == 200
+
+
+def test_app_css_defines_custom_dropdown_component():
+    css = _app_css()
+    panel = _css_block(css, ".ax-dropdown-panel")
+    assert "var(--ax-bg-card)" in panel
+    assert "var(--ax-border-strong)" in panel
+    assert "var(--ax-shadow-lg)" in panel
+    assert "var(--ax-z-dropdown)" in panel
+    selected = _css_block(css, '.ax-dropdown-option[aria-selected="true"]')
+    assert "var(--ax-cyan-bg)" in selected
+    assert "var(--ax-cyan)" in selected
+
+
+# US2 — the toggle maps every state to the reference's tokens (research R4).
+def test_app_css_toggle_matches_reference_tokens():
+    css = _app_css()
+    on_track = _css_block(css, ".ax-toggle input:checked + .ax-toggle-track")
+    assert "background:var(--ax-cyan)" in on_track
+    on_thumb = _css_block(css, ".ax-toggle input:checked + .ax-toggle-track::after")
+    assert "background:var(--ax-text-primary)" in on_thumb
+    assert "translateX(var(--ax-space-8))" in on_thumb
+    off_track = _css_block(css, ".ax-toggle-track")
+    assert "background:var(--ax-border-strong)" in off_track
+    off_thumb = _css_block(css, ".ax-toggle-track::after")
+    assert "background:var(--ax-text-low)" in off_thumb
+
+
+# US3 — the responsive form grid and the full-row modifier exist as specified.
+def test_app_css_defines_form_grid():
+    css = _app_css()
+    grid = _css_block(css, ".ax-grid-form")
+    assert "display:grid" in grid
+    assert "auto-fill" in grid
+    assert "minmax(" in grid and "280px" in grid      # 280px minimum field width
+    assert "gap:var(--ax-space-10)" in grid
+    wide = _css_block(css, ".ax-field--wide")
+    assert "grid-column:1/-1" in wide

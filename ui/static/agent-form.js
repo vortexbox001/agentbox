@@ -8,6 +8,7 @@
 // against leaving with unsaved changes. Phase 5 reuses this module for editing.
 
 import { toast, flashStatus, registerDirtyForm } from "/static/shell.js";
+import { enhanceSelect, enhanceSelects } from "/static/dropdown.js";
 
 const form = document.getElementById("ax-agent-form");
 const sectionsMount = document.getElementById("ax-form-sections");
@@ -127,11 +128,19 @@ function isDirty() { return !saved && serialise() !== snapshot; }
 // ── Field rendering ─────────────────────────────────────
 function labelText(f) { return f.required ? `${f.label} *` : f.label; }
 
+// Fields whose control is intrinsically wide span the whole ax-grid-form row
+// (spec 002 US3): the env map, the tool lists, the append-system-prompt text,
+// and the prompt picker (its "Create new prompt…" panel needs the width).
+const WIDE_FIELD_IDS = new Set(["append_system_prompt", "prompt_file"]);
+function isWideField(f) {
+  return f.type === "list" || f.type === "map" || WIDE_FIELD_IDS.has(f.id);
+}
+
 function setControlValue(fid, v) { values[fid] = v; }
 
 function makeField(f) {
   const wrap = document.createElement("div");
-  wrap.className = "ax-field";
+  wrap.className = isWideField(f) ? "ax-field ax-field--wide" : "ax-field";
   wrap.dataset.field = f.id;
 
   const controlId = `f-${f.id}`;
@@ -731,9 +740,13 @@ function renderForm(harness) {
     const h = document.createElement("h2");
     h.textContent = section.label;
     card.appendChild(h);
-    for (const f of fields) card.appendChild(makeField(f));
+    const grid = document.createElement("div");
+    grid.className = "ax-grid-form";
+    for (const f of fields) grid.appendChild(makeField(f));
+    card.appendChild(grid);
     sectionsMount.appendChild(card);
   }
+  enhanceSelects(sectionsMount);   // custom dropdown over every select (spec 002 US1)
   updateHarnessMeta();
   updateNetworkWarning();
 }
@@ -774,6 +787,8 @@ function switchHarness(harness) {
     if (!userChangedNetwork) values.network = harnessById(harness).default_network;
   }
   renderForm(harness);
+  const trigger = document.getElementById("f-harness-trigger");
+  if (trigger) trigger.focus();
 }
 
 // ── Field errors ────────────────────────────────────────
@@ -1183,6 +1198,7 @@ async function populateTemplates() {
       templateSelect.appendChild(opt);
     }
   } catch (e) { /* no templates offered if the list cannot be read */ }
+  enhanceSelect(templateSelect);
   templateSelect.addEventListener("change", () => {
     if (templateSelect.value) prefillFromTemplate(templateSelect.value);
   });
@@ -1222,7 +1238,7 @@ async function boot() {
     await populateTemplates();
     const from = (form.dataset.from || "").trim();
     if (from) {
-      if (templateSelect) templateSelect.value = from;
+      if (templateSelect) { templateSelect.value = from; enhanceSelect(templateSelect); }
       await prefillFromTemplate(from);
     }
   }
