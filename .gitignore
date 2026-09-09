@@ -7,3 +7,11 @@ venv/
 *.egg-info/
 .DS_Store
 CLAUDE.local.md
+*.log
+dist/
+build/
+*.swp
+*.tmp
+.idea/
+Thumbs.db
+.vscode/
