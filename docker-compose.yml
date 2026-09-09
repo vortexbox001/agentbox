@@ -43,6 +43,18 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     command: ["dagster-daemon", "run"]
     networks: [agentnet]
+  
+  ui:
+    build: ./ui
+    restart: unless-stopped
+    environment:
+      DAGSTER_URL: http://dagster-webserver:3000
+    volumes:
+      - ./ui:/opt/agentbox/ui:ro
+      - ./agents:/opt/agentbox/agents        # writable: the UI edits these
+    ports:
+      - "8080:8080"
+    networks: [agentnet]
 
 networks:
   agentnet:
