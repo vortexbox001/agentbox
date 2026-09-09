@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+import agents_store
 import config
 import dagster
 import prompts_store
@@ -106,12 +107,26 @@ async def _root_redirect():
 
 @app.get("/agents")
 async def _agents_page(request: Request):
-    # Foundational skeleton: the app shell renders here; the user-story phase fills
-    # the content block with the live agent list.
-    return templates.TemplateResponse(request, "base.html", _shell_context(request, title="Agents"))
+    # The list reflects the filesystem exactly: every non-template agent, templates
+    # excluded. Row Dagster links are built in the template from the browser-facing
+    # base URL (dagster_url in the shell context) plus each row's dagster_job.
+    listing = agents_store.list_agents()
+    return templates.TemplateResponse(
+        request,
+        "agents/list.html",
+        _shell_context(request, title="Agents", agents=listing["agents"]),
+    )
 
 
 # --- API ------------------------------------------------------------------
+@app.get("/api/agents")
+async def _api_agents():
+    # {"agents": [...non-template rows...], "templates": [{"file", "harness"}]}.
+    # Broken files carry parse_error with other fields null; a file written by a
+    # newer schema is reported editable: false (agents_store.list_agents).
+    return JSONResponse(agents_store.list_agents())
+
+
 @app.get("/api/schema")
 async def _api_schema():
     payload = schema.to_public()

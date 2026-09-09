@@ -68,12 +68,12 @@ Single package at `ui/`: modules at `ui/*.py`, pages in `ui/templates/`, browser
 
 ### Tests for User Story 1
 
-- [ ] T023 [P] [US1] Add to `ui/tests/test_api.py`: `GET /api/agents` lists every non-template file with `name, file, enabled, harness, model, schedule, dagster_job, dagster_url, parse_error, name_mismatch`, lists templates separately under `templates`, reports a broken file with `parse_error` set and other fields null, marks a newer-schema file `editable: false`, returns empty lists for an empty directory, and responds in under 1 second with 50 generated agent files (SC-007); `GET /agents` HTML contains each agent name as a link to `/agents/{name}` and the "New agent" link
+- [X] T023 [P] [US1] Add to `ui/tests/test_api.py`: `GET /api/agents` lists every non-template file with `name, file, enabled, harness, model, schedule, dagster_job, dagster_url, parse_error, name_mismatch`, lists templates separately under `templates`, reports a broken file with `parse_error` set and other fields null, marks a newer-schema file `editable: false`, returns empty lists for an empty directory, and responds in under 1 second with 50 generated agent files (SC-007); `GET /agents` HTML contains each agent name as a link to `/agents/{name}` and the "New agent" link
 
 ### Implementation for User Story 1
 
-- [ ] T024 [US1] Implement `GET /api/agents` in `ui/main.py` returning `{"agents": [...], "templates": [{"file", "harness"}]}` from `agents_store.list_agents()` per contracts/http-api.md
-- [ ] T025 [US1] Create `ui/templates/agents/list.html` and `GET /agents` in `ui/main.py`: table (name link, harness badge, model in mono, schedule or "manual", enabled → reduced opacity + "disabled" badge, error badge with message, mismatch warning badge, Dagster "runs" link), "New agent" primary button, empty state card with a "Create your first agent" call to action; page title "Agents"
+- [X] T024 [US1] Implement `GET /api/agents` in `ui/main.py` returning `{"agents": [...], "templates": [{"file", "harness"}]}` from `agents_store.list_agents()` per contracts/http-api.md
+- [X] T025 [US1] Create `ui/templates/agents/list.html` and `GET /agents` in `ui/main.py`: table (name link, harness badge, model in mono, schedule or "manual", enabled → reduced opacity + "disabled" badge, error badge with message, mismatch warning badge, Dagster "runs" link), "New agent" primary button, empty state card with a "Create your first agent" call to action; page title "Agents"
 
 **Checkpoint**: US1 is demoable — the list reflects the filesystem exactly
 

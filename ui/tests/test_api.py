@@ -111,3 +111,97 @@ def test_storage_error_maps_to_507():
     body = json.loads(resp.body)
     assert body["error"] == "storage"
     assert "cannot write agents/x.yaml" in body["message"]
+
+
+# ── User Story 1: View Existing Agents (T023) ───────────
+def _write(dir_path, name, text):
+    p = dir_path / name
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+def test_api_agents_lists_non_template_files(client):
+    data = client.get("/api/agents").json()
+    assert set(data) == {"agents", "templates"}
+
+    names = {a["name"] for a in data["agents"]}
+    assert "repo-librarian-agentbox" in names
+    # Templates (leading underscore) never appear as agents.
+    assert not any(a["file"].startswith("_") for a in data["agents"])
+
+    required = {"name", "file", "enabled", "harness", "model", "schedule",
+                "dagster_job", "dagster_url", "parse_error", "name_mismatch"}
+    for a in data["agents"]:
+        assert required <= set(a)
+
+    row = next(a for a in data["agents"] if a["name"] == "repo-librarian-agentbox")
+    assert row["harness"] == "claude-code"
+    assert row["dagster_job"] == "agent_repo_librarian_agentbox"
+    assert row["dagster_url"].endswith("/jobs/agent_repo_librarian_agentbox")
+    assert row["parse_error"] is None
+    assert row["name_mismatch"] is False
+
+
+def test_api_agents_lists_templates_separately(client):
+    data = client.get("/api/agents").json()
+    template_files = {t["file"] for t in data["templates"]}
+    assert "_template-pi.yaml" in template_files
+    for t in data["templates"]:
+        assert set(t) == {"file", "harness"}
+        assert t["file"].startswith("_")
+
+
+def test_api_agents_reports_broken_file(client, tmp_agents):
+    _write(tmp_agents, "broken.yaml", "harness: [unclosed\n")
+    data = client.get("/api/agents").json()
+    row = next(a for a in data["agents"] if a["file"] == "broken.yaml")
+    assert row["parse_error"] is not None
+    for field in ("enabled", "harness", "model", "schedule"):
+        assert row[field] is None
+
+
+def test_api_agents_marks_newer_schema_uneditable(client, tmp_agents):
+    _write(tmp_agents, "futuristic.yaml",
+           "# agentbox-schema: 9999\nname: futuristic\nharness: pi\n")
+    data = client.get("/api/agents").json()
+    row = next(a for a in data["agents"] if a["file"] == "futuristic.yaml")
+    assert row["editable"] is False
+    assert row["parse_error"] is not None
+    assert "9999" in row["parse_error"]
+
+
+def test_api_agents_empty_directory(client, tmp_agents):
+    for f in tmp_agents.glob("*.yaml"):
+        f.unlink()
+    data = client.get("/api/agents").json()
+    assert data == {"agents": [], "templates": []}
+
+
+def test_api_agents_under_one_second_with_50_files(client, tmp_agents):
+    import time
+    for f in tmp_agents.glob("*.yaml"):
+        f.unlink()
+    for i in range(50):
+        _write(tmp_agents, f"gen-{i:02d}.yaml",
+               f"name: gen-{i:02d}\nharness: pi\nprompt_file: p.md\n")
+    start = time.perf_counter()
+    data = client.get("/api/agents").json()
+    elapsed = time.perf_counter() - start
+    assert len(data["agents"]) == 50
+    assert elapsed < 1.0, f"listing 50 agents took {elapsed:.3f}s (SC-007)"
+
+
+def test_agents_page_links_each_agent_and_new(client):
+    html = client.get("/agents").text
+    assert 'href="/agents/repo-librarian-agentbox"' in html
+    assert 'href="/agents/new"' in html          # "New agent" link
+    # Template files are not rendered as rows.
+    assert "_template-pi" not in html
+
+
+def test_agents_page_empty_state(client, tmp_agents):
+    for f in tmp_agents.glob("*.yaml"):
+        f.unlink()
+    html = client.get("/agents").text
+    assert "ax-empty" in html
+    assert 'href="/agents/new"' in html          # create-first call to action
