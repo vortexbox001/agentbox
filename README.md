@@ -124,6 +124,16 @@ config edits need at most a restart.
 
 ## Adding an agent
 
+The quickest path is the **management UI** at `http://<host>:8080` (the `ui` service; see
+[The management UI](#the-management-ui)). Click **New agent**, optionally start from a template,
+fill in the schema-driven form, and save. The UI writes `agents/<name>.yaml`, can create the prompt
+file for you, and reloads the Dagster workspace so the new job appears without a manual restart.
+Saves regenerate the file from the schema with the standard section comments and one comment per
+field; any keys the UI does not manage are preserved verbatim in an "unmanaged" block, so a
+hand-added key survives an edit.
+
+To do it by hand instead:
+
 1. Copy a template: `agents/_template-api.yaml`, `agents/_template-claude-code.yaml`,
    `agents/_template-pi.yaml`, or `agents/_template-codex.yaml`.
    `agents/_template-repo-librarian.yaml` is a specialised starting point for a `claude-code` agent
@@ -136,6 +146,19 @@ config edits need at most a restart.
    docker compose restart dagster-webserver dagster-daemon
    ```
    Prompt edits do not need a restart. They are read fresh at each launch.
+
+### The management UI
+
+The `ui` service is a FastAPI app that renders the agent list and a schema-driven create/edit form,
+served on port 8080. It runs as `${AGENTBOX_UID}:${AGENTBOX_GID}` (see `.env`, default `1000:1000`)
+so files it writes into `agents/` and `prompts/` stay owned by you rather than root. It bind-mounts
+`agents/` and `prompts/` read-write (it edits and creates those) and `litellm/config.yaml`
+read-only (the source of the model aliases the form offers). Every field on the form carries the
+same explanation the YAML comments and this README's key table come from — they all read
+`ui/schema.py`. The form flags env values that look like secrets and asks for confirmation before
+writing them, and never logs env values. A built-in component reference lives at
+[`/design-system`](http://localhost:8080/design-system) (a developer aid, not linked from the app
+navigation).
 
 ### Agent YAML reference
 
@@ -201,12 +224,16 @@ ops:
 
 ## Models and LiteLLM
 
-`litellm/config.yaml` defines the aliases `api` agents can request:
+`litellm/config.yaml` defines the aliases `api` and `pi` agents can request (the management UI
+offers the same list, read from that file):
 
 | Alias | Model |
 |---|---|
-| `cheap` | Claude Haiku 4.5 |
-| `smart` | Claude Sonnet 5 |
+| `cheap` | Claude Haiku 4.5 (`anthropic/claude-haiku-4-5-20251001`) |
+| `smart` | Claude Sonnet 5 (`anthropic/claude-sonnet-5`) |
+| `opus` | Claude Opus 4.8 (`anthropic/claude-opus-4-8`), top tier |
+| `kimi` | Kimi K2.7 Code (`openai/kimi-k2.7-code`), 256k context |
+| `kimi-k3` | Kimi K3 (`openai/kimi-k3`), thinking-only, 1M context |
 
 `LITELLM_MASTER_KEY` is both the proxy's admin key and the bearer token every `api` and `pi` agent
 presents. The pi image registers the proxy as a provider named `litellm` at startup. `claude-code` agents
@@ -242,6 +269,11 @@ images/          agent images: agent-python/ (Dockerfile + runner.py), agent-cla
                  agent-pi/ (Dockerfile + entrypoint.sh), agent-codex/ (Dockerfile)
 orchestrator/    Dagster code: factory.py (YAML -> job), definitions.py (discovery), dagster.yaml,
                  workspace.yaml (code location), Dockerfile (orchestrator image)
+ui/              management UI (FastAPI + Jinja2): main.py (routes), schema.py (the field/harness
+                 model that drives the form, YAML comments, and this README's key table),
+                 agents_store.py / prompts_store.py (read + atomic write), dagster.py (workspace
+                 reload), secret_scan.py (secret heuristic), templates/, static/, tests/,
+                 design-system/ (the Archon component reference served at /design-system)
 litellm/         LiteLLM proxy config (model aliases)
 scripts/         bootstrap.sh — idempotent host setup
 docker-compose.yml

@@ -188,11 +188,11 @@ Single package at `ui/`: modules at `ui/*.py`, pages in `ui/templates/`, browser
 
 ### Tests for User Story 7
 
-- [ ] T047 [P] [US7] Extend `ui/tests/test_api.py`: `GET /design-system/` `Content-Type` is `text/html`; the body contains `./archon-tokens.css` and `./support.js`; `GET /design-system/Archon%20Prototype.dc.html` is 200; rendered `/agents` HTML contains no `href="/design-system`
+- [X] T047 [P] [US7] Extend `ui/tests/test_api.py`: `GET /design-system/` `Content-Type` is `text/html`; the body contains `./archon-tokens.css` and `./support.js`; `GET /design-system/Archon%20Prototype.dc.html` is 200; rendered `/agents` HTML contains no `href="/design-system`
 
 ### Implementation for User Story 7
 
-- [ ] T048 [US7] Verify and finalise the `/design-system` routes in `ui/main.py` from T020 (explicit `media_type="text/html"` on the index response, correct handling of the space-containing filename, `Cache-Control: no-store` off — default caching is fine) and confirm `ui/templates/base.html` links only `/design-system/archon-tokens.css` as a stylesheet, never as navigation
+- [X] T048 [US7] Verify and finalise the `/design-system` routes in `ui/main.py` from T020 (explicit `media_type="text/html"` on the index response, correct handling of the space-containing filename, `Cache-Control: no-store` off — default caching is fine) and confirm `ui/templates/base.html` links only `/design-system/archon-tokens.css` as a stylesheet, never as navigation
 
 **Checkpoint**: All seven stories independently pass their quickstart sections
 
@@ -202,11 +202,11 @@ Single package at `ui/`: modules at `ui/*.py`, pages in `ui/templates/`, browser
 
 **Purpose**: Documentation accuracy (Constitution VI), operational logging, and final validation
 
-- [ ] T049 [P] Update `README.md`: "Adding an agent" describes the UI flow (New agent → form → save with Dagster reload) with the hand-edit path as the alternative; note that UI saves regenerate files with standard comments and preserve unknown keys; "Repository layout" lists `ui/` modules and `ui/design-system/`; the `ui` service section documents the new mounts and `AGENTBOX_UID/GID`; mark `env_file` as common (it already is), refresh the "Models and LiteLLM" alias table to match `litellm/config.yaml` (`cheap`, `smart`, `opus`, `kimi`, `kimi-k3`), and link to `/design-system`
-- [ ] T050 [P] Add structured log lines in `ui/main.py` for every create/update/delete/reload/prompt-create (`event=agent_created stem=… reload_ok=…`) via the standard `logging` module at INFO, never logging env values
-- [ ] T051 [P] Harden filename inputs in `ui/main.py`: reject stems and prompt filenames containing `/`, `\`, `..`, or leading `.` before touching the filesystem (400) for `/api/agents/{name}`, `/api/prompts/{filename}`, and `?from=`; add cases to `ui/tests/test_api.py`
+- [X] T049 [P] Update `README.md`: "Adding an agent" describes the UI flow (New agent → form → save with Dagster reload) with the hand-edit path as the alternative; note that UI saves regenerate files with standard comments and preserve unknown keys; "Repository layout" lists `ui/` modules and `ui/design-system/`; the `ui` service section documents the new mounts and `AGENTBOX_UID/GID`; mark `env_file` as common (it already is), refresh the "Models and LiteLLM" alias table to match `litellm/config.yaml` (`cheap`, `smart`, `opus`, `kimi`, `kimi-k3`), and link to `/design-system`
+- [X] T050 [P] Add structured log lines in `ui/main.py` for every create/update/delete/reload/prompt-create (`event=agent_created stem=… reload_ok=…`) via the standard `logging` module at INFO, never logging env values
+- [X] T051 [P] Harden filename inputs in `ui/main.py`: reject stems and prompt filenames containing `/`, `\`, `..`, or leading `.` before touching the filesystem (400) for `/api/agents/{name}`, `/api/prompts/{filename}`, and `?from=`; add cases to `ui/tests/test_api.py`
 - [ ] T052 Run the full `ui/tests` suite (`cd ui && pytest -q`) and the browser checklist in `specs/001-agent-management-ui/quickstart.md` §3–4 against `docker compose up -d --build ui`; record outcomes in the quickstart checkboxes and fix anything that fails
-- [ ] T053 Remove the legacy table view and `/reload` form route left from the old `ui/main.py` if still present, and delete `ui/design-system/.thumbnail` from the static mount if it is not needed (keep it in git if the design tool relies on it)
+- [X] T053 Remove the legacy table view and `/reload` form route left from the old `ui/main.py` if still present, and delete `ui/design-system/.thumbnail` from the static mount if it is not needed (keep it in git if the design tool relies on it)
 - [X] T054 Map storage failures to a distinct error: catch `PermissionError`/`OSError` in `ui/agents_store.py` and `ui/prompts_store.py`, raise a `StorageError(operation, path)` that `ui/main.py` turns into `507 {"error": "storage", "message": "cannot <op> <dir>/<file>: <os error>"}` per contracts/http-api.md; add cases to `ui/tests/test_api.py` using a read-only `tmp_path` (chmod) and a missing, uncreatable prompts directory. (Belongs logically to Phase 2; numbered here to keep earlier IDs stable — do it before T052.)
 
 ---

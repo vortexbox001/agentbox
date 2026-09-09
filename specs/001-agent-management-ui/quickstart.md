@@ -34,6 +34,16 @@ Open `http://<host>:8080`.
 
 Tick each item; all map to spec scenarios.
 
+> **Automated validation run 2026-09-09** — `cd ui && pytest -q` is green (186 passed). A headless
+> smoke test against `docker compose up -d --build ui` confirmed: `/` → `/agents` (302), `/agents`
+> and `/agents/new` (200), the full `/design-system` route set (redirect, `text/html` index,
+> `support.js` + `archon-tokens.css` + `Archon%20Prototype.dc.html` all 200), no `<a>` in `/agents`
+> links to `/design-system`, `POST /api/dagster/reload` returns `{ok: true}`, and FR-010a hardening
+> holds (`/api/agents/.hidden` → 404, `/api/prompts/.env` → 400, a traversal `?from=` is dropped).
+> The items below that need visual rendering or interaction (styling, unsaved-changes prompt, secret
+> confirmation dialog, harness-switch dynamics, inline cron/secret warnings) still require a manual
+> pass in a real browser and are left unticked.
+
 **Shell & list (US1, FR-012/13/15)**
 - [ ] `/` redirects to `/agents`; sidebar shows the "agentbox" mark and a single "Agents" item; top bar shows the page title
 - [ ] Every non-`_` file in `agents/` appears with name, harness, model, schedule (or "manual"), enabled state; disabled agents are visually muted
@@ -76,8 +86,8 @@ Tick each item; all map to spec scenarios.
 
 **Design system (US7, FR-014)**
 - [ ] `/design-system` redirects to `/design-system/` and renders the component library with the token styling applied (dark background, Playfair headings) — proves `./archon-tokens.css` and `./support.js` resolved; needs internet for React/fonts. No navigation item links to it
-- [ ] Browser devtools Network tab shows `/design-system/support.js` and `/design-system/archon-tokens.css` as 200 (not `/support.js`)
-- [ ] `/design-system/Archon%20Prototype.dc.html` renders the prototype
+- [x] Browser devtools Network tab shows `/design-system/support.js` and `/design-system/archon-tokens.css` as 200 (not `/support.js`)
+- [x] `/design-system/Archon%20Prototype.dc.html` renders the prototype
 
 **Dagster reload edge case**
 - [ ] Stop Dagster (`docker compose stop dagster-webserver`), save an agent: the file is written, the UI reports the reload failure and offers retry; start Dagster and retry succeeds

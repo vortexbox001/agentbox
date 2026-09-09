@@ -28,12 +28,28 @@ def test_design_system_index_is_html(client):
     resp = client.get("/design-system/")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
+    # The document loads its assets by relative path so they resolve under the mount.
     assert "./support.js" in resp.text
+    assert "./archon-tokens.css" in resp.text
 
 
 def test_design_system_assets_served(client):
     for path in ("/design-system/support.js", "/design-system/archon-tokens.css"):
         assert client.get(path).status_code == 200
+
+
+def test_design_system_prototype_served_with_space_in_name(client):
+    # A filename containing a space must resolve through the static mount (US7).
+    resp = client.get("/design-system/Archon%20Prototype.dc.html")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+
+
+def test_agents_page_has_no_design_system_nav_anchor(client):
+    # The design system is a developer reference: the tokens stylesheet loads via
+    # <link>, but no <a> navigates there from the app (US7, R13).
+    html = client.get("/agents").text
+    assert not re.search(r'<a\b[^>]*href="/design-system', html)
 
 
 def test_agents_page_renders_shell(client):
@@ -485,6 +501,48 @@ def test_api_prompt_400_for_traversal(client):
     # A separator or .. must be refused (400), never reaching the filesystem.
     assert client.get("/api/prompts/sub/evil.md").status_code == 400
     assert client.get("/api/prompts/..%2Fx.md").status_code == 400
+
+
+# ── FR-010a: filename hardening at every endpoint (T051) ─
+@pytest.mark.parametrize("bad", [".hidden", "..%2F..%2Fetc%2Fpasswd", "..", "a%5Cb"])
+def test_unsafe_agent_stem_is_404_on_read(client, bad):
+    # An unsafe agent stem behaves as "no such agent" (404), never touching the FS.
+    resp = client.get(f"/api/agents/{bad}")
+    assert resp.status_code == 404, resp.text
+
+
+def test_unsafe_agent_stem_is_404_on_update(client, dagster_stub):
+    resp = client.put("/api/agents/.hidden", json={"agent": {"name": ".hidden"}})
+    assert resp.status_code == 404
+    assert resp.json()["error"] == "not_found"
+
+
+def test_unsafe_agent_stem_is_404_on_delete(client, dagster_stub):
+    resp = client.request("DELETE", "/api/agents/.hidden")
+    assert resp.status_code == 404
+    assert resp.json()["error"] == "not_found"
+
+
+@pytest.mark.parametrize("bad", [".env", ".hidden.md"])
+def test_unsafe_prompt_filename_is_400(client, bad):
+    # A leading-dot prompt filename is a validation error (400), like a separator/.. .
+    resp = client.get(f"/api/prompts/{bad}")
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "validation"
+
+
+def test_new_agent_page_drops_unsafe_from_template(client):
+    # A traversal ?from= is dropped before it can reach GET /api/agents/{from}.
+    resp = client.get("/agents/new?from=../../etc/passwd")
+    assert resp.status_code == 200
+    assert 'data-from="../../etc/passwd"' not in resp.text
+    assert 'data-from=""' in resp.text
+
+
+def test_new_agent_page_keeps_safe_from_template(client):
+    resp = client.get("/agents/new?from=_template-pi")
+    assert resp.status_code == 200
+    assert 'data-from="_template-pi"' in resp.text
 
 
 def test_api_create_prompt_201(client, tmp_prompts):

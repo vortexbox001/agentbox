@@ -7,6 +7,7 @@ user-story phases; the shell and these foundational routes are what they build o
 """
 from __future__ import annotations
 
+import logging
 import os
 from urllib.parse import urlparse
 
@@ -33,6 +34,29 @@ _DESIGN_DOC = "Archon Design System.dc.html"
 
 app = FastAPI(title="Agentbox")
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+
+# Operational logging (T050): one INFO line per mutating action so an operator can
+# trace what the UI wrote. Env values are never logged — only stems and outcomes.
+# Uvicorn configures its own loggers, not the root, so attach a handler here to make
+# sure these lines actually reach stdout/stderr (and the container log).
+logger = logging.getLogger("agentbox.ui")
+if not logger.handlers:
+    _log_handler = logging.StreamHandler()
+    _log_handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s %(message)s"))
+    logger.addHandler(_log_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+
+def _unsafe_name(value: str) -> bool:
+    """True when a user-supplied stem/filename must be refused before any FS access.
+
+    A separator (``/``, ``\\``), ``..``, or a leading dot could escape the mount or
+    address a dotfile, so every route path-checks its stem/filename first (FR-010a).
+    A rejected agent stem is reported as "no such agent" (404); a rejected prompt
+    filename is a validation error (400) — the callers apply the right status.
+    """
+    return (not value) or value[0] == "." or "/" in value or "\\" in value or ".." in value
 
 
 def public_dagster_url(request: Request) -> str:
@@ -125,6 +149,10 @@ async def _agents_new_page(request: Request):
     # The schema-driven create form. ?from=<template-file> pre-fills from a template
     # (the JS reads GET /api/agents/{from}). The page itself is side-effect free.
     from_stem = request.query_params.get("from") or ""
+    # A traversal/dotfile ?from= can never name a template: drop it before it reaches
+    # the client's GET /api/agents/{from} (FR-010a).
+    if from_stem and _unsafe_name(from_stem):
+        from_stem = ""
     return templates.TemplateResponse(
         request,
         "agents/form.html",
@@ -145,6 +173,13 @@ async def _agents_edit_page(request: Request, name: str):
     # and renders the error banner + raw file block for a broken or too-new file.
     # A file written by a newer schema (editable is false) shows no form at all —
     # only the banner, the raw contents, and the Delete action.
+    if _unsafe_name(name):
+        return templates.TemplateResponse(
+            request,
+            "404.html",
+            _shell_context(request, title="Not found", breadcrumb_leaf="Not found", missing=name),
+            status_code=404,
+        )
     try:
         info = agents_store.read_agent(name)
     except FileNotFoundError:
@@ -225,6 +260,15 @@ async def _write_agent(request: Request, stem_from_path: str | None) -> JSONResp
     reload_requested = bool(body.get("reload_dagster", True))
     is_update = stem_from_path is not None
 
+    # Path-check the update stem before any filesystem access (FR-010a): an unsafe
+    # stem behaves as "no such agent". Create's stem comes from the body and is
+    # validated by the schema's name pattern.
+    if is_update and _unsafe_name(stem_from_path):
+        return JSONResponse(
+            {"error": "not_found", "message": f"agents/{stem_from_path}.yaml does not exist"},
+            status_code=404,
+        )
+
     if is_update:
         try:
             existing = agents_store.read_agent(stem_from_path)
@@ -278,6 +322,7 @@ async def _write_agent(request: Request, stem_from_path: str | None) -> JSONResp
             return JSONResponse(
                 {"error": "validation", "fields": {"new_prompt": str(e)}}, status_code=400
             )
+        logger.info("event=prompt_created file=%s", created_prompt)
         agent["prompt_file"] = created_prompt
 
     # Agent write (write #2). On create, refuse to overwrite an existing file. If a
@@ -301,6 +346,13 @@ async def _write_agent(request: Request, stem_from_path: str | None) -> JSONResp
         reload_result = {"requested": True, "ok": outcome["ok"], "message": outcome["message"]}
     else:
         reload_result = {"requested": False, "ok": None, "message": None}
+
+    logger.info(
+        "event=%s stem=%s reload_ok=%s",
+        "agent_updated" if is_update else "agent_created",
+        stem,
+        reload_result["ok"],
+    )
 
     return JSONResponse(
         {
@@ -331,6 +383,12 @@ async def _api_delete_agent(name: str, request: Request):
     # touched (the store's delete_agent removes the single file). reload_dagster
     # (query or JSON body, default true) drives an optional workspace reload whose
     # outcome mirrors create/update's reload shape. 404 when the file is absent.
+    if _unsafe_name(name):
+        return JSONResponse(
+            {"error": "not_found", "message": f"agents/{name}.yaml does not exist"},
+            status_code=404,
+        )
+
     reload_requested = True
     qp = request.query_params.get("reload_dagster")
     if qp is not None:
@@ -357,6 +415,8 @@ async def _api_delete_agent(name: str, request: Request):
     else:
         reload_result = {"requested": False, "ok": None, "message": None}
 
+    logger.info("event=agent_deleted stem=%s reload_ok=%s", name, reload_result["ok"])
+
     return JSONResponse({"deleted": deleted, "reload": reload_result})
 
 
@@ -377,6 +437,11 @@ async def _api_preview_agent(request: Request):
 @app.get("/api/agents/{name}")
 async def _api_read_agent(name: str):
     # Full stored definition for the edit form and ?from= template pre-fill.
+    if _unsafe_name(name):
+        return JSONResponse(
+            {"error": "not_found", "message": f"agents/{name}.yaml does not exist"},
+            status_code=404,
+        )
     try:
         info = agents_store.read_agent(name)
     except FileNotFoundError:
@@ -402,8 +467,13 @@ async def _api_prompts():
 
 @app.get("/api/prompts/{filename:path}")
 async def _api_prompt(filename: str):
-    # The :path capture lets an unsafe value (a separator or ..) reach the handler
-    # so it is refused as 400 here rather than mis-routed to 404.
+    # The :path capture lets an unsafe value (a separator, .., or leading dot) reach
+    # the handler so it is refused as 400 here rather than mis-routed to 404 (FR-010a).
+    if _unsafe_name(filename):
+        return JSONResponse(
+            {"error": "validation", "message": "prompt filename must not contain / \\ or .."},
+            status_code=400,
+        )
     try:
         content = prompts_store.read_prompt(filename)
     except PromptValidationError:
@@ -429,6 +499,7 @@ async def _api_create_prompt(request: Request):
         return JSONResponse({"error": "exists", "message": str(e)}, status_code=409)
     except PromptValidationError as e:
         return JSONResponse({"error": "validation", "message": str(e)}, status_code=400)
+    logger.info("event=prompt_created file=%s", created)
     return JSONResponse({"filename": created}, status_code=201)
 
 
@@ -443,7 +514,9 @@ async def _api_schema():
 @app.post("/api/dagster/reload")
 async def _api_reload():
     # Always 200: the outcome is data, not a transport failure.
-    return JSONResponse(await dagster.reload())
+    outcome = await dagster.reload()
+    logger.info("event=dagster_reloaded ok=%s", outcome.get("ok"))
+    return JSONResponse(outcome)
 
 
 @app.get("/api/dagster/status")
