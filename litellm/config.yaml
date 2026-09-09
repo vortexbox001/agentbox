@@ -11,6 +11,18 @@ model_list:
     litellm_params:
       model: anthropic/claude-opus-4-8
       api_key: os.environ/ANTHROPIC_API_KEY
+  # Moonshot is OpenAI-compatible, so no special provider is needed. Aliases are mirrored in
+  # images/agent-pi/entrypoint.sh (models.json) — keep the two lists in sync.
+  - model_name: kimi         # Kimi K2.7 Code, built for coding agents; 256k context
+    litellm_params:
+      model: openai/kimi-k2.7-code
+      api_base: https://api.moonshot.ai/v1
+      api_key: os.environ/KIMI_API_KEY
+  - model_name: kimi-k3      # Kimi K3 flagship; thinking-only, 1M context
+    litellm_params:
+      model: openai/kimi-k3
+      api_base: https://api.moonshot.ai/v1
+      api_key: os.environ/KIMI_API_KEY
 
 litellm_settings:
   drop_params: true

@@ -1,0 +1,41 @@
+# pi-harness twin of the claude-code repo-librarian agent, for comparing harnesses model by model.
+
+name: repo-librarian-pi-kimi-k3  # pi-harness librarian on Kimi K3 via LiteLLM
+enabled: true                  # true | false — disabled agents are skipped at startup
+harness: pi                     # pi — runs pi via agentbox/agent-pi image
+
+# --- Model ---
+model: kimi-k3                  # LiteLLM alias -> kimi-k3 (thinking-only, 1M context)
+effort: max                     # K3 levels: low | high | max (its default); pi image maps max
+
+# --- Prompt & output ---
+prompt_file: repo-librarian2.md        # file in prompts/ — read at launch and passed to `claude -p`
+output_dir: /data/outputs/repo-librarian-pi/kimi-k3
+append_system_prompt: ""        # extra text appended to the default system prompt (omit if unused)
+
+# --- Workspace ---
+workspace: /data/workspaces/repo-librarian-pi/kimi-k3
+wipe_workspace: true                  # empty the workspace before every run (fresh clone each time)
+                                      # default: /data/workspaces/<name>
+
+# --- Claude Code options ---
+#disallowed_tools: []            # tool denylist — omit if unused
+#mcp_config: ""                  # path to MCP server config JSON inside the container (omit if unused)
+
+# --- Scheduling ---
+schedule: ""                    # manual-only
+
+# --- Container resources ---
+network: agentnet               # agentnet — reaches LiteLLM and the internet
+memory: 1g                      # container memory limit (default: 1g)
+cpus: 1.5                       # CPU limit (default: 1.5)
+
+# --- Execution ---
+timeout_seconds: 1800           # kill container after this many seconds (default: 900)
+                                # claude-code agents typically need longer than api agents
+
+# --- Environment Variables ---
+env:
+  GITHUB_TOKEN: ${GITHUB_TOKEN}
+  GITHUB_USER: leeclemmer
+  GITHUB_REPONAME: agentbox

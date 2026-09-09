@@ -9,7 +9,7 @@ harness: pi                     # pi — runs pi via agentbox/agent-pi image
 
 # --- Model ---
 model: smart                    # LiteLLM alias (cheap | smart | opus), or provider/model as pi understands it
-effort: medium                  # thinking level: off | minimal | low | medium | high | xhigh (omit for default)
+effort: medium                  # thinking level: off | minimal | low | medium | high | xhigh | max (omit for default)
 
 # --- Prompt & output ---
 prompt_file: my-pi-agent.md     # file in prompts/ — read at launch and passed as the prompt
