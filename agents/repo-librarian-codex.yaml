@@ -1,0 +1,33 @@
+# codex-harness librarian, for comparing harnesses and models on the documentation-audit prompt.
+name: repo-librarian-codex      # becomes Dagster job "agent_repo_librarian_codex"
+enabled: true
+harness: codex                  # codex — runs codex exec via agentbox/agent-codex image
+
+# --- Model ---
+model: gpt-6-astra              # codex model id, passed to `codex exec -m`
+effort: high                    # reasoning effort: none | minimal | low | medium | high | xhigh (model_reasoning_effort)
+
+# --- Prompt & output ---
+prompt_file: repo-librarian2.md
+output_dir: /data/outputs/repo-librarian-codex
+
+# --- Workspace ---
+workspace: /data/workspaces/repo-librarian-codex
+wipe_workspace: true            # fresh clone every run
+
+# --- Environment ---
+env:
+  GITHUB_TOKEN: ${GITHUB_TOKEN}
+  GITHUB_USER: leeclemmer
+  GITHUB_REPONAME: agentbox
+
+# --- Scheduling ---
+schedule: ""                    # manual-only
+
+# --- Container resources ---
+network: bridge                 # reaches OpenAI directly
+memory: 1g
+cpus: 1.5
+
+# --- Execution ---
+timeout_seconds: 1800

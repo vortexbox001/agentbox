@@ -1,0 +1,36 @@
+# Template: codex harness
+# Runs OpenAI's Codex CLI (`codex exec`) non-interactively in /workspace with its default tools.
+# Authenticates with a ChatGPT login stored under /data/credentials/codex (see README "Codex
+# credentials"); no LiteLLM. Same workspace/output conventions as the claude-code and pi harnesses.
+
+name: my-codex-agent            # unique kebab-case identifier; becomes Dagster job "agent_my_codex_agent"
+enabled: false                  # true | false — disabled agents are skipped at startup
+harness: codex                  # codex — runs codex exec via agentbox/agent-codex image
+
+# --- Model ---
+model: ""                       # codex model id, e.g. gpt-5.3-codex-spark, gpt-5.6-sol (omit for codex's default)
+effort: medium                  # reasoning effort: none | minimal | low | medium | high | xhigh (passed as model_reasoning_effort)
+
+# --- Prompt & output ---
+prompt_file: my-codex-agent.md  # file in prompts/ — read at launch and passed to `codex exec`
+output_dir: /data/outputs/my-codex-agent  # host path mounted at /output
+append_system_prompt: ""        # extra text appended to the prompt (codex has no system-prompt flag)
+
+# --- Workspace ---
+workspace: /data/workspaces/my-codex-agent  # host path mounted at /workspace (default: /data/workspaces/<name>)
+wipe_workspace: false           # true — empty the workspace before every run (default: false)
+
+# --- Environment ---
+env:
+  # GITHUB_TOKEN: ${GITHUB_TOKEN}   # passthrough from Dagster's environment
+
+# --- Scheduling ---
+schedule: ""                    # cron expression, or "" for manual-only runs
+
+# --- Container resources ---
+network: bridge                 # needs internet to reach OpenAI directly
+memory: 1g
+cpus: 1.5
+
+# --- Execution ---
+timeout_seconds: 1800           # the only cap on a runaway run; codex exec has no max-turns flag

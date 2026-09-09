@@ -11,6 +11,7 @@ agent ("harnesses") are supported:
 | `api` | A ~30-line Python script that sends one prompt and saves the reply | `agentbox/agent-python` | LiteLLM proxy (Haiku / Sonnet via your API key) |
 | `claude-code` | The Claude Code CLI in headless mode, with a workspace and tools | `agentbox/agent-claude` | Anthropic directly (your Claude subscription credentials) |
 | `pi` | [pi](https://github.com/earendil-works/pi), a minimal coding agent with a full tool loop, in print mode | `agentbox/agent-pi` | LiteLLM proxy (API key) |
+| `codex` | OpenAI's [Codex CLI](https://github.com/openai/codex) via `codex exec`, default tools | `agentbox/agent-codex` | OpenAI directly (your ChatGPT login) |
 
 ## Architecture
 
@@ -33,6 +34,7 @@ dagster-daemon ──► job agent_<name> ──► docker run --rm agentbox/age
                                                 │
                     api / pi harness ───────────┴──► litellm:4000 ──► Anthropic API
                     claude-code harness ────────────────────────────► Anthropic (subscription)
+                    codex harness ──────────────────────────────────► OpenAI (ChatGPT login)
 ```
 
 ### Networks
@@ -41,7 +43,7 @@ dagster-daemon ──► job agent_<name> ──► docker run --rm agentbox/age
 |---|---|---|---|
 | `agentnet-isolated` | No (`internal: true`, no gateway) | LiteLLM only | `api` agents — they can reach LiteLLM and nothing else |
 | `agentnet` | Yes | LiteLLM, both Dagster services | `pi` agents. Also the default if an agent omits `network`, so an `api` agent that wants isolation must say `agentnet-isolated` explicitly |
-| `bridge` | Yes | Docker default | `claude-code` agents, which must reach Anthropic directly |
+| `bridge` | Yes | Docker default | `claude-code` and `codex` agents, which reach their vendor directly |
 
 The "Who is on it" column lists the always-on services. Each agent container additionally joins its
 configured network for the duration of its run.
@@ -55,6 +57,7 @@ configured network for the duration of its run.
 | `/data/outputs/<agent>/` | Files the agents write (mounted as `/output`), named `<YYYY-MM-DD_HH-MM>_<descriptive_name>_<session_id>.md` |
 | `/data/workspaces/<agent>/` | Persistent scratch dir for `claude-code` agents (mounted as `/workspace`) |
 | `/data/credentials/claude/` | Optional `.claude.json` (CLI settings) and, only without `CLAUDE_CODE_OAUTH_TOKEN`, a copied `.credentials.json` |
+| `/data/credentials/codex/` | `CODEX_HOME` for the `codex` harness: `auth.json` from a dedicated ChatGPT login, plus codex config and sessions. Mounted read-write |
 
 ## Setup
 
@@ -78,6 +81,7 @@ configured network for the duration of its run.
    docker build -t agentbox/agent-python images/agent-python
    docker build -t agentbox/agent-claude  images/agent-claude
    docker build -t agentbox/agent-pi      images/agent-pi
+   docker build -t agentbox/agent-codex   images/agent-codex
    ```
 
 4. **Provide Claude credentials for the `claude-code` harness.** Run `claude setup-token` on any
@@ -93,7 +97,20 @@ configured network for the duration of its run.
    Either way, `/data/credentials/claude/.claude.json` (copied from `~/.claude/.claude.json`) is
    mounted if present. It carries CLI settings and onboarding state, not secrets.
 
-5. **Start the stack:**
+5. **Provide Codex credentials for the `codex` harness.** Log in *from inside the agent image* into a
+   dedicated directory, so the agents own their login and nothing else ever refreshes its tokens:
+   ```bash
+   mkdir -p /data/credentials/codex
+   docker run -it --rm -v /data/credentials/codex:/creds agentbox/agent-codex login --device-auth
+   ```
+   Open the link it prints on any device, enter the code, and sign in with the ChatGPT account whose
+   plan includes Codex. Verify with `docker run --rm -v /data/credentials/codex:/creds agentbox/agent-codex login status`.
+   Codex refreshes the tokens itself during runs and writes them back to that directory, which is
+   why it is mounted read-write. Do not copy your interactive `~/.codex/auth.json` there instead:
+   the two logins would refresh the same token and invalidate each other, exactly the failure the
+   `claude-code` fallback has. Skip this step if you do not use `codex` agents.
+
+6. **Start the stack:**
    ```bash
    docker compose up -d
    ```
@@ -107,8 +124,8 @@ config edits need at most a restart.
 
 ## Adding an agent
 
-1. Copy a template: `agents/_template-api.yaml`, `agents/_template-claude-code.yaml`, or
-   `agents/_template-pi.yaml`.
+1. Copy a template: `agents/_template-api.yaml`, `agents/_template-claude-code.yaml`,
+   `agents/_template-pi.yaml`, or `agents/_template-codex.yaml`.
    `agents/_template-repo-librarian.yaml` is a specialised starting point for a `claude-code` agent
    that clones and reviews a GitHub repo (see `agents/repo-librarian-agentbox.yaml` for a filled-in
    copy). Files with `enabled: false` (including the templates) are ignored.
@@ -122,13 +139,13 @@ config edits need at most a restart.
 
 ### Agent YAML reference
 
-Keys marked *api*, *claude-code*, or *pi* apply only to that harness. Everything else is common.
+Keys marked *api*, *claude-code*, *pi*, or *codex* apply only to that harness. Everything else is common.
 
 | Key | Default | Meaning |
 |---|---|---|
 | `name` | required | Kebab-case id. Becomes job `agent_<name>` (hyphens become underscores). |
 | `enabled` | `true` | `false` skips the file entirely. |
-| `harness` | required | `api`, `claude-code`, or `pi`. |
+| `harness` | required | `api`, `claude-code`, `pi`, or `codex`. |
 | `schedule` | none | Cron expression. Omit or leave empty for manual-only runs. |
 | `prompt_file` | required | File in `prompts/`. |
 | `output_dir` | required | Host path mounted at `/output`. |
@@ -138,18 +155,18 @@ Keys marked *api*, *claude-code*, or *pi* apply only to that harness. Everything
 | `cpus` | `1.5` | Container CPU limit (`docker run --cpus`). |
 | `env` | none | Map of environment variables. A value of the form `${VAR}` forwards the named variable from the Dagster process (which loads `.env`) without writing the secret into the command line. Any other value is passed literally. |
 | `env_file` | none | Host path to an env file passed via `--env-file`. |
-| `model` | `cheap` (api) / `smart` (pi) / CLI default (claude-code) | *api*: a LiteLLM alias from `litellm/config.yaml`. *pi*: a LiteLLM alias, or `provider/model`. *claude-code*: passed to `claude --model`, e.g. `sonnet`, `opus`, `haiku`, `fable`, or a full model id; a `[1m]` suffix on a full id (e.g. `claude-opus-4-8[1m]`) selects the 1M-token context variant. |
+| `model` | `cheap` (api) / `smart` (pi) / CLI default (claude-code) | *api*: a LiteLLM alias from `litellm/config.yaml`. *pi*: a LiteLLM alias, or `provider/model`. *codex*: a codex model id, passed to `codex exec -m`. *claude-code*: passed to `claude --model`, e.g. `sonnet`, `opus`, `haiku`, `fable`, or a full model id; a `[1m]` suffix on a full id (e.g. `claude-opus-4-8[1m]`) selects the 1M-token context variant. |
 | `max_tokens` | `1024` | *api*: response token cap. |
-| `workspace` | `/data/workspaces/<name>` | *claude-code*, *pi*: host path mounted at `/workspace`. |
-| `wipe_workspace` | `false` | *claude-code*, *pi*: empty the workspace before every run, so each run starts from a clean directory (e.g. a fresh clone). Ignored for `api`, which has no workspace. |
-| `effort` | CLI default | *claude-code*: `low`, `medium`, `high`, `xhigh`, or `max`. *pi*: passed as `--thinking` (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). |
+| `workspace` | `/data/workspaces/<name>` | *claude-code*, *pi*, *codex*: host path mounted at `/workspace`. |
+| `wipe_workspace` | `false` | *claude-code*, *pi*, *codex*: empty the workspace before every run, so each run starts from a clean directory (e.g. a fresh clone). Ignored for `api`, which has no workspace. |
+| `effort` | CLI default | *claude-code*: `low`, `medium`, `high`, `xhigh`, or `max`. *pi*: passed as `--thinking` (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`); `max` is accepted too and mapped to the model's highest level by the image entrypoint. *codex*: passed as `model_reasoning_effort`. |
 | `fallback_model` | none | *claude-code*: model to use if the primary is overloaded. |
 | `permission_mode` | CLI default | *claude-code*: `default`, `acceptEdits`, `auto`, `bypassPermissions`, `dontAsk`, or `plan` (passed to `claude --permission-mode`). |
 | `allowed_tools` | unrestricted | *claude-code*: tool allowlist, e.g. `[Read, Write, Bash]`. *pi*: allowlist of `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`. |
 | `disallowed_tools` | none | *claude-code*: tool denylist. Ignored by *pi* (no such flag). |
 | `max_turns` | `10` | *claude-code*: cap on agentic turns. *pi* has no equivalent; `timeout_seconds` is its only cap. |
 | `mcp_config` | none | *claude-code*: path to an MCP config JSON inside the container. |
-| `append_system_prompt` | none | *claude-code*, *pi*: extra text appended to the system prompt. |
+| `append_system_prompt` | none | *claude-code*, *pi*: extra text appended to the system prompt. *codex*: appended to the prompt message instead, since `codex exec` has no system-prompt flag. |
 
 ### Output files
 
@@ -161,6 +178,7 @@ log and passed into the container as `AGENTBOX_RUN_STAMP` and `AGENTBOX_SESSION_
 is forwarded too, so `date` inside the container agrees with the stamp.
 
 - `api` agents: the runner writes one file, `<timestamp>_response_<session_id>.md`.
+- `codex` agents: the same text is appended to the prompt message rather than the system prompt.
 - `claude-code` and `pi` agents: the same fixed system-prompt addition tells the agent to write to `/output` using this
   exact pattern, to write each file in one go, to keep drafts and scratch files in `/workspace`, and never
   to read or edit existing files in `/output`. Prompts should refer to "the filename convention from your
@@ -202,7 +220,8 @@ Given a Dagster run id:
   cat /data/dagster/storage/<run-id>/compute_logs/*.err
   ```
 - **Full transcript** for `claude-code` runs, one JSON event per line (`system`, `assistant`, `user`,
-  final `result`; for `pi` runs the events are pi's own, ending in `agent_end`):
+  final `result`; for `pi` runs the events are pi's own, ending in `agent_end`; for `codex` runs they are
+  codex's `thread.*`, `turn.*`, and `item.*` events):
   ```bash
   # whole transcript
   cat /data/dagster/agent-logs/<agent>/<YYYY-MM-DD>/<run-id>.jsonl
@@ -218,7 +237,7 @@ Given a Dagster run id:
 agents/          agent definitions (YAML); _template-*.yaml are starting points
 prompts/         prompt files referenced by agents
 images/          agent images: agent-python/ (Dockerfile + runner.py), agent-claude/ (Dockerfile),
-                 agent-pi/ (Dockerfile + entrypoint.sh)
+                 agent-pi/ (Dockerfile + entrypoint.sh), agent-codex/ (Dockerfile)
 orchestrator/    Dagster code: factory.py (YAML -> job), definitions.py (discovery), dagster.yaml,
                  workspace.yaml (code location), Dockerfile (orchestrator image)
 litellm/         LiteLLM proxy config (model aliases)

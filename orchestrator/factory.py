@@ -7,7 +7,7 @@ CONTAINER_REPO = "/opt/agentbox"
 # full per-run transcripts: <root>/<agent>/<YYYY-MM-DD>/<run-id>.jsonl
 AGENT_LOG_ROOT = "/data/dagster/agent-logs"
 # harnesses that mount /workspace; `workspace` and `wipe_workspace` are ignored for the rest
-WORKSPACE_HARNESSES = {"claude-code", "pi"}
+WORKSPACE_HARNESSES = {"claude-code", "pi", "codex"}
 # harnesses whose runner reads /config/prompt.md; the others get the prompt on the command line
 PROMPT_MOUNT_HARNESSES = {"api"}
 
@@ -124,6 +124,29 @@ def make_run_op(cfg: dict):
                 cmd += ["--disallowedTools"] + cfg["disallowed_tools"]
             if cfg.get("allowed_tools"):
                 cmd += ["--allowedTools"] + cfg["allowed_tools"]
+        elif cfg["harness"] == "codex":
+            with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
+                prompt = f.read()
+            # codex has no system-prompt flag; the output convention is appended to the prompt itself
+            message = prompt.rstrip() + "\n\n" + output_convention(stamp, session_id)
+            if cfg.get("append_system_prompt"):
+                message += " " + cfg["append_system_prompt"]
+            cmd += [
+                # CODEX_HOME (auth.json, config.toml, sessions) is a dedicated host dir, mounted read-write so
+                # codex can persist the token refreshes it performs; see README "Codex credentials"
+                "-v", "/data/credentials/codex:/creds",
+                "-v", f"{ws}:/workspace",
+                "-w", "/workspace",
+                "agentbox/agent-codex:latest",
+                "exec", "--json", "--skip-git-repo-check", "-C", "/workspace",
+                # the container is the sandbox; codex's own landlock sandbox is not available inside it
+                "--dangerously-bypass-approvals-and-sandbox",
+            ]
+            if cfg.get("model"):
+                cmd += ["-m", cfg["model"]]
+            if cfg.get("effort"):
+                cmd += ["-c", f'model_reasoning_effort="{cfg["effort"]}"']
+            cmd += [message]
         elif cfg["harness"] == "pi":
             with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
                 prompt = f.read()
@@ -173,6 +196,31 @@ def make_run_op(cfg: dict):
             if isinstance(evt, dict) and evt.get("type") == "result":
                 final = evt
                 break
+        if final is None and cfg["harness"] == "codex":
+            usage = {"input_tokens": 0, "output_tokens": 0}; last_msg = ""; errors = []
+            for line in result.stdout.splitlines():
+                try:
+                    evt = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(evt, dict):
+                    continue
+                t = evt.get("type", "")
+                if t == "turn.completed":
+                    for k in usage:
+                        usage[k] += (evt.get("usage") or {}).get(k, 0)
+                elif t == "item.completed" and (evt.get("item") or {}).get("type") == "agent_message":
+                    last_msg = evt["item"].get("text", "")
+                elif t == "error":
+                    errors.append(evt.get("message") or json.dumps(evt))
+                final = evt
+            if final is not None:
+                context.log.info(
+                    f"result: codex | tokens in/out={usage['input_tokens']}/{usage['output_tokens']}"
+                    f" | is_error={bool(errors)}\n{last_msg[:4000]}"
+                )
+                if errors:
+                    context.log.error("\n".join(errors)[-2000:])
         if final is None and cfg["harness"] == "pi":
             # summarise pi's agent_end event the way the claude-code result event is summarised
             for line in reversed(result.stdout.splitlines()):
