@@ -42,6 +42,16 @@ def _path(stem: str) -> str:
     return os.path.join(_agents_dir(), f"{stem}.yaml")
 
 
+def _safe_stem(stem: str) -> bool:
+    """Reject path traversal and separators in a filename stem (FR-010a).
+
+    The agent stem is the sole component of ``agents/<stem>.yaml``; a stem that
+    carries a separator or ``..`` could escape the mount. Every store entry point
+    checks this so traversal is refused consistently, not only at one endpoint.
+    """
+    return bool(stem) and not ("/" in stem or "\\" in stem or ".." in stem)
+
+
 def _dagster(name: str) -> tuple[str, str]:
     job = "agent_" + str(name).replace("-", "_")
     return job, f"{config.DAGSTER_URL}/jobs/{job}"
@@ -49,7 +59,7 @@ def _dagster(name: str) -> tuple[str, str]:
 
 def agent_exists(stem: str) -> bool:
     """Whether ``agents/<stem>.yaml`` already exists (create uniqueness check)."""
-    return os.path.isfile(_path(stem))
+    return _safe_stem(stem) and os.path.isfile(_path(stem))
 
 
 def read_agent(stem: str) -> dict:
@@ -60,6 +70,9 @@ def read_agent(stem: str) -> dict:
     ``name_mismatch``, ``editable``, ``is_template``, ``schema_version``,
     ``dagster_job``, ``dagster_url``, and ``name`` (best-effort identity).
     """
+    if not _safe_stem(stem):
+        # Traversal or a separator in the stem: no such addressable agent (404).
+        raise FileNotFoundError(stem)
     path = _path(stem)
     is_template = stem.startswith("_")
     result = {
@@ -111,6 +124,12 @@ def read_agent(stem: str) -> dict:
     except SchemaTooNew as e:
         result["parse_error"] = str(e)
         result["editable"] = False
+        result["raw"] = text
+        return result
+    except Exception as e:
+        # A migration function raised on this file: surface it as a parse error and
+        # leave the file untouched (read never writes). It can still be deleted.
+        result["parse_error"] = f"schema migration failed: {e}"
         result["raw"] = text
         return result
 
@@ -279,6 +298,8 @@ def write_agent(stem: str, agent: dict) -> str:
     a temp file in the same directory then ``os.replace``; UTF-8, LF endings, one
     trailing newline.
     """
+    if not _safe_stem(stem):
+        raise ValueError(f"unsafe agent name: {stem!r}")
     agent = dict(agent)
     agent["name"] = stem
     text = emit_yaml(agent)
@@ -301,6 +322,8 @@ def write_agent(stem: str, agent: dict) -> str:
 
 def delete_agent(stem: str) -> str:
     """Delete an agent file. Raises FileNotFoundError if absent. Touches nothing else."""
+    if not _safe_stem(stem):
+        raise FileNotFoundError(stem)
     path = _path(stem)
     try:
         os.remove(path)

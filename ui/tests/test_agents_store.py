@@ -184,3 +184,34 @@ def test_read_only_dir_raises_storage_error(settings, tmp_path, monkeypatch):
         assert ei.value.operation == "write"
     finally:
         os.chmod(ro, 0o700)
+
+
+# ── Path safety on the filename stem (FR-010a, CHK041) ──
+@pytest.mark.parametrize("bad", ["../secret", "..", "a/b", "a\\b", "../../etc/passwd"])
+def test_unsafe_stem_is_never_addressable(settings, bad):
+    # Traversal or a separator is refused the same way at every store entry point.
+    assert st.agent_exists(bad) is False
+    with pytest.raises(FileNotFoundError):
+        st.read_agent(bad)
+    with pytest.raises(FileNotFoundError):
+        st.delete_agent(bad)
+    with pytest.raises(ValueError):
+        st.write_agent(bad, {"name": bad, "harness": "pi", "prompt_file": "p.md",
+                             "output_dir": "/x", "model": "cheap"})
+
+
+# ── A migration that raises surfaces as a parse error (R12, CHK024) ──
+def test_migration_failure_is_parse_error_and_leaves_file(settings, monkeypatch):
+    path = os.path.join(settings.AGENTS_DIR, "needs-migration.yaml")
+    open(path, "w").write("name: needs-migration\nharness: pi\nprompt_file: repo-librarian.md\n")
+    before = open(path).read()
+
+    def boom(data, from_version):
+        raise RuntimeError("bad migration")
+
+    monkeypatch.setattr(schema, "apply_migrations", boom)
+    info = st.read_agent("needs-migration")
+    assert info["agent"] is None
+    assert "schema migration failed" in info["parse_error"]
+    assert info["raw"] is not None
+    assert open(path).read() == before          # read never rewrote the file
