@@ -27,6 +27,11 @@ DAGSTER_URL = os.environ.get("DAGSTER_URL", "http://dagster-webserver:3000")
 # explicitly when Dagster is served behind a different host/proxy than this UI.
 DAGSTER_PUBLIC_URL = os.environ.get("DAGSTER_PUBLIC_URL", "")
 
+# Dagster code-location name, which is part of every job URL:
+# <base>/locations/<location>/jobs/<job>. With no explicit location_name in
+# orchestrator/workspace.yaml, Dagster names the location after the loaded file.
+DAGSTER_LOCATION = os.environ.get("DAGSTER_LOCATION", "definitions.py")
+
 # The design system component library, served as static files at /design-system/.
 # Defaults next to this file so it resolves both in the container and when run locally.
 DESIGN_SYSTEM_DIR = os.environ.get(

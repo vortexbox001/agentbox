@@ -57,7 +57,7 @@
             {% endif %}
           </td>
           <td>
-            <a class="ax-btn ax-btn--ghost" href="{{ dagster_url }}/jobs/{{ a.dagster_job }}" target="_blank" rel="noopener" title="Open this agent's runs in Dagster">
+            <a class="ax-btn ax-btn--ghost" href="{{ dagster_url }}{{ dagster_job_path(a.dagster_job) }}" target="_blank" rel="noopener" title="Open this agent's runs in Dagster">
               <span>runs</span>
               <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#external"></use></svg>
             </a>

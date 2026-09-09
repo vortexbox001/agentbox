@@ -34,6 +34,7 @@ _DESIGN_DOC = "Archon Design System.dc.html"
 
 app = FastAPI(title="Agentbox")
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+templates.env.globals["dagster_job_path"] = agents_store.dagster_job_path
 
 # Operational logging (T050): one INFO line per mutating action so an operator can
 # trace what the UI wrote. Env values are never logged — only stems and outcomes.

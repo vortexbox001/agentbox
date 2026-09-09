@@ -52,9 +52,14 @@ def _safe_stem(stem: str) -> bool:
     return bool(stem) and not ("/" in stem or "\\" in stem or ".." in stem)
 
 
+def dagster_job_path(job: str) -> str:
+    """Path of a job under the Dagster webserver, relative to its base URL."""
+    return f"/locations/{config.DAGSTER_LOCATION}/jobs/{job}"
+
+
 def _dagster(name: str) -> tuple[str, str]:
     job = "agent_" + str(name).replace("-", "_")
-    return job, f"{config.DAGSTER_URL}/jobs/{job}"
+    return job, config.DAGSTER_URL + dagster_job_path(job)
 
 
 def agent_exists(stem: str) -> bool:

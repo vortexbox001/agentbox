@@ -153,7 +153,7 @@ def test_api_agents_lists_non_template_files(client):
     row = next(a for a in data["agents"] if a["name"] == "repo-librarian-agentbox")
     assert row["harness"] == "claude-code"
     assert row["dagster_job"] == "agent_repo_librarian_agentbox"
-    assert row["dagster_url"].endswith("/jobs/agent_repo_librarian_agentbox")
+    assert row["dagster_url"].endswith("/locations/definitions.py/jobs/agent_repo_librarian_agentbox")
     assert row["parse_error"] is None
     assert row["name_mismatch"] is False
 
@@ -213,6 +213,16 @@ def test_agents_page_links_each_agent_and_new(client):
     assert 'href="/agents/new"' in html          # "New agent" link
     # Template files are not rendered as rows.
     assert "_template-pi" not in html
+
+
+def test_agents_page_dagster_links_use_code_location_path(client):
+    html = client.get("/agents").text
+    # Dagster job URLs are <base>/locations/<location>/jobs/<job>; the bare
+    # /jobs/<job> form 404s in the Dagster webserver.
+    assert "/locations/definitions.py/jobs/agent_repo_librarian_agentbox" in html
+    assert "/jobs/agent_repo_librarian_agentbox" not in html.replace(
+        "/locations/definitions.py/jobs/agent_repo_librarian_agentbox", ""
+    )
 
 
 def test_agents_page_empty_state(client, tmp_agents):
@@ -447,6 +457,7 @@ def test_edit_page_renders_edit_form(client, tmp_agents):
     assert 'data-stem="edit-me"' in html
     assert "/static/agent-form.js" in html
     assert "edit-me" in html                       # title + breadcrumb carry the name
+    assert "/locations/definitions.py/jobs/agent_edit_me" in html
 
 
 def test_edit_page_broken_file_shows_banner_and_raw(client, tmp_agents):

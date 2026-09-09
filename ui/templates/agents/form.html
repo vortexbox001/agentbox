@@ -8,7 +8,7 @@
 
 {% block actions %}
   {% if mode == "edit" %}
-  <a class="ax-btn ax-btn--ghost" href="{{ dagster_url }}/jobs/{{ dagster_job }}"
+  <a class="ax-btn ax-btn--ghost" href="{{ dagster_url }}{{ dagster_job_path(dagster_job) }}"
      target="_blank" rel="noopener" id="ax-job-link">
     <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#external"></use></svg>
     <span>Dagster job</span>
