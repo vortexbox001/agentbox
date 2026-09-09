@@ -558,3 +558,75 @@ def test_save_with_prompt_file_removed_from_disk_is_400(client, dagster_stub):
     resp = client.post("/api/agents", json={"agent": _valid_pi(prompt_file="was-deleted.md")})
     assert resp.status_code == 400
     assert "prompt_file" in resp.json()["fields"]
+
+
+# ── US5: model / harness / network validation ───────────
+# Default network per harness (mirrors schema.HARNESSES default_network) so a US5
+# body varies only the field under test.
+_US5_NETWORK = {
+    "claude-code": "bridge",
+    "pi": "agentnet",
+    "api": "agentnet-isolated",
+    "codex": "bridge",
+}
+# A valid model per harness so a model-matrix case changes one thing at a time.
+_US5_MODEL = {"claude-code": "sonnet", "pi": "cheap", "api": "cheap", "codex": ""}
+
+
+def _agent_for(harness, **over):
+    """A minimal, otherwise-valid agent body for a given harness."""
+    agent = {
+        "name": f"us5-{harness}",
+        "enabled": True,
+        "harness": harness,
+        "model": _US5_MODEL[harness],
+        "prompt_file": "repo-librarian.md",
+        "output_dir": f"/data/outputs/us5-{harness}",
+        "network": _US5_NETWORK[harness],
+    }
+    agent.update(over)
+    return agent
+
+
+@pytest.mark.parametrize("harness,model,ok", [
+    ("claude-code", "sonnet", True),               # alias
+    ("claude-code", "claude-opus-4-8[1m]", True),  # full id with 1M suffix
+    ("claude-code", "cheap", False),               # a LiteLLM alias is not a claude model
+    ("pi", "kimi-k3", True),                        # LiteLLM alias
+    ("pi", "openai/gpt-x", True),                   # provider/model passthrough
+    ("pi", "sonnet", False),                        # a claude alias is not valid for pi
+    ("api", "cheap", True),                         # alias only
+    ("api", "claude-sonnet-5", False),              # no custom model form for api
+    ("codex", "gpt-6-astra", True),                 # any codex id
+    ("codex", "", True),                            # blank = codex default
+])
+def test_create_agent_model_matrix(client, dagster_stub, harness, model, ok):
+    body = {"agent": _agent_for(harness, model=model, name=f"us5-mm-{harness}")}
+    resp = client.post("/api/agents", json=body)
+    if ok:
+        assert resp.status_code == 201, resp.text
+    else:
+        assert resp.status_code == 400, resp.text
+        msg = resp.json()["fields"]["model"]
+        assert harness in msg   # the rejection names the harness and the allowed forms
+
+
+def test_create_api_agent_rejects_blank_model(client, dagster_stub):
+    resp = client.post("/api/agents", json={"agent": _agent_for("api", model="", name="us5-api-blank")})
+    assert resp.status_code == 400, resp.text
+    assert "api" in resp.json()["fields"]["model"]
+
+
+def test_create_api_agent_rejects_effort(client, dagster_stub):
+    # effort does not apply to the api harness; a value must be rejected, not ignored.
+    resp = client.post("/api/agents", json={"agent": _agent_for("api", name="us5-api-effort", effort="high")})
+    assert resp.status_code == 400, resp.text
+    assert "api" in resp.json()["fields"]["effort"]
+
+
+def test_create_claude_agent_on_isolated_network_warns_but_saves(client, dagster_stub):
+    body = {"agent": _agent_for("claude-code", name="us5-cc-iso", network="agentnet-isolated")}
+    resp = client.post("/api/agents", json=body)
+    assert resp.status_code == 201, resp.text
+    warnings = resp.json()["warnings"]
+    assert warnings and any("bridge" in w for w in warnings)

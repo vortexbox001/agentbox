@@ -29,6 +29,12 @@ let prompts = [];             // GET /api/prompts rows: {filename, size, modifie
 let creatingPrompt = false;   // "Create new prompt…" is selected in the prompt field
 const newPrompt = { filename: "", content: "" };   // the inline prompt being authored
 let rebuildPromptOptions = null;  // repopulate the current prompt select after a refresh
+let userChangedNetwork = false;   // the user touched the network control on this page
+const modelMemory = {};           // harness id -> the model chosen while on that harness
+const effortMemory = {};          // harness id -> the effort chosen while on that harness
+
+// Full claude model id, optional [1m] context suffix (mirrors schema._CLAUDE_ID_RE).
+const CLAUDE_ID_RE = /^claude-[a-z0-9.-]+(\[1m\])?$/;
 
 // Tool-name suggestions for the list editors (help text names the same sets).
 const LIST_SUGGESTIONS = {
@@ -170,12 +176,48 @@ function makeField(f) {
   help.textContent = f.help;
   wrap.appendChild(help);
 
+  if (f.id === "model") {
+    const note = document.createElement("span");
+    note.className = "ax-help ax-model-note";
+    note.textContent = modelNote(currentHarness);
+    wrap.appendChild(note);
+  }
+
   const err = document.createElement("span");
   err.className = "ax-field-error";
   err.hidden = true;
   wrap.appendChild(err);
 
   return wrap;
+}
+
+// ── Network mismatch warning (FR-024; non-blocking) ─────
+// Mirrors schema.network_mismatch_warning so the operator sees it before saving;
+// the server returns the authoritative warning in the save response too.
+function networkMismatchMessage(harness, network) {
+  if (!harness || !network) return null;
+  if ((harness === "claude-code" || harness === "codex") && network !== "bridge") {
+    return `${harness} needs network: bridge to reach its provider; ${network} has no internet access`;
+  }
+  if (harness === "api" && network === "bridge") {
+    return "api only needs LiteLLM; bridge grants unnecessary internet access";
+  }
+  return null;
+}
+
+function updateNetworkWarning() {
+  const wrap = sectionsMount.querySelector('[data-field="network"]');
+  if (!wrap) return;
+  let warn = wrap.querySelector(".ax-network-warn");
+  const msg = networkMismatchMessage(currentHarness, getValue("network"));
+  if (!msg) { if (warn) warn.hidden = true; return; }
+  if (!warn) {
+    warn = document.createElement("span");
+    warn.className = "ax-secret-warn ax-network-warn";
+    wrap.appendChild(warn);
+  }
+  warn.textContent = msg;
+  warn.hidden = false;
 }
 
 function renderHarnessSelect(id) {
@@ -221,6 +263,7 @@ function renderEnumSelect(id, f, choices, allowBlank) {
   sel.addEventListener("change", () => {
     const v = sel.value;
     setControlValue(f.id, f.type === "bool" ? v === "true" : v === "" ? null : v);
+    if (f.id === "network") { userChangedNetwork = true; updateNetworkWarning(); }
   });
   return sel;
 }
@@ -358,35 +401,130 @@ async function refreshPrompts(selectFilename) {
   if (rebuildPromptOptions) rebuildPromptOptions();
 }
 
+// The model control varies by harness (research R4):
+//   claude-code → alias select + "Custom model id…" revealing a claude-…[1m]? text input
+//   pi          → LiteLLM alias select + "provider/model…" revealing a text input
+//   api         → strict alias select, no custom entry
+//   codex       → free text with a <datalist> of suggestions
 function renderModel(id, f) {
   const h = harnessById(currentHarness);
   const rule = h.model_rule || {};
-  const choices = (rule.choices || []).concat(h.model_suggestions || []);
-  if (rule.custom === "none") {
-    return renderEnumSelect(id, f, rule.choices || [], !!rule.blank_ok);
-  }
+  const custom = rule.custom || "none";
+  if (custom === "any") return renderModelText(id, f, h.model_suggestions || []);
+  if (custom === "none") return renderEnumSelect(id, f, rule.choices || [], !!rule.blank_ok);
+  return renderModelSelectWithCustom(id, f, rule);
+}
+
+// Free-text model id with optional suggestions (codex).
+function renderModelText(id, f, suggestions) {
   const box = document.createElement("div");
   const input = document.createElement("input");
   input.type = "text";
   input.className = "ax-input";
   input.id = id;
   input.value = getValue(f.id) || "";
-  input.placeholder = rule.custom === "provider-model" ? "alias, or provider/model" : "alias or full id";
-  if (choices.length) {
+  input.placeholder = "model id (blank = harness default)";
+  if (suggestions.length) {
     const listId = `${id}-list`;
     const dl = document.createElement("datalist");
     dl.id = listId;
-    for (const c of choices) {
-      const o = document.createElement("option");
-      o.value = String(c);
-      dl.appendChild(o);
-    }
+    for (const c of suggestions) { const o = document.createElement("option"); o.value = String(c); dl.appendChild(o); }
     input.setAttribute("list", listId);
     box.appendChild(dl);
   }
   input.addEventListener("input", () => setControlValue(f.id, input.value));
   box.appendChild(input);
   return box;
+}
+
+// Alias select with a trailing custom option that reveals a validated text input.
+function renderModelSelectWithCustom(id, f, rule) {
+  const CUSTOM = "__ax_custom_model__";
+  const choices = rule.choices || [];
+  const providerModel = rule.custom === "provider-model";
+  const box = document.createElement("div");
+
+  const sel = document.createElement("select");
+  sel.className = "ax-select";
+  sel.id = id;
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "ax-input ax-model-custom";
+  input.hidden = true;
+  input.placeholder = providerModel ? "provider/model" : "claude-… (append [1m] for 1M context)";
+
+  if (rule.blank_ok) {
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "— (harness default)";
+    sel.appendChild(blank);
+  }
+  for (const c of choices) {
+    const o = document.createElement("option");
+    o.value = String(c);
+    o.textContent = String(c);
+    sel.appendChild(o);
+  }
+  const customOpt = document.createElement("option");
+  customOpt.value = CUSTOM;
+  customOpt.textContent = providerModel ? "provider/model…" : "Custom model id…";
+  sel.appendChild(customOpt);
+
+  const cur = getValue(f.id);
+  const isCustom = cur != null && cur !== "" && !choices.includes(String(cur));
+  if (isCustom) { sel.value = CUSTOM; input.value = String(cur); input.hidden = false; }
+  else { sel.value = cur == null ? "" : String(cur); input.hidden = true; }
+
+  const validateCustom = () => {
+    if (input.hidden) { setFieldError(f.id, null); return; }
+    const v = input.value.trim();
+    if (!v) { setFieldError(f.id, null); return; }
+    if (!providerModel && !CLAUDE_ID_RE.test(v)) {
+      setFieldError(f.id, "must be a claude-… id, optionally with [1m]");
+    } else if (providerModel && !v.includes("/")) {
+      setFieldError(f.id, "a custom model must be provider/model");
+    } else {
+      setFieldError(f.id, null);
+    }
+  };
+
+  sel.addEventListener("change", () => {
+    if (sel.value === CUSTOM) {
+      input.hidden = false;
+      setControlValue(f.id, input.value.trim() || null);
+      input.focus();
+      validateCustom();
+    } else {
+      input.hidden = true;
+      setControlValue(f.id, sel.value === "" ? null : sel.value);
+      setFieldError(f.id, null);
+    }
+  });
+  input.addEventListener("input", () => {
+    setControlValue(f.id, input.value.trim() || null);
+    validateCustom();
+  });
+
+  box.append(sel, input);
+  return box;
+}
+
+// A one-line note under the model control explaining which forms the harness
+// accepts, so the absent forms read as intentional rather than missing.
+function modelNote(harness) {
+  switch (harness) {
+    case "claude-code":
+      return "Pick an alias, or “Custom model id…” for a full claude-… id (append [1m] for 1M context). Blank uses the CLI default.";
+    case "pi":
+      return "Pick a LiteLLM alias, or “provider/model…” to target a model directly. Claude aliases and full ids do not apply to pi.";
+    case "api":
+      return "Only LiteLLM aliases are accepted; the API runner has no custom model id or provider/model form.";
+    case "codex":
+      return "Any Codex model id; the list offers suggestions. LiteLLM aliases and claude-… ids do not apply to codex.";
+    default:
+      return "";
+  }
 }
 
 function renderNumber(id, f) {
@@ -597,9 +735,44 @@ function renderForm(harness) {
     sectionsMount.appendChild(card);
   }
   updateHarnessMeta();
+  updateNetworkWarning();
 }
 
+// Whether a model string is acceptable for a harness (mirrors schema._validate_model,
+// used only to decide whether to keep a value across a harness switch).
+function modelValidFor(harness, model) {
+  if (model == null || model === "") return true;   // blank is handled by the rule
+  const rule = harnessById(harness).model_rule || {};
+  if ((rule.choices || []).includes(String(model))) return true;
+  if (rule.custom === "any") return true;
+  if (rule.custom === "claude-id") return CLAUDE_ID_RE.test(String(model));
+  if (rule.custom === "provider-model") return String(model).includes("/");
+  return false;   // custom === "none": only listed aliases are valid
+}
+
+function effortValidFor(harness, effort) {
+  if (effort == null || effort === "") return true;
+  return (harnessById(harness).effort_choices || []).includes(String(effort));
+}
+
+// FR-007a: switching harness keeps a per-page memory of the model/effort chosen on
+// each harness (fields hidden by the switch are already retained in `values`), resets
+// model/effort that are invalid for the new harness, and moves network to the new
+// harness default unless the user set it explicitly on this page.
 function switchHarness(harness) {
+  const prev = currentHarness;
+  if (prev && prev !== harness) {
+    modelMemory[prev] = getValue("model");
+    effortMemory[prev] = getValue("effort");
+
+    if (harness in modelMemory) values.model = modelMemory[harness];
+    else if (!modelValidFor(harness, getValue("model"))) delete values.model;
+
+    if (harness in effortMemory) values.effort = effortMemory[harness];
+    else if (!effortValidFor(harness, getValue("effort"))) delete values.effort;
+
+    if (!userChangedNetwork) values.network = harnessById(harness).default_network;
+  }
   renderForm(harness);
 }
 

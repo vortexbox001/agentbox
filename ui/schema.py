@@ -357,14 +357,20 @@ def _validate_model(agent: dict, harness: str, errors: dict) -> None:
     custom = rule.get("custom")
     if custom == "claude-id":
         if not _CLAUDE_ID_RE.match(model):
-            errors["model"] = "must be an alias (sonnet, opus, haiku, fable) or a claude-... id, optionally with [1m]"
+            errors["model"] = (
+                f"invalid model for the {harness} harness: use an alias "
+                "(sonnet, opus, haiku, fable) or a claude-... id, optionally with [1m]"
+            )
     elif custom == "provider-model":
         if "/" not in model:
-            errors["model"] = f"must be a LiteLLM alias ({', '.join(choices)}) or a provider/model string"
+            errors["model"] = (
+                f"invalid model for the {harness} harness: use a LiteLLM alias "
+                f"({', '.join(choices)}) or a provider/model string"
+            )
     elif custom == "any":
         pass  # any non-empty string is accepted (codex)
     elif custom == "none":
-        errors["model"] = f"must be one of: {', '.join(choices)}"
+        errors["model"] = f"invalid model for the {harness} harness: must be one of {', '.join(choices)}"
 
 
 def _validate_schedule(value, errors: dict) -> None:
@@ -451,6 +457,16 @@ def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, 
                 bad = [k for k in val if not _ENV_KEY_RE.match(str(k))]
                 if bad:
                     errors[fid] = f"invalid variable name(s): {', '.join(bad)} (use A-Z, 0-9, underscore; must not start with a digit)"
+
+    # A field that does not apply to the chosen harness must not carry a value
+    # (FR-007): e.g. effort on the api harness. Reject it, naming the harness, so
+    # a stale value from a harness switch can never be saved silently.
+    if harness:
+        for f in FIELDS:
+            if f.id in applicable or f.id in errors:
+                continue
+            if f.id in agent and not _is_unset(f, agent.get(f.id)):
+                errors[f.id] = f"{f.label} does not apply to the {harness} harness"
 
     if harness:
         _validate_model(agent, harness, errors)
