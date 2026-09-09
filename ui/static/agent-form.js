@@ -25,6 +25,10 @@ let mode = "create";          // "create" | "edit"
 let stem = "";                // edit target (filename stem); "" in create mode
 let unmanaged = null;         // keys the UI does not manage, carried through on edit
 let nameMismatch = false;     // stored name key differs from the filename
+let prompts = [];             // GET /api/prompts rows: {filename, size, modified}
+let creatingPrompt = false;   // "Create new prompt…" is selected in the prompt field
+const newPrompt = { filename: "", content: "" };   // the inline prompt being authored
+let rebuildPromptOptions = null;  // repopulate the current prompt select after a refresh
 
 // Tool-name suggestions for the list editors (help text names the same sets).
 const LIST_SUGGESTIONS = {
@@ -134,7 +138,7 @@ function makeField(f) {
   } else if (f.id === "effort") {
     control = renderEnumSelect(controlId, f, harnessById(currentHarness).effort_choices, true);
   } else if (f.choice_source === "prompts") {
-    control = renderEnumSelect(controlId, f, SCHEMA.prompts || [], !f.required);
+    control = renderPromptField(controlId, f);
   } else if (f.type === "enum") {
     control = renderEnumSelect(controlId, f, f.choices || [], !f.required);
   } else if (f.type === "bool") {
@@ -219,6 +223,139 @@ function renderEnumSelect(id, f, choices, allowBlank) {
     setControlValue(f.id, f.type === "bool" ? v === "true" : v === "" ? null : v);
   });
   return sel;
+}
+
+// ── Prompt selector (US4) ───────────────────────────────
+const NEW_PROMPT_SENTINEL = "__ax_new_prompt__";
+
+function promptRows() {
+  // Prefer the rich GET /api/prompts rows; fall back to the schema's filename list
+  // (no size/modified) if that fetch has not landed or failed.
+  if (prompts && prompts.length) return prompts;
+  return (SCHEMA.prompts || []).map((fn) => ({ filename: fn, size: null, modified: null }));
+}
+
+function formatBytes(n) {
+  if (n == null) return null;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function promptOptionLabel(p) {
+  const bits = [];
+  const size = formatBytes(p.size);
+  if (size) bits.push(size);
+  if (p.modified) bits.push(String(p.modified).slice(0, 10));
+  return bits.length ? `${p.filename} — ${bits.join(" · ")}` : p.filename;
+}
+
+function normalisePromptName(fn) {
+  const t = String(fn || "").trim();
+  if (!t) return "";
+  return t.endsWith(".md") ? t : `${t}.md`;
+}
+
+// A select over every prompt file (filename plus size/modified) with a trailing
+// "Create new prompt…" option that reveals filename + content inputs. The chosen
+// value flows into agent.prompt_file; an authored prompt rides along as new_prompt.
+function renderPromptField(id, f) {
+  const box = document.createElement("div");
+  box.className = "ax-prompt-field";
+
+  const sel = document.createElement("select");
+  sel.className = "ax-select";
+  sel.id = id;
+
+  const panel = document.createElement("div");
+  panel.className = "ax-new-prompt";
+  panel.hidden = true;
+
+  const fnLabel = document.createElement("label");
+  fnLabel.className = "ax-new-prompt-label";
+  fnLabel.textContent = "New prompt filename";
+  const fnInput = document.createElement("input");
+  fnInput.type = "text";
+  fnInput.className = "ax-input";
+  fnInput.placeholder = "my-agent.md";
+  fnInput.value = newPrompt.filename || "";
+
+  const bodyLabel = document.createElement("label");
+  bodyLabel.className = "ax-new-prompt-label";
+  bodyLabel.textContent = "Prompt content";
+  const bodyArea = document.createElement("textarea");
+  bodyArea.className = "ax-textarea";
+  bodyArea.rows = 8;
+  bodyArea.placeholder = "What the agent should do…";
+  bodyArea.value = newPrompt.content || "";
+
+  panel.append(fnLabel, fnInput, bodyLabel, bodyArea);
+
+  const populate = () => {
+    sel.replaceChildren();
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "Select a prompt…";
+    sel.appendChild(blank);
+    for (const p of promptRows()) {
+      const opt = document.createElement("option");
+      opt.value = p.filename;
+      opt.textContent = promptOptionLabel(p);
+      sel.appendChild(opt);
+    }
+    const newOpt = document.createElement("option");
+    newOpt.value = NEW_PROMPT_SENTINEL;
+    newOpt.textContent = "Create new prompt…";
+    sel.appendChild(newOpt);
+
+    if (creatingPrompt) {
+      sel.value = NEW_PROMPT_SENTINEL;
+      panel.hidden = false;
+    } else {
+      const cur = getValue(f.id);
+      sel.value = cur == null ? "" : String(cur);
+      panel.hidden = true;
+    }
+  };
+  rebuildPromptOptions = populate;   // one prompt field at a time; refresh rebuilds it
+  populate();
+
+  sel.addEventListener("change", () => {
+    if (sel.value === NEW_PROMPT_SENTINEL) {
+      creatingPrompt = true;
+      panel.hidden = false;
+      setControlValue(f.id, normalisePromptName(fnInput.value) || null);
+    } else {
+      creatingPrompt = false;
+      panel.hidden = true;
+      setControlValue(f.id, sel.value === "" ? null : sel.value);
+    }
+  });
+
+  fnInput.addEventListener("input", () => {
+    newPrompt.filename = fnInput.value;
+    if (creatingPrompt) setControlValue(f.id, normalisePromptName(fnInput.value) || null);
+  });
+  bodyArea.addEventListener("input", () => { newPrompt.content = bodyArea.value; });
+
+  box.append(sel, panel);
+  return box;
+}
+
+// Re-read GET /api/prompts and rebuild the selector in place (no page reload). When
+// a filename is given, adopt it as the selection and leave create-new mode.
+async function refreshPrompts(selectFilename) {
+  try {
+    const data = await (await fetch("/api/prompts")).json();
+    if (Array.isArray(data.prompts)) prompts = data.prompts;
+  } catch (e) { /* keep the prompts already listed */ }
+  if (selectFilename) {
+    creatingPrompt = false;
+    newPrompt.filename = "";
+    newPrompt.content = "";
+    setControlValue("prompt_file", selectFilename);
+  }
+  if (rebuildPromptOptions) rebuildPromptOptions();
 }
 
 function renderModel(id, f) {
@@ -612,6 +749,10 @@ async function doPreview() {
 async function submitPayload() {
   const payload = { agent: collect(), reload_dagster: !!reloadCheckbox.checked };
   if (confirmNotSecret.length) payload.confirm_not_secret = confirmNotSecret.slice();
+  // An inline-authored prompt rides along; the server writes it before the agent.
+  if (creatingPrompt) {
+    payload.new_prompt = { filename: newPrompt.filename.trim(), content: newPrompt.content };
+  }
   const url = mode === "edit" ? `/api/agents/${encodeURIComponent(stem)}` : "/api/agents";
   const method = mode === "edit" ? "PUT" : "POST";
   const okStatus = mode === "edit" ? 200 : 201;
@@ -627,14 +768,37 @@ async function submitPayload() {
 
   if (resp.status === 404) { toast("This agent no longer exists.", { tone: "error" }); return; }
   if (resp.status === okStatus) { onSaved(data); return; }
-  if (resp.status === 400) { applyFieldErrors(data.fields); toast("Some fields need fixing", { tone: "error" }); return; }
-  if (resp.status === 409 && data.error === "exists") { setFieldError("name", data.message || "an agent with this name already exists"); toast(data.message || "Name already exists", { tone: "error" }); return; }
+  if (resp.status === 400) {
+    const fields = { ...(data.fields || {}) };
+    // A new_prompt validation error belongs to the prompt field the user is editing.
+    if (fields.new_prompt) { setFieldError("prompt_file", fields.new_prompt); delete fields.new_prompt; }
+    applyFieldErrors(fields);
+    // A stale prompt_file (deleted on disk) → refresh the list so it can be re-picked.
+    if (fields.prompt_file) refreshPrompts();
+    toast("Some fields need fixing", { tone: "error" });
+    return;
+  }
+  if (resp.status === 409 && data.error === "exists") {
+    // The agent name collided. If a new prompt was written first, adopt it and
+    // refresh the selector so the just-created file is not silently orphaned.
+    if (creatingPrompt && newPrompt.filename.trim()) {
+      await refreshPrompts(normalisePromptName(newPrompt.filename));
+    }
+    setFieldError("name", data.message || "an agent with this name already exists");
+    toast(data.message || "Name already exists", { tone: "error" });
+    return;
+  }
   if (resp.status === 409 && data.error === "secret_confirmation_required") {
     const confirmed = await secretModal(data.flagged || []);
     if (confirmed) { confirmNotSecret = Array.from(new Set(confirmNotSecret.concat(data.flagged || []))); await submitPayload(); }
     return;
   }
-  if (resp.status === 409 && data.error === "prompt_exists") { toast(data.message || "That prompt already exists", { tone: "error" }); return; }
+  if (resp.status === 409 && data.error === "prompt_exists") {
+    setFieldError("prompt_file", data.message || "that prompt already exists");
+    await refreshPrompts();
+    toast(data.message || "That prompt already exists", { tone: "error" });
+    return;
+  }
   if (resp.status === 507) { toast(data.message || "Storage error", { tone: "error" }); return; }
   toast(data.message || `Save failed (${resp.status})`, { tone: "error" });
 }
@@ -757,6 +921,13 @@ async function boot() {
     sectionsMount.appendChild(card);
     return;
   }
+
+  // The rich prompt list (filename + size + modified) backs the selector; the
+  // schema's filename-only list is the fallback if this fetch fails.
+  try {
+    const pdata = await (await fetch("/api/prompts")).json();
+    if (Array.isArray(pdata.prompts)) prompts = pdata.prompts;
+  } catch (e) { /* fall back to SCHEMA.prompts */ }
 
   const defaultHarness = SCHEMA.harnesses[0].id;
   renderForm(defaultHarness);

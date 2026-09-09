@@ -257,14 +257,9 @@ async def _write_agent(request: Request, stem_from_path: str | None) -> JSONResp
     if errors:
         return JSONResponse({"error": "validation", "fields": errors}, status_code=400)
 
-    stem = str(agent.get("name"))
-    if not is_update and agents_store.agent_exists(stem):
-        return JSONResponse(
-            {"error": "exists", "message": f"agents/{stem}.yaml already exists"},
-            status_code=409,
-        )
-
-    # Secret confirmation (409). ${NAME} passthrough is never flagged.
+    # Secret confirmation (409). ${NAME} passthrough is never flagged. Checked
+    # before any file is written so a confirm-and-retry never leaves an orphaned
+    # prompt behind.
     flagged = [k for k in secret_scan.flagged_keys(agent.get("env") or {}) if k not in confirmed]
     if flagged:
         return JSONResponse(
@@ -272,17 +267,29 @@ async def _write_agent(request: Request, stem_from_path: str | None) -> JSONResp
             status_code=409,
         )
 
-    # Create the inline prompt first, then point the agent at it.
+    # Create the inline prompt first (write #1), then point the agent at it.
+    created_prompt: str | None = None
     if new_prompt:
         try:
-            created = prompts_store.create_prompt(new_prompt.get("filename"), new_prompt.get("content"))
+            created_prompt = prompts_store.create_prompt(new_prompt.get("filename"), new_prompt.get("content"))
         except FileExistsError as e:
             return JSONResponse({"error": "prompt_exists", "message": str(e)}, status_code=409)
         except PromptValidationError as e:
             return JSONResponse(
                 {"error": "validation", "fields": {"new_prompt": str(e)}}, status_code=400
             )
-        agent["prompt_file"] = created
+        agent["prompt_file"] = created_prompt
+
+    # Agent write (write #2). On create, refuse to overwrite an existing file. If a
+    # prompt was just created, the file already landed: say so in the message so the
+    # user knows about the partial two-write (CHK045), and the form can refresh its
+    # selector rather than silently orphaning the prompt.
+    stem = str(agent.get("name"))
+    if not is_update and agents_store.agent_exists(stem):
+        message = f"agents/{stem}.yaml already exists"
+        if created_prompt:
+            message += f"; the prompt `{created_prompt}` was created"
+        return JSONResponse({"error": "exists", "message": message}, status_code=409)
 
     agents_store.write_agent(stem, agent)
 
@@ -350,6 +357,44 @@ async def _api_read_agent(name: str):
         "name_mismatch": info["name_mismatch"],
         "editable": info["editable"],
     })
+
+
+@app.get("/api/prompts")
+async def _api_prompts():
+    # Every prompt file with size + modified; the selector's source (SC-005).
+    return JSONResponse({"prompts": prompts_store.list_prompts()})
+
+
+@app.get("/api/prompts/{filename:path}")
+async def _api_prompt(filename: str):
+    # The :path capture lets an unsafe value (a separator or ..) reach the handler
+    # so it is refused as 400 here rather than mis-routed to 404.
+    try:
+        content = prompts_store.read_prompt(filename)
+    except PromptValidationError:
+        return JSONResponse(
+            {"error": "validation", "message": "prompt filename must not contain / \\ or .."},
+            status_code=400,
+        )
+    except FileNotFoundError:
+        return JSONResponse(
+            {"error": "not_found", "message": f"prompts/{filename} does not exist"},
+            status_code=404,
+        )
+    return JSONResponse({"filename": filename, "content": content})
+
+
+@app.post("/api/prompts")
+async def _api_create_prompt(request: Request):
+    # Standalone prompt creation (the form also creates prompts inline on save).
+    body = await request.json()
+    try:
+        created = prompts_store.create_prompt(body.get("filename"), body.get("content"))
+    except FileExistsError as e:
+        return JSONResponse({"error": "exists", "message": str(e)}, status_code=409)
+    except PromptValidationError as e:
+        return JSONResponse({"error": "validation", "message": str(e)}, status_code=400)
+    return JSONResponse({"filename": created}, status_code=201)
 
 
 @app.get("/api/schema")

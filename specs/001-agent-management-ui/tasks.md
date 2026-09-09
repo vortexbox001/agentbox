@@ -130,12 +130,12 @@ Single package at `ui/`: modules at `ui/*.py`, pages in `ui/templates/`, browser
 
 ### Tests for User Story 4
 
-- [ ] T037 [P] [US4] Add to `ui/tests/test_api.py`: `GET /api/prompts` lists files with size/modified; `GET /api/prompts/{filename}` returns content, 404 when missing, 400 for `../x.md`; `POST /api/prompts` → 201, 409 on collision, 400 on bad name/empty content, creates the directory when missing; `POST /api/agents` with `new_prompt` writes the prompt first and sets `prompt_file`; when the agent write then fails (e.g., duplicate stem) the prompt remains and the 409 message says the prompt was created; saving with a `prompt_file` removed from disk → 400 `fields.prompt_file`
+- [X] T037 [P] [US4] Add to `ui/tests/test_api.py`: `GET /api/prompts` lists files with size/modified; `GET /api/prompts/{filename}` returns content, 404 when missing, 400 for `../x.md`; `POST /api/prompts` → 201, 409 on collision, 400 on bad name/empty content, creates the directory when missing; `POST /api/agents` with `new_prompt` writes the prompt first and sets `prompt_file`; when the agent write then fails (e.g., duplicate stem) the prompt remains and the 409 message says the prompt was created; saving with a `prompt_file` removed from disk → 400 `fields.prompt_file`
 
 ### Implementation for User Story 4
 
-- [ ] T038 [US4] Implement `GET /api/prompts`, `GET /api/prompts/{filename}`, `POST /api/prompts` in `ui/main.py` backed by `ui/prompts_store.py`; make the create/update handlers append "the prompt `<file>` was created" to their error message when a `new_prompt` succeeded but the agent write failed
-- [ ] T039 [US4] Extend `ui/static/agent-form.js`: render `prompt_file` as a select populated from `GET /api/prompts` (with size/modified as secondary text) plus a "Create new prompt…" option that reveals filename + content inputs; include `new_prompt` in the save payload; after a successful save re-fetch `/api/prompts` so the selector updates without a page reload; map a `prompt_file` 400 to the field and refresh the selector
+- [X] T038 [US4] Implement `GET /api/prompts`, `GET /api/prompts/{filename}`, `POST /api/prompts` in `ui/main.py` backed by `ui/prompts_store.py`; make the create/update handlers append "the prompt `<file>` was created" to their error message when a `new_prompt` succeeded but the agent write failed
+- [X] T039 [US4] Extend `ui/static/agent-form.js`: render `prompt_file` as a select populated from `GET /api/prompts` (with size/modified as secondary text) plus a "Create new prompt…" option that reveals filename + content inputs; include `new_prompt` in the save payload; after a successful save re-fetch `/api/prompts` so the selector updates without a page reload; map a `prompt_file` 400 to the field and refresh the selector
 
 **Checkpoint**: Prompts can be chosen or authored inline; quickstart "Prompts" items pass
 

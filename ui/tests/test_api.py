@@ -453,3 +453,108 @@ def test_edit_page_newer_schema_is_readonly_with_delete(client, tmp_agents):
 def test_edit_page_404_for_unknown_stem(client):
     resp = client.get("/agents/nope-not-here")
     assert resp.status_code == 404
+
+
+# ── User Story 4: Select or Create Prompts (T037) ───────
+def test_api_prompts_lists_files_with_size_and_modified(client):
+    data = client.get("/api/prompts").json()
+    assert set(data) == {"prompts"}
+    names = [p["filename"] for p in data["prompts"]]
+    assert "repo-librarian.md" in names
+    assert names == sorted(names)               # deterministic ordering
+    for p in data["prompts"]:
+        assert set(p) == {"filename", "size", "modified"}
+        assert isinstance(p["size"], int) and p["size"] > 0
+        assert p["modified"].endswith("Z")
+
+
+def test_api_prompt_content_returned(client):
+    data = client.get("/api/prompts/repo-librarian.md").json()
+    assert data["filename"] == "repo-librarian.md"
+    assert isinstance(data["content"], str) and data["content"]
+
+
+def test_api_prompt_404_when_missing(client):
+    resp = client.get("/api/prompts/does-not-exist.md")
+    assert resp.status_code == 404
+
+
+def test_api_prompt_400_for_traversal(client):
+    # A separator or .. must be refused (400), never reaching the filesystem.
+    assert client.get("/api/prompts/sub/evil.md").status_code == 400
+    assert client.get("/api/prompts/..%2Fx.md").status_code == 400
+
+
+def test_api_create_prompt_201(client, tmp_prompts):
+    resp = client.post("/api/prompts", json={"filename": "fresh.md", "content": "Hello."})
+    assert resp.status_code == 201, resp.text
+    assert resp.json() == {"filename": "fresh.md"}
+    assert (tmp_prompts / "fresh.md").read_text() == "Hello."
+
+
+def test_api_create_prompt_409_on_collision(client, tmp_prompts):
+    client.post("/api/prompts", json={"filename": "dup.md", "content": "one"})
+    resp = client.post("/api/prompts", json={"filename": "dup.md", "content": "two"})
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "exists"
+    assert (tmp_prompts / "dup.md").read_text() == "one"   # original untouched
+
+
+def test_api_create_prompt_400_on_bad_name(client):
+    resp = client.post("/api/prompts", json={"filename": "Bad Name.md", "content": "x"})
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "validation"
+
+
+def test_api_create_prompt_400_on_empty_content(client):
+    resp = client.post("/api/prompts", json={"filename": "empty.md", "content": "   "})
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "validation"
+
+
+def test_api_create_prompt_makes_directory_when_missing(client, settings, tmp_path, monkeypatch):
+    fresh = tmp_path / "prompts-created-on-demand"
+    monkeypatch.setattr(settings, "PROMPTS_DIR", str(fresh))
+    assert not fresh.exists()
+    resp = client.post("/api/prompts", json={"filename": "first.md", "content": "hi"})
+    assert resp.status_code == 201
+    assert (fresh / "first.md").is_file()
+
+
+def test_create_agent_with_new_prompt_writes_prompt_first_and_lists_it(
+    client, dagster_stub, tmp_prompts, tmp_agents
+):
+    body = {
+        "agent": _valid_pi(name="fresh-agent", prompt_file="ignored.md"),
+        "new_prompt": {"filename": "fresh-agent.md", "content": "Do the thing."},
+    }
+    resp = client.post("/api/agents", json=body)
+    assert resp.status_code == 201, resp.text
+    # The prompt was written and the agent references it (new_prompt wins).
+    assert (tmp_prompts / "fresh-agent.md").exists()
+    assert "prompt_file: fresh-agent.md" in (tmp_agents / "fresh-agent.yaml").read_text()
+    # The selector source now includes it, no reload of anything needed.
+    listed = [p["filename"] for p in client.get("/api/prompts").json()["prompts"]]
+    assert "fresh-agent.md" in listed
+
+
+def test_create_agent_new_prompt_remains_when_agent_write_fails(
+    client, dagster_stub, tmp_prompts
+):
+    # Duplicate stem: the prompt is created first, then the agent write is refused.
+    body = {
+        "agent": _valid_pi(name="repo-librarian-agentbox"),
+        "new_prompt": {"filename": "orphan.md", "content": "kept even on failure"},
+    }
+    resp = client.post("/api/agents", json=body)
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "exists"
+    msg = resp.json()["message"]
+    assert "orphan.md" in msg and "created" in msg      # user is told the prompt exists
+    assert (tmp_prompts / "orphan.md").exists()          # the two-write partial is surfaced
+
+
+def test_save_with_prompt_file_removed_from_disk_is_400(client, dagster_stub):
+    resp = client.post("/api/agents", json={"agent": _valid_pi(prompt_file="was-deleted.md")})
+    assert resp.status_code == 400
+    assert "prompt_file" in resp.json()["fields"]

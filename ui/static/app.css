@@ -233,6 +233,8 @@
 .ax-field > label { display: block; margin-bottom: var(--ax-space-3); font: var(--ax-type-body-md); color: var(--ax-text-high); }
 .ax-help { margin-top: var(--ax-space-3); font: var(--ax-type-body-sm); color: var(--ax-text-low); }
 .ax-field-error { margin-top: var(--ax-space-3); font: var(--ax-type-body-sm); color: var(--ax-error); }
+.ax-new-prompt { margin-top: var(--ax-space-4); display: grid; gap: var(--ax-space-2); }
+.ax-new-prompt-label { font: var(--ax-type-body-sm); color: var(--ax-text-low); }
 
 /* ── Status banner (persistent until the next action) ─── */
 .ax-status-region { position: fixed; top: var(--ax-space-8); left: 50%; transform: translateX(-50%); z-index: var(--ax-z-toast); width: min(560px, calc(100vw - var(--ax-space-12))); }
