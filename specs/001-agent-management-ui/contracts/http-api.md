@@ -1,6 +1,6 @@
 # Contract: HTTP surface of the agentbox UI
 
-Base: `http://<host>:8080`. Pages return HTML; everything under `/api/` returns JSON (`Content-Type: application/json`). Errors under `/api/` use `{"error": "<code>", "message": "<human text>", ...extra}` with the HTTP status codes listed. `{name}` in a path is the agent's filename without `.yaml` (its identity per FR-010); the stored `name` key is normalised to it on save.
+Base: `http://<host>:8080`. Pages return HTML; everything under `/api/` returns JSON (`Content-Type: application/json`). Errors under `/api/` use `{"error": "<code>", "message": "<human text>", ...extra}` with the HTTP status codes listed. `{name}` in a path is the agent's filename without `.yaml` (its identity per FR-010); the stored `name` key is normalised to it on save. Every user-supplied filename or stem — `{name}` on the agent routes, `?from=` on the create page, `prompt_file`, and a new prompt's filename — is path-checked before any filesystem access: a value containing a separator (`/`, `\`) or `..` is refused consistently at every endpoint (FR-010a), an unsafe agent stem as `404 not_found` and an unsafe prompt filename as `400` validation.
 
 Storage failures (permission denied, read-only mount, missing directory that cannot be created) on any endpoint return `507` `{"error": "storage", "message": "cannot <read|write|delete> <agents|prompts>/<file>: <os error>"}` so the operator can identify the mount and operation.
 
@@ -23,7 +23,7 @@ Page JavaScript performs all reads/writes through the API below; pages themselve
 
 ### `GET /api/schema`
 
-Returns the field and harness definitions the form renders from.
+Returns the field and harness definitions the form renders from. Its `prompts` array is the source the form uses to populate the prompt selector (the same set as `GET /api/prompts`, filenames only); a prompt created inline is written before the agent in the same save and appears in this list for any form loaded afterward (SC-005), so no separate refresh call is defined.
 
 ```json
 {
@@ -60,7 +60,7 @@ Returns the field and harness definitions the form renders from.
  "templates": [{"file": "_template-pi.yaml", "harness": "pi"}]}
 ```
 
-Files that fail to parse appear with `"parse_error": "<message>"` and other fields `null`. `name_mismatch` is `true` when the stored `name` key differs from the filename. A file whose schema-version marker is newer than the UI supports has `"parse_error": "written by a newer agentbox (schema N)"` and `"editable": false`; all other entries carry `"editable": true`.
+Files that fail to parse appear with `"parse_error": "<message>"` and other fields `null`; the list page renders such a row with an "error" badge and the message inline (in place of the harness/model/schedule metadata), and the row still links to the detail page where the raw contents are shown. `name_mismatch` is `true` when the stored `name` key differs from the filename. A file whose schema-version marker is newer than the UI supports has `"parse_error": "written by a newer agentbox (schema N)"` and `"editable": false`; all other entries carry `"editable": true`.
 
 ### `GET /api/agents/{name}`
 

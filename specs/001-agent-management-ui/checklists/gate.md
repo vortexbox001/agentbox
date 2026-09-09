@@ -12,21 +12,21 @@
 
 - [x] CHK001 Are requirements defined for what happens to already-entered field values when the user switches harness (retained but hidden, cleared, or carried over where the field is shared)? [Gap, Spec §FR-007]
 - [x] CHK002 Is a suggested default or pattern specified for the required `output_dir` field (e.g., derived from the agent name), or is the user expected to type an absolute path unaided? [Gap, Spec §FR-002, Data Model §AgentDefinition]
-- [ ] CHK003 Are loading, saving-in-progress, and success feedback states (e.g., toast, inline status) specified for the list page and the save/delete/reload actions? [Gap, Spec §US2, §US3, §US6]
+- [x] CHK003 Are loading, saving-in-progress, and success feedback states (e.g., toast, inline status) specified for the list page and the save/delete/reload actions? [Gap, Spec §US2, §US3, §US6]
 - [x] CHK004 Is the location, wording, and persistence of the Dagster reload outcome indicator specified (where it appears, how long it stays, whether a failed reload persists until retried)? [Gap, Spec §FR-018, §Edge Cases]
 - [x] CHK005 Are the triggers for the unsaved-changes warning enumerated (in-app navigation, browser back/forward, tab close/refresh) and is "unsaved change" defined (any edit vs. a value that differs from the loaded file)? [Gap, Spec §FR-016]
-- [ ] CHK006 Is the behaviour of the "custom model id" input specified for `claude-code` and `pi` — how the user switches between alias selection and free text, and what is written when both are populated? [Gap, Spec §FR-003a, Research §R4]
-- [ ] CHK007 Is the "suggestions" behaviour for the `codex` model text field specified (datalist, dropdown, or plain hint) and is the suggestion source documented so it stays current? [Gap, Research §R4]
+- [x] CHK006 Is the behaviour of the "custom model id" input specified for `claude-code` and `pi` — how the user switches between alias selection and free text, and what is written when both are populated? [Gap, Spec §FR-003a, Research §R4]
+- [x] CHK007 Is the "suggestions" behaviour for the `codex` model text field specified (datalist, dropdown, or plain hint) and is the suggestion source documented so it stays current? [Gap, Research §R4]
 - [x] CHK008 Are requirements defined for the "Start from template" pre-fill (which fields are copied, which are cleared, and whether the resulting form is marked dirty)? [Gap, Research §R8, Contract §GET /agents/new]
 - [x] CHK009 Is the content of the delete confirmation specified (agent name, statement that only the definition file is removed, mention that workspace/outputs remain)? [Completeness, Spec §US6 scenario 1, §FR-019]
-- [ ] CHK010 Are requirements stated for how the list page surfaces a parse error (badge text, whether the message is shown in the list or only on the detail page)? [Completeness, Spec §Edge Cases, Contract §GET /api/agents]
+- [x] CHK010 Are requirements stated for how the list page surfaces a parse error (badge text, whether the message is shown in the list or only on the detail page)? [Completeness, Spec §Edge Cases, Contract §GET /api/agents]
 
 ## Requirement Clarity — Form & UX
 
-- [ ] CHK011 Is "each parameter or option should be explained" made testable — i.e., is the required content of every explanation (what it does, valid values, default) checkable against the help strings in the data model, given that several current help strings omit valid values or defaults (e.g., `memory`, `cpus`, `timeout_seconds`)? [Clarity, Spec §FR-003, Data Model §AgentDefinition]
+- [x] CHK011 Is "each parameter or option should be explained" made testable — i.e., is the required content of every explanation (what it does, valid values, default) checkable against the help strings in the data model, given that several current help strings omit valid values or defaults (e.g., `memory`, `cpus`, `timeout_seconds`)? [Clarity, Spec §FR-003, Data Model §AgentDefinition]
 - [x] CHK012 Is "visually distinguished as disabled" quantified with a specific treatment (opacity, badge, label) so it can be verified? [Clarity, Spec §US1 scenario 2]
-- [ ] CHK013 Is "consistently across all UI surfaces" for the design system defined with a checkable rule (e.g., colours and type only via `--ax-*` tokens, no hard-coded values)? [Clarity, Spec §FR-015]
-- [ ] CHK014 Are the app shell dimensions and regions (sidebar width, top bar height, content padding, breadcrumb slot) either specified in the spec or explicitly delegated to the design system document so there is one authoritative source? [Clarity, Spec §FR-012, Research §R13]
+- [x] CHK013 Is "consistently across all UI surfaces" for the design system defined with a checkable rule (e.g., colours and type only via `--ax-*` tokens, no hard-coded values)? [Clarity, Spec §FR-015]
+- [x] CHK014 Are the app shell dimensions and regions (sidebar width, top bar height, content padding, breadcrumb slot) either specified in the spec or explicitly delegated to the design system document so there is one authoritative source? [Clarity, Spec §FR-012, Research §R13]
 - [x] CHK015 Is the phrase "template files are either hidden or visually separated" resolved to one behaviour, given FR-001 says "excluding" and R8 says hidden-but-offered-as-templates? [Ambiguity, Spec §US1 scenario 3, §FR-001, Research §R8]
 
 ## Requirement Consistency — Form & UX
@@ -42,7 +42,7 @@
 - [x] CHK021 Are write-durability requirements specified (atomic temp-file-and-rename so a crash mid-write never leaves a truncated agent file)? [Gap, Contract agent-yaml]
 - [x] CHK022 Are file encoding and line-ending requirements specified (UTF-8, LF) so files written from the UI are byte-stable in git regardless of the host OS? [Gap, Contract agent-yaml §8]
 - [x] CHK023 Are requirements defined for reading a file whose `# agentbox-schema` stamp is newer than the running UI supports (contract says "refused with a clear error") — including whether such an agent is still listed and whether delete remains possible? [Completeness, Contract agent-yaml §Round-trip, Research §R12]
-- [ ] CHK024 Are failure requirements defined for the migration chain (a migration function raising on a malformed file) — is that surfaced as a parse error, and is the file left untouched? [Gap, Research §R12, Data Model §Schema versioning]
+- [x] CHK024 Are failure requirements defined for the migration chain (a migration function raising on a malformed file) — is that surfaced as a parse error, and is the file left untouched? [Gap, Research §R12, Data Model §Schema versioning]
 - [x] CHK025 Are cross-field validation rules specified where the orchestrator has hard constraints — e.g., `claude-code`/`codex` require `network: bridge` to reach their providers, `api` cannot use `bridge` meaningfully — and is the required UI response (block vs. warn) stated? [Gap, Data Model §network, README §Networks]
 
 ## Requirement Clarity — YAML Data Contract
@@ -51,13 +51,13 @@
 - [x] CHK027 Is the accepted cron dialect specified (5-field only; whether `@daily`-style macros or 6-field seconds are accepted) so FR-011 is testable and matches what Dagster accepts? [Clarity, Spec §FR-011, Research §R6]
 - [x] CHK028 Is "regenerates the whole file" reconciled with "unmanaged keys are preserved" so it is clear that unknown keys survive a save while comments do not? [Clarity, Spec §FR-004, Contract agent-yaml §2]
 - [x] CHK029 Is the rule for "unset" fields precise — which values count as unset (`null`, `""`, `[]`, `{}`), and which of those are written as a commented line versus omitted versus written literally (e.g., `schedule: ""` is written but `env: {}` is commented)? [Clarity, Contract agent-yaml §4–6]
-- [ ] CHK030 Are the full-model-id validation patterns for `claude-code` and the "contains `/`" rule for `pi` stated as testable regular expressions in one place, and is the `[1m]` suffix explicitly covered? [Clarity, Research §R4, Data Model §model]
+- [x] CHK030 Are the full-model-id validation patterns for `claude-code` and the "contains `/`" rule for `pi` stated as testable regular expressions in one place, and is the `[1m]` suffix explicitly covered? [Clarity, Research §R4, Data Model §model]
 
 ## Requirement Consistency — YAML Data Contract
 
 - [x] CHK031 Does the data model's restriction of `env_file` to `api` and `claude-code` conflict with the orchestrator, which applies `--env-file` for every harness (`factory.py` common section) and the README, which lists `env_file` as common? [Conflict, Data Model §env_file, README §Agent YAML reference]
 - [x] CHK032 Are the per-harness field sets in the data model consistent with `factory.py` for every key (e.g., `allowed_tools` excluded for codex, `disallowed_tools` excluded for pi, `effort` excluded for api), and is the source of truth for this matrix named? [Consistency, Data Model §Per-harness field sets]
-- [ ] CHK033 Do the help strings in the data model match the README's YAML reference wording for the same keys, or is one designated authoritative so the two do not drift (Constitution VI)? [Consistency, Data Model §AgentDefinition, README §Agent YAML reference]
+- [x] CHK033 Do the help strings in the data model match the README's YAML reference wording for the same keys, or is one designated authoritative so the two do not drift (Constitution VI)? [Consistency, Data Model §AgentDefinition, README §Agent YAML reference]
 - [x] CHK034 Is the schema-version header and the Unmanaged section — introduced in plan/contract — reflected in the spec's FR-004 so the spec does not describe a narrower file format than the contract? [Consistency, Spec §FR-004, Contract agent-yaml §1–2]
 
 ## Requirement Completeness & Clarity — Secrets & Safety
@@ -66,9 +66,9 @@
 - [x] CHK036 Are requirements defined for secrets entered outside `env` — `append_system_prompt`, inline prompt content, `mcp_config`/`env_file` paths — stating whether they are checked, and if not, why that is acceptable under Constitution III? [Gap, Spec §FR-020]
 - [x] CHK037 Is the confirmation's scope and lifetime specified — per flagged key or per save, re-asked on every subsequent save of an unchanged value, and whether a confirmed key is recorded anywhere? [Gap, Spec §FR-020, Contract §POST /api/agents]
 - [x] CHK038 Is the expected false-positive tolerance stated (e.g., `GITHUB_USER: leeclemmer` must not flag; `MY_TOKEN: abc123` must flag) so the heuristic can be tuned against a documented table? [Measurability, Research §R7, Quickstart §Create]
-- [ ] CHK039 Are delete-safety requirements complete for special cases — deleting a template file, a file with a parse error, or an agent whose name/filename mismatch — and is "never touches workspace/output" stated as a testable invariant? [Completeness, Spec §FR-019, §Edge Cases]
+- [x] CHK039 Are delete-safety requirements complete for special cases — deleting a template file, a file with a parse error, or an agent whose name/filename mismatch — and is "never touches workspace/output" stated as a testable invariant? [Completeness, Spec §FR-019, §Edge Cases]
 - [x] CHK040 Are network-exposure and authentication assumptions for the `:8080` service stated explicitly (single-user, trusted network, no auth) so the absence of authentication is a documented decision rather than an omission? [Assumption, Spec §Assumptions, Plan §Constraints]
-- [ ] CHK041 Are path-safety requirements for user-supplied filenames (`prompt_file`, new prompt filename, `?from=` template) specified so traversal and absolute paths are rejected consistently across every endpoint, not only `GET /api/prompts/{filename}`? [Coverage, Contract §Prompts, Data Model §Prompt]
+- [x] CHK041 Are path-safety requirements for user-supplied filenames (`prompt_file`, new prompt filename, `?from=` template) specified so traversal and absolute paths are rejected consistently across every endpoint, not only `GET /api/prompts/{filename}`? [Coverage, Contract §Prompts, Data Model §Prompt]
 
 ## Requirement Completeness & Clarity — Dagster & Failure Paths
 
@@ -83,11 +83,11 @@
 
 ## Acceptance Criteria & Non-Functional Quality
 
-- [ ] CHK050 Are SC-001, SC-006, and SC-008 (time-to-complete and "90% of first-time users") measurable for a single-operator internal tool, or should they be restated as observable properties (e.g., every required field reachable without scrolling past N sections; zero external documentation links needed)? [Measurability, Spec §SC-001, §SC-006, §SC-008]
-- [ ] CHK051 Is SC-005 ("immediately available … without page refresh") consistent with the contract, which lists prompts in `GET /api/schema` and `GET /api/prompts` but does not state which one the form re-reads after creating a prompt? [Consistency, Spec §SC-005, Contract §GET /api/schema]
-- [ ] CHK052 Are keyboard-navigation and focus-visibility requirements either specified or explicitly deferred for the form and modals (confirmation, preview)? [Gap, Non-Functional]
-- [ ] CHK053 Are supported browsers/viewport minimums stated (desktop only? minimum width for the 220 px sidebar layout)? [Gap, Non-Functional, Plan §Target Platform]
-- [ ] CHK054 Are logging requirements for write operations (who/what/when for create, update, delete, reload) specified or explicitly deferred, given the constitution's emphasis on auditable configuration? [Gap, Non-Functional, Constitution §II]
+- [x] CHK050 Are SC-001, SC-006, and SC-008 (time-to-complete and "90% of first-time users") measurable for a single-operator internal tool, or should they be restated as observable properties (e.g., every required field reachable without scrolling past N sections; zero external documentation links needed)? [Measurability, Spec §SC-001, §SC-006, §SC-008]
+- [x] CHK051 Is SC-005 ("immediately available … without page refresh") consistent with the contract, which lists prompts in `GET /api/schema` and `GET /api/prompts` but does not state which one the form re-reads after creating a prompt? [Consistency, Spec §SC-005, Contract §GET /api/schema]
+- [x] CHK052 Are keyboard-navigation and focus-visibility requirements either specified or explicitly deferred for the form and modals (confirmation, preview)? [Gap, Non-Functional]
+- [x] CHK053 Are supported browsers/viewport minimums stated (desktop only? minimum width for the 220 px sidebar layout)? [Gap, Non-Functional, Plan §Target Platform]
+- [x] CHK054 Are logging requirements for write operations (who/what/when for create, update, delete, reload) specified or explicitly deferred, given the constitution's emphasis on auditable configuration? [Gap, Non-Functional, Constitution §II]
 - [x] CHK055 Is the dependency on internet access for `/design-system` (React from unpkg, Google Fonts) and the offline behaviour of the main app documented as a requirement or assumption rather than only in research? [Assumption, Research §R2, Plan §Constraints]
 
 ## Resolution log (2026-09-08)
@@ -119,6 +119,28 @@ Source documents were updated to address the items below; boxes are left for the
 | CHK040, CHK055 | Spec Assumptions (no auth / trusted LAN; CDN dependency of `/design-system`) |
 
 Checked 2026-09-08 at the reviewer's request: the 38 items above. Still open (17): CHK003 (loading/saving-in-progress states), CHK006, CHK007, CHK010, CHK011 (help-string audit pending `schema.py`), CHK013, CHK014, CHK024, CHK030, CHK033, CHK039, CHK041, CHK050–CHK054 — UX polish and non-functional deferrals; none block `/speckit-implement`.
+
+## Resolution log (2026-09-09)
+
+The remaining 17 items were addressed in the source documents (and, where an item asked for testable behaviour, in the code with tests). All 55 boxes are now checked.
+
+| Items | Resolved in |
+|---|---|
+| CHK003 | Spec FR-025 (loading placeholders; per-action toast vs. persistent status; success names the agent) |
+| CHK006, CHK007 | Spec FR-006 and Research R4 (model is one control per harness — `select` for api, a single free-text input with a suggestions datalist for the others — so there is no alias-vs-free-text switch and no "both populated" case; codex suggestions are a curated static list in `schema.py`) |
+| CHK010 | Spec Edge Cases (invalid syntax) and Contract `GET /api/agents` (error badge + inline message on the list row; raw contents on the detail page) |
+| CHK011, CHK033 | Spec FR-003, Data model help-authority note, README reference note (`schema.py` `field_help()` is the single source; bounded/range fields state values and default; `timeout_seconds`/`memory`/`cpus` help aligned) |
+| CHK013 | Spec FR-015 (already a checkable token rule; the enforcing test `test_no_literal_colours_or_fonts` is now named) |
+| CHK014 | Spec FR-012 (shell dimensions delegated to the `--ax-*` token file as the single source; values recorded in Research R13) |
+| CHK024 | Research R12, Data model Schema versioning, and `agents_store.read_agent` (a raising migration is caught → `parse_error`, file untouched, still deletable); test `test_migration_failure_is_parse_error_and_leaves_file` |
+| CHK030 | Research R4 (the claude-code full-id regex `^claude-[a-z0-9.-]+(\[1m\])?$` with the `[1m]` suffix, the pi "contains `/`" rule, api alias-only, codex any — stated in one place) |
+| CHK039 | Spec FR-019 (delete works for template/broken/newer-schema/name-mismatch files; "never touches workspace or outputs" stated as a testable invariant) |
+| CHK041 | Spec FR-010a, Contract path note, Data model note, and a shared stem guard in `agents_store` (`_safe_stem` on read/write/delete/exists); test `test_unsafe_stem_is_never_addressable` |
+| CHK050 | Spec SC-001, SC-006, SC-008 (restated as observable properties — on-page completability, three interactions, README-free walkthrough — no time or percentage targets) |
+| CHK051 | Spec SC-005 and Contract `GET /api/schema` (`prompts` is the selector's source; inline prompt written before the agent and listed thereafter) |
+| CHK052 | Spec Assumptions (native controls Tab/Enter with default focus ring; dialogs focus their primary action and close on Escape; full WCAG audit deferred) |
+| CHK053 | Spec Assumptions (evergreen desktop browsers, ~1024 px minimum width; responsive/mobile out of scope) |
+| CHK054 | Spec Assumptions (git history of the YAML/prompt files is the audit trail per Constitution II; app-level write logging deferred) |
 
 ## Notes
 

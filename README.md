@@ -141,6 +141,8 @@ config edits need at most a restart.
 
 Keys marked *api*, *claude-code*, *pi*, or *codex* apply only to that harness. Everything else is common.
 
+This table is descriptive. The authoritative per-key wording, valid values, defaults, and harness applicability live in `ui/schema.py` (the same text the management UI shows and writes as YAML comments); if this table and the schema disagree, the schema is correct and this table should be updated to match (Constitution VI).
+
 | Key | Default | Meaning |
 |---|---|---|
 | `name` | required | Kebab-case id. Becomes job `agent_<name>` (hyphens become underscores). |

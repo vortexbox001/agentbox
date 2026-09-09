@@ -8,6 +8,8 @@ All persistent data is files under the repository checkout, bind-mounted into th
 
 One agent = one file `agents/<name>.yaml`. The UI reads it with a safe YAML loader and always writes it back whole via the emitter (see [contracts/agent-yaml.md](contracts/agent-yaml.md)).
 
+The "Explanation" column below is **illustrative**; the authoritative help text is `field_help()` in `ui/schema.py`, which is the single source rendered in the form (`GET /api/schema`), emitted as each field's YAML comment, and mirrored by the README's YAML reference — the three must not diverge (Constitution VI, FR-003). Where a field has a bounded set or numeric range, its help states those values and the default (e.g., `timeout_seconds`, `memory`, `cpus`). The `name` stem and every user-supplied filename are also path-checked before any filesystem access — a separator or `..` is rejected (FR-010a).
+
 | Field | Type | Applies to | Required | Default (when omitted) | Validation | Explanation shown in UI / emitted as comment |
 |---|---|---|---|---|---|---|
 | `name` | string | all | yes | — | `^[a-z0-9]+(-[a-z0-9]+)*$`; unique among `agents/*.yaml`; immutable after create; the filename stem is the identity — a stored `name` that differs is shown as a mismatch warning and normalised to the filename on save (FR-010) | Unique kebab-case identifier. Becomes the Dagster job `agent_<name>` (hyphens become underscores). |
@@ -23,7 +25,7 @@ One agent = one file `agents/<name>.yaml`. The UI reads it with a safe YAML load
 | `workspace` | string | claude-code, pi, codex | no | `/data/workspaces/<name>` | absolute path | Host directory mounted at `/workspace`; scratch space for the run. |
 | `wipe_workspace` | bool | claude-code, pi, codex | no | `false` | choice | Empty the workspace before every run so each run starts clean. |
 | `schedule` | string | all | no | `""` (manual only) | empty or valid 5-field cron (`croniter`) | Cron expression for automatic runs; leave empty for manual-only. |
-| `timeout_seconds` | int | all | no | `900` | 1 … 86400 | The run is killed after this many seconds. |
+| `timeout_seconds` | int | all | no | `900` | 1 … 86400 | The run is killed after this many seconds. 1 to 86400; default 900. |
 | `max_turns` | int | claude-code | no | `10` | 1 … 1000 | Cap on agentic turns. |
 | `permission_mode` | enum | claude-code | no | CLI default | `default`, `acceptEdits`, `auto`, `bypassPermissions`, `dontAsk`, `plan` | Claude Code permission mode. |
 | `allowed_tools` | list[string] | claude-code, pi | no | unrestricted / pi default set | claude-code: any tool names (suggestions `Read`, `Write`, `Edit`, `Bash`, `Glob`, `Grep`, `WebFetch`, `WebSearch`); pi: subset of `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` | Tool allowlist. |
@@ -60,7 +62,7 @@ Source of truth for this matrix: `orchestrator/factory.py` (which keys each harn
 
 **Lifecycle**: `draft (form) → saved (file exists) → [reloaded into Dagster] → deleted (file removed)`. `enabled: false` is a saved state, not a separate lifecycle stage.
 
-**Schema versioning**: each emitted file carries `# agentbox-schema: <N>`; on read, `MIGRATIONS` in `schema.py` (ordered, forward-only, pure dict → dict) bring older files up to the current version in memory; the file is rewritten only on save. Keys the schema does not define are kept as `unmanaged: dict` on the in-memory definition and emitted back verbatim (research R12).
+**Schema versioning**: each emitted file carries `# agentbox-schema: <N>`; on read, `MIGRATIONS` in `schema.py` (ordered, forward-only, pure dict → dict) bring older files up to the current version in memory; the file is rewritten only on save. Keys the schema does not define are kept as `unmanaged: dict` on the in-memory definition and emitted back verbatim (research R12). A file stamped newer than this UI supports raises `SchemaTooNew` and is reported as an uneditable `parse_error` (still deletable); a migration function that raises on a file is caught and reported as a `parse_error` ("schema migration failed: …") with the file left untouched — read never writes (research R12).
 
 ### Prompt
 
