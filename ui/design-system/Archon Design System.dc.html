@@ -38,6 +38,7 @@ A dark-theme component system for agent orchestration interfaces. Neutral grey f
 <a href="#colors" style="font:var(--ax-type-body-sm);color:var(--ax-cyan)">Colors</a>
 <a href="#typography" style="font:var(--ax-type-body-sm);color:var(--ax-cyan)">Typography</a>
 <a href="#spacing" style="font:var(--ax-type-body-sm);color:var(--ax-cyan)">Spacing</a>
+<a href="#layout" style="font:var(--ax-type-body-sm);color:var(--ax-cyan)">Layout &amp; Grid</a>
 <a href="#cards" style="font:var(--ax-type-body-sm);color:var(--ax-cyan)">Cards</a>
 <a href="#badges" style="font:var(--ax-type-body-sm);color:var(--ax-cyan)">Badges &amp; Status</a>
 <a href="#inputs" style="font:var(--ax-type-body-sm);color:var(--ax-cyan)">Inputs</a>
@@ -259,6 +260,141 @@ A dark-theme component system for agent orchestration interfaces. Neutral grey f
 
 
 <!-- ================================================================= -->
+<!-- LAYOUT & GRID -->
+<!-- ================================================================= -->
+<div id="layout" style="padding:48px 48px 24px;border-top:1px solid var(--ax-border-subtle)">
+<div style="font:var(--ax-type-display-md);color:var(--ax-text-primary);margin-bottom:8px">Layout &amp; Grid</div>
+<p style="font:var(--ax-type-body-sm);color:var(--ax-text-muted);margin:0 0 32px">Named layout patterns built on CSS Grid. No fixed breakpoints — layouts are intrinsically responsive via <span style="font:var(--ax-type-mono-sm);color:var(--ax-text-low)">minmax()</span> and <span style="font:var(--ax-type-mono-sm);color:var(--ax-text-low)">auto-fill</span>.</p>
+
+<!-- App Shell -->
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:12px">App Shell</div>
+<div style="background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);border-radius:var(--ax-radius-xl);overflow:hidden;margin-bottom:32px;height:200px;display:grid;grid-template-columns:220px 1fr;grid-template-rows:56px 1fr">
+<div style="grid-row:1/3;background:var(--ax-bg-sidebar);border-right:1px solid var(--ax-border-subtle);padding:16px 12px;display:flex;flex-direction:column;gap:4px">
+<div style="padding:6px 10px;border-radius:var(--ax-radius-md);background:var(--ax-cyan-bg);font:var(--ax-type-body-xs);color:var(--ax-cyan)">Dashboard</div>
+<div style="padding:6px 10px;border-radius:var(--ax-radius-md);font:var(--ax-type-body-xs);color:var(--ax-text-muted)">Agents</div>
+<div style="padding:6px 10px;border-radius:var(--ax-radius-md);font:var(--ax-type-body-xs);color:var(--ax-text-muted)">Workflows</div>
+</div>
+<div style="background:var(--ax-bg-root);border-bottom:1px solid var(--ax-border-subtle);padding:16px 24px;display:flex;align-items:center">
+<span style="font:var(--ax-type-display-xs);color:var(--ax-text-primary)">Page Title</span>
+</div>
+<div style="background:var(--ax-bg-root);padding:16px 24px;overflow:hidden">
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+<div style="height:40px;border-radius:var(--ax-radius-md);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle)"></div>
+<div style="height:40px;border-radius:var(--ax-radius-md);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle)"></div>
+<div style="height:40px;border-radius:var(--ax-radius-md);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle)"></div>
+<div style="height:40px;border-radius:var(--ax-radius-md);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle)"></div>
+</div>
+</div>
+</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-top:-24px;margin-bottom:32px">grid-template-columns: 220px 1fr · grid-template-rows: 56px 1fr · sidebar spans both rows</div>
+
+<!-- Grid: Stats -->
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:12px">ax-grid-stats — KPI row</div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:8px">
+<div style="height:64px;border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:14px;display:flex;flex-direction:column;justify-content:center">
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-muted)">METRIC</div>
+<div style="font:var(--ax-type-display-xs);color:var(--ax-text-primary)">42</div>
+</div>
+<div style="height:64px;border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:14px;display:flex;flex-direction:column;justify-content:center">
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-muted)">METRIC</div>
+<div style="font:var(--ax-type-display-xs);color:var(--ax-text-primary)">1.2M</div>
+</div>
+<div style="height:64px;border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:14px;display:flex;flex-direction:column;justify-content:center">
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-muted)">METRIC</div>
+<div style="font:var(--ax-type-display-xs);color:var(--ax-text-primary)">353h</div>
+</div>
+<div style="height:64px;border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:14px;display:flex;flex-direction:column;justify-content:center">
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-muted)">METRIC</div>
+<div style="font:var(--ax-type-display-xs);color:var(--ax-green)">96.1%</div>
+</div>
+</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-bottom:32px">grid-template-columns: repeat(4, 1fr) · gap: 16px<br>Collapses to repeat(2, 1fr) at narrow widths via @media or container query</div>
+
+<!-- Grid: Cards -->
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:12px">ax-grid-cards — auto-fill card grid</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:8px">
+<div style="height:100px;border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:16px">
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-mid)">Card A</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-top:4px">min 240px</div>
+</div>
+<div style="height:100px;border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:16px">
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-mid)">Card B</div>
+</div>
+<div style="height:100px;border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:16px">
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-mid)">Card C</div>
+</div>
+<div style="height:100px;border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:16px">
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-mid)">Card D</div>
+</div>
+</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-bottom:32px">grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)) · gap: 16px<br>Use minmax(360px, 1fr) for larger cards (projects, agents)</div>
+
+<!-- Grid: Detail -->
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:12px">ax-grid-detail — main + sidebar</div>
+<div style="display:grid;grid-template-columns:1fr minmax(0,340px);gap:20px;margin-bottom:8px">
+<div style="border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:20px;min-height:120px">
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-mid)">Main content</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-top:4px">1fr — expands to fill</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px">
+<div style="border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:16px">
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-mid)">Sidebar panel</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-top:4px">max 340px</div>
+</div>
+<div style="border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:16px">
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-mid)">Secondary panel</div>
+</div>
+</div>
+</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-bottom:32px">grid-template-columns: 1fr minmax(0, 340px) · gap: 20px<br>Used on agent detail, dashboard, run detail</div>
+
+<!-- Grid: Split -->
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:12px">ax-grid-split — equal two-column</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:8px">
+<div style="height:80px;border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:16px">
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-mid)">Left panel</div>
+</div>
+<div style="height:80px;border-radius:var(--ax-radius-xl);background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);padding:16px">
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-mid)">Right panel</div>
+</div>
+</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-bottom:32px">grid-template-columns: 1fr 1fr · gap: 20px<br>Used on project detail (agents + schedules side by side)</div>
+
+<!-- Grid: Form -->
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:12px">ax-grid-form — label + field pairs</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:24px;margin-bottom:8px">
+<div>
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:6px">Field A</div>
+<div style="height:38px;border-radius:var(--ax-radius-md);background:var(--ax-bg-input);border:1px solid var(--ax-border-input)"></div>
+</div>
+<div>
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:6px">Field B</div>
+<div style="height:38px;border-radius:var(--ax-radius-md);background:var(--ax-bg-input);border:1px solid var(--ax-border-input)"></div>
+</div>
+<div>
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:6px">Field C</div>
+<div style="height:38px;border-radius:var(--ax-radius-md);background:var(--ax-bg-input);border:1px solid var(--ax-border-input)"></div>
+</div>
+</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-bottom:32px">grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) · gap: 24px<br>Used on agent config forms, settings pages</div>
+
+<!-- Rules -->
+<div style="background:var(--ax-bg-card);border:1px solid var(--ax-border-subtle);border-radius:var(--ax-radius-xl);padding:24px">
+<div style="font:var(--ax-type-display-xs);color:var(--ax-text-primary);margin-bottom:14px">Grid Rules</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-low)">• <strong style="color:var(--ax-text-mid)">No fixed breakpoints.</strong> Use <span style="font:var(--ax-type-mono-sm);color:var(--ax-text-low)">auto-fill + minmax()</span> for intrinsic responsiveness. Cards flow from 1→N columns based on container width.</div>
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-low)">• <strong style="color:var(--ax-text-mid)">Gap is always 16px or 20px.</strong> Use 16px for card grids and stat rows; 20–24px for detail layouts and form grids.</div>
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-low)">• <strong style="color:var(--ax-text-mid)">Page padding is 28px.</strong> Content area of the main panel uses <span style="font:var(--ax-type-mono-sm);color:var(--ax-text-low)">padding: 28px</span> on all sides.</div>
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-low)">• <strong style="color:var(--ax-text-mid)">Sidebar max-width is capped.</strong> Detail sidebars use <span style="font:var(--ax-type-mono-sm);color:var(--ax-text-low)">minmax(0, 340px)</span>, never fixed width — they shrink gracefully.</div>
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-low)">• <strong style="color:var(--ax-text-mid)">Minimum card widths:</strong> 240px for compact cards, 280px for form fields, 360px for large project/agent cards.</div>
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-low)">• <strong style="color:var(--ax-text-mid)">Tables stay grid-based</strong> with explicit column templates. Horizontal scroll via <span style="font:var(--ax-type-mono-sm);color:var(--ax-text-low)">overflow-x: auto</span> on the wrapper at narrow widths.</div>
+<div style="font:var(--ax-type-body-sm);color:var(--ax-text-low)">• <strong style="color:var(--ax-text-mid)">Stack, don't squeeze.</strong> When a two-column layout can't fit, stack vertically rather than cramping columns below their minimum.</div>
+</div>
+</div>
+</div>
+
+
+<!-- ================================================================= -->
 <!-- CARDS -->
 <!-- ================================================================= -->
 <div id="cards" style="padding:48px 48px 24px;border-top:1px solid var(--ax-border-subtle)">
@@ -371,6 +507,36 @@ A dark-theme component system for agent orchestration interfaces. Neutral grey f
 <div style="padding:16px;border-radius:var(--ax-radius-lg);background:var(--ax-bg-elevated);border:1px solid var(--ax-border-subtle);font:var(--ax-type-mono-md);color:var(--ax-text-low);white-space:pre-wrap;max-height:80px;overflow:hidden">You are a senior code reviewer.
 Analyze pull requests for quality…</div>
 <div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-top:6px">bg-elevated · mono font · pre-wrap</div>
+</div>
+<!-- Select / Dropdown -->
+<div>
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:8px">Select / Dropdown</div>
+<div style="position:relative">
+<select style="width:100%;padding:10px 36px 10px 14px;border-radius:var(--ax-radius-md);background:var(--ax-bg-input);border:1px solid var(--ax-border-input);font:var(--ax-type-body-md);color:var(--ax-text-primary);outline:none;appearance:none;cursor:pointer">
+<option>claude-4-sonnet</option>
+<option>claude-4</option>
+<option>gpt-4o</option>
+<option>gemini-2-pro</option>
+</select>
+<svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none"><path d="M3 5l3 3 3-3" stroke="rgba(255,255,255,.4)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-top:6px">appearance:none · custom chevron · bg-input</div>
+</div>
+<!-- Dropdown (custom, expanded preview) -->
+<div>
+<div style="font:var(--ax-type-label);color:var(--ax-text-muted);text-transform:uppercase;letter-spacing:var(--ax-tracking-label);margin-bottom:8px">Custom Dropdown (open)</div>
+<div style="position:relative">
+<div style="padding:10px 36px 10px 14px;border-radius:var(--ax-radius-md);background:var(--ax-bg-input);border:1px solid var(--ax-cyan-border);font:var(--ax-type-body-md);color:var(--ax-text-primary);cursor:pointer">ReAct Loop
+<svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="position:absolute;right:12px;top:14px;pointer-events:none"><path d="M3 5l3 3 3-3" stroke="rgba(255,255,255,.4)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<div style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--ax-bg-card);border:1px solid var(--ax-border-strong);border-radius:var(--ax-radius-lg);padding:4px;z-index:10;box-shadow:var(--ax-shadow-lg)">
+<div style="padding:8px 12px;border-radius:var(--ax-radius-sm);background:var(--ax-cyan-bg);font:var(--ax-type-body-md);color:var(--ax-cyan);cursor:pointer">ReAct Loop</div>
+<div style="padding:8px 12px;border-radius:var(--ax-radius-sm);font:var(--ax-type-body-md);color:var(--ax-text-mid);cursor:pointer">Chain of Thought</div>
+<div style="padding:8px 12px;border-radius:var(--ax-radius-sm);font:var(--ax-type-body-md);color:var(--ax-text-mid);cursor:pointer">Tool Use</div>
+<div style="padding:8px 12px;border-radius:var(--ax-radius-sm);font:var(--ax-type-body-md);color:var(--ax-text-mid);cursor:pointer">Single Pass</div>
+</div>
+</div>
+<div style="font:var(--ax-type-mono-xs);color:var(--ax-text-ghost);margin-top:80px">bg-card · border-strong · shadow-lg · cyan-bg active</div>
 </div>
 <!-- Toggle -->
 <div>

@@ -408,7 +408,30 @@ background: /* accent color matching event type */;
 
 ---
 
-## Layout Patterns
+## Layout & Grid System
+
+Archon uses **named grid patterns** instead of fixed breakpoints. Layouts are intrinsically responsive via `auto-fill` + `minmax()`.
+
+### Named Grid Patterns
+
+| Pattern | Columns | Gap | Use |
+|---------|---------|-----|-----|
+| `ax-grid-stats` | `repeat(4, 1fr)` | 16px | KPI stat rows (collapses to 2-col at narrow widths) |
+| `ax-grid-cards` | `repeat(auto-fill, minmax(240px, 1fr))` | 16px | Compact card grids (agents, templates) |
+| `ax-grid-cards-lg` | `repeat(auto-fill, minmax(360px, 1fr))` | 16px | Large card grids (projects, workflows) |
+| `ax-grid-detail` | `1fr minmax(0, 340px)` | 20px | Main + sidebar (agent detail, dashboard, run detail) |
+| `ax-grid-split` | `1fr 1fr` | 20px | Equal two-column (project detail panels) |
+| `ax-grid-form` | `repeat(auto-fill, minmax(280px, 1fr))` | 24px | Form field pairs (agent config, settings) |
+
+### Grid Rules
+
+1. **No fixed breakpoints.** Use `auto-fill + minmax()` for intrinsic responsiveness. Cards flow from 1→N columns based on container width.
+2. **Gap is always 16px or 20px.** Use 16px for card grids and stat rows; 20–24px for detail layouts and form grids.
+3. **Page padding is 28px.** Content area of the main panel uses `padding: 28px` on all sides.
+4. **Sidebar max-width is capped.** Detail sidebars use `minmax(0, 340px)`, never fixed width — they shrink gracefully.
+5. **Minimum card widths:** 240px for compact cards, 280px for form fields, 360px for large project/agent cards.
+6. **Tables stay grid-based** with explicit column templates. Horizontal scroll via `overflow-x: auto` on the wrapper at narrow widths.
+7. **Stack, don't squeeze.** When a two-column layout can't fit, stack vertically rather than cramping columns below their minimum.
 
 ### App Shell
 
