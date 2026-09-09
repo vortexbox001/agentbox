@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block head_title %}{{ title }} · agentbox{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/design-system/archon-tokens.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="ax-app">
+    <aside class="ax-sidebar">
+      <div class="ax-brand">
+        <span class="ax-brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 120 120" fill="none" stroke-linejoin="round">
+            <rect x="26" y="30" width="68" height="60" rx="8" stroke="var(--ax-cyan)" stroke-width="6"/>
+            <g stroke="none">
+              <rect x="35" y="39" width="15" height="15" rx="3" fill="var(--ax-cyan)"/>
+              <rect x="53" y="39" width="15" height="15" rx="3" fill="var(--ax-text-ghost)"/>
+              <rect x="71" y="39" width="15" height="15" rx="3" fill="var(--ax-magenta)"/>
+              <rect x="35" y="57" width="15" height="15" rx="3" fill="var(--ax-text-ghost)"/>
+              <rect x="53" y="57" width="15" height="15" rx="3" fill="var(--ax-green)"/>
+              <rect x="71" y="57" width="15" height="15" rx="3" fill="var(--ax-text-ghost)"/>
+              <rect x="35" y="75" width="15" height="9" rx="3" fill="var(--ax-yellow)"/>
+              <rect x="53" y="75" width="15" height="9" rx="3" fill="var(--ax-text-ghost)"/>
+              <rect x="71" y="75" width="15" height="9" rx="3" fill="var(--ax-cyan)"/>
+            </g>
+          </svg>
+        </span>
+        <span class="ax-brand-name">agentbox</span>
+      </div>
+      <nav class="ax-nav" aria-label="Primary">
+        <a class="ax-nav-item" href="/agents" data-nav="/agents">
+          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#agents"></use></svg>
+          <span>Agents</span>
+        </a>
+      </nav>
+      <div class="ax-sidebar-foot">
+        <a class="ax-dagster" href="{{ dagster_url }}" target="_blank" rel="noopener" id="ax-dagster-link">
+          <span class="ax-dagster-dot" data-state="unknown" id="ax-dagster-dot"></span>
+          <span class="ax-dagster-text">
+            <span class="ax-dagster-label">Dagster</span>
+            <span class="ax-dagster-status" id="ax-dagster-status">checking…</span>
+          </span>
+          <svg class="ax-icon ax-dagster-open" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#external"></use></svg>
+        </a>
+      </div>
+    </aside>
+
+    <div class="ax-main">
+      <header class="ax-topbar">
+        <div class="ax-topbar-heading">
+          <h1 class="ax-page-title">{% block title %}{{ title }}{% endblock %}</h1>
+          <nav class="ax-breadcrumb" aria-label="Breadcrumb">{% block breadcrumb %}{% endblock %}</nav>
+        </div>
+        <div class="ax-topbar-actions">{% block actions %}{% endblock %}</div>
+      </header>
+      <main class="ax-content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <div class="ax-status-region" id="ax-status-region" aria-live="polite"></div>
+  <div class="ax-toast-region" id="ax-toast-region" aria-live="polite"></div>
+  <div class="ax-modal-root" id="ax-modal-root" hidden></div>
+
+  <script type="module" src="/static/shell.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

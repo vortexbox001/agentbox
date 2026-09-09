@@ -16,8 +16,16 @@ PROMPTS_DIR = os.environ.get("PROMPTS_DIR", "/opt/agentbox/prompts")
 # LiteLLM proxy config, read (never written) to discover the model aliases pi/api agents may use.
 LITELLM_CONFIG = os.environ.get("LITELLM_CONFIG", "/opt/agentbox/litellm/config.yaml")
 
-# Dagster webserver base URL, for the reload mutation and per-agent job deep links.
+# Dagster webserver base URL for server-side calls (the reload mutation, status).
+# This is the in-network hostname; it is reachable container-to-container, NOT from
+# a browser, so it must not be used for links the user clicks.
 DAGSTER_URL = os.environ.get("DAGSTER_URL", "http://dagster-webserver:3000")
+
+# Browser-facing Dagster base URL for links the user clicks (sidebar, job deep links).
+# Leave empty to derive it from the incoming request's host with the Dagster port, so
+# it works whether the UI is reached via the host IP, localhost, or a hostname. Set it
+# explicitly when Dagster is served behind a different host/proxy than this UI.
+DAGSTER_PUBLIC_URL = os.environ.get("DAGSTER_PUBLIC_URL", "")
 
 # The design system component library, served as static files at /design-system/.
 # Defaults next to this file so it resolves both in the container and when run locally.
