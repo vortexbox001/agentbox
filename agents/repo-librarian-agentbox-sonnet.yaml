@@ -6,12 +6,12 @@ enabled: true                  # true | false — disabled agents are skipped at
 harness: claude-code            # claude-code — runs Claude Code CLI via agentbox/agent-claude image
 
 # --- Model ---
-model: sonnet                   # Claude model alias (sonnet | opus | haiku | fable) or full model id (omit for CLI default)
-effort: medium                  # reasoning effort: low | medium | high | xhigh | max (omit for default)
-fallback_model: haiku           # model to try if primary is overloaded (omit to disable)
+model: claude-sonnet-5                   # Claude model alias (sonnet | opus | haiku | fable) or full model id (omit for CLI default)
+effort: xhigh                  # reasoning effort: low | medium | high | xhigh | max (omit for default)
+fallback_model: claude-sonnet-4-6           # model to try if primary is overloaded (omit to disable)
 
 # --- Prompt & output ---
-prompt_file: repo-librarian.md        # file in prompts/ — read at launch and passed to `claude -p`
+prompt_file: repo-librarian2.md        # file in prompts/ — read at launch and passed to `claude -p`
 output_dir: /data/outputs/repo-librarian/agentbox-sonnet  # host path where agent output is written
 append_system_prompt: ""        # extra text appended to the default system prompt (omit if unused)
 

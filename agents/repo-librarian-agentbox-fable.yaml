@@ -1,21 +1,21 @@
 # Runs the Claude Code CLI in a container with a workspace and tool access.
 
-name: repo-librarian-agentbox   # unique kebab-case identifier; becomes Dagster job "agent_repo_librarian_agentbox"
+name: repo-librarian-agentbox-fable  # claude-code librarian on Claude Fable 5.1; becomes Dagster job "agent_repo_librarian_agentbox_fable"
 enabled: true                  # true | false — disabled agents are skipped at startup
 harness: claude-code            # claude-code — runs Claude Code CLI via agentbox/agent-claude image
 
 # --- Model ---
-model: claude-opus-4-8[1m]      # Claude model alias (sonnet | opus | haiku | fable) or full model id (omit for CLI default)
+model: fable                    # Claude model alias (sonnet | opus | haiku | fable) or full model id (omit for CLI default)
 effort: high                    # reasoning effort: low | medium | high | xhigh | max (omit for default)
-fallback_model: "claude-opus-4-8[1m]"         # model to try if primary is overloaded (omit to disable)
+fallback_model: "claude-opus-4-8[1m]"  # model to try if primary is overloaded (omit to disable)
 
 # --- Prompt & output ---
 prompt_file: repo-librarian2.md        # file in prompts/ — read at launch and passed to `claude -p`
-output_dir: /data/outputs/repo-librarian/agentbox  # host path where agent output is written
+output_dir: /data/outputs/repo-librarian/agentbox-fable  # host path where agent output is written
 append_system_prompt: ""        # extra text appended to the default system prompt (omit if unused)
 
 # --- Workspace ---
-workspace: /data/workspaces/repo-librarian/agentbox  # host path mounted at /workspace in the container
+workspace: /data/workspaces/repo-librarian/agentbox-fable  # host path mounted at /workspace in the container
 wipe_workspace: true                  # empty the workspace before every run (fresh clone each time)
                                       # default: /data/workspaces/<name>
 
@@ -30,7 +30,7 @@ allowed_tools:                  # tool allowlist — omit for no restriction
 #mcp_config: ""                  # path to MCP server config JSON inside the container (omit if unused)
 
 # --- Scheduling ---
-schedule: "30 2 * * *"          # eg "0 7 * * *"
+schedule: ""                    # manual-only
 
 # --- Container resources ---
 network: bridge                 # bridge — needs internet to reach Anthropic API (required)
