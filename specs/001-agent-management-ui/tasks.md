@@ -169,12 +169,12 @@ Single package at `ui/`: modules at `ui/*.py`, pages in `ui/templates/`, browser
 
 ### Tests for User Story 6
 
-- [ ] T044 [P] [US6] Add to `ui/tests/test_api.py`: `DELETE /api/agents/{name}` → 200 `{deleted, reload}`; 404 when absent; `reload_dagster=false` → not requested; create dummy workspace/output directories under `tmp_path`, point the agent at them, delete, and assert they still exist with contents
+- [X] T044 [P] [US6] Add to `ui/tests/test_api.py`: `DELETE /api/agents/{name}` → 200 `{deleted, reload}`; 404 when absent; `reload_dagster=false` → not requested; create dummy workspace/output directories under `tmp_path`, point the agent at them, delete, and assert they still exist with contents
 
 ### Implementation for User Story 6
 
-- [ ] T045 [US6] Implement `DELETE /api/agents/{name}` in `ui/main.py` with `reload_dagster` query/body flag (default true), 404 mapping, and the same reload outcome shape
-- [ ] T046 [US6] Add the Delete action to `ui/templates/agents/form.html` (edit mode only) and `ui/static/agent-form.js`: confirmation modal naming the agent and stating that only `agents/<stem>.yaml` is removed while workspace and outputs remain, with the "Reload Dagster" checkbox; on confirm call DELETE, hand the `reload` outcome to `shell.js` `flashStatus()`, and navigate to `/agents`, where the list page displays it (with "Retry reload" on failure, per FR-018); on 404 flash "agent no longer exists" and return to the list
+- [X] T045 [US6] Implement `DELETE /api/agents/{name}` in `ui/main.py` with `reload_dagster` query/body flag (default true), 404 mapping, and the same reload outcome shape
+- [X] T046 [US6] Add the Delete action to `ui/templates/agents/form.html` (edit mode only) and `ui/static/agent-form.js`: confirmation modal naming the agent and stating that only `agents/<stem>.yaml` is removed while workspace and outputs remain, with the "Reload Dagster" checkbox; on confirm call DELETE, hand the `reload` outcome to `shell.js` `flashStatus()`, and navigate to `/agents`, where the list page displays it (with "Retry reload" on failure, per FR-018); on 404 flash "agent no longer exists" and return to the list
 
 **Checkpoint**: Full lifecycle (list → create → edit → delete) works; quickstart "Delete" items pass
 

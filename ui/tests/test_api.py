@@ -448,6 +448,8 @@ def test_edit_page_newer_schema_is_readonly_with_delete(client, tmp_agents):
     assert "9999" in html
     assert 'id="ax-agent-form"' not in html        # no editable form
     assert 'id="ax-delete-btn"' in html            # delete is still offered
+    assert 'data-stem="futuristic"' in html        # the button knows its target
+    assert "/static/agent-form.js" in html         # ...and its handler is loaded
 
 
 def test_edit_page_404_for_unknown_stem(client):
@@ -630,3 +632,59 @@ def test_create_claude_agent_on_isolated_network_warns_but_saves(client, dagster
     assert resp.status_code == 201, resp.text
     warnings = resp.json()["warnings"]
     assert warnings and any("bridge" in w for w in warnings)
+
+
+# ── User Story 6: Delete an Agent (T044) ────────────────
+def test_delete_agent_200_removes_file_and_reports_reload(client, dagster_stub, tmp_agents):
+    _write_agent_file(tmp_agents, "edit-me", EDIT_FIXTURE)
+    resp = client.request("DELETE", "/api/agents/edit-me")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["deleted"] == "edit-me.yaml"
+    assert set(data["reload"]) == {"requested", "ok", "message"}
+    assert data["reload"] == {"requested": True, "ok": True, "message": "Workspace reloaded"}
+    assert not (tmp_agents / "edit-me.yaml").exists()
+
+
+def test_delete_agent_404_when_absent(client, dagster_stub):
+    resp = client.request("DELETE", "/api/agents/does-not-exist")
+    assert resp.status_code == 404
+    assert resp.json()["error"] == "not_found"
+
+
+def test_delete_agent_reload_can_be_skipped(client, dagster_stub, tmp_agents):
+    _write_agent_file(tmp_agents, "edit-me", EDIT_FIXTURE)
+    resp = client.request("DELETE", "/api/agents/edit-me?reload_dagster=false")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["reload"]["requested"] is False
+
+
+def test_delete_agent_leaves_workspace_and_outputs_untouched(client, dagster_stub, tmp_agents, tmp_path):
+    # Point the agent at real directories with content; deleting the YAML must not
+    # remove them (FR: delete removes only agents/<stem>.yaml).
+    workspace = tmp_path / "ws-keep"
+    output = tmp_path / "out-keep"
+    workspace.mkdir()
+    output.mkdir()
+    (workspace / "scratch.txt").write_text("workspace data", encoding="utf-8")
+    (output / "run.log").write_text("output data", encoding="utf-8")
+
+    agent_text = (
+        "name: keep-dirs\n"
+        "enabled: true\n"
+        "harness: pi\n"
+        "model: cheap\n"
+        "prompt_file: repo-librarian.md\n"
+        f"output_dir: {output}\n"
+        f"workspace: {workspace}\n"
+        "network: agentnet\n"
+    )
+    _write_agent_file(tmp_agents, "keep-dirs", agent_text)
+
+    resp = client.request("DELETE", "/api/agents/keep-dirs")
+    assert resp.status_code == 200, resp.text
+    assert not (tmp_agents / "keep-dirs.yaml").exists()
+
+    # The referenced directories and their contents survive.
+    assert workspace.is_dir() and (workspace / "scratch.txt").read_text() == "workspace data"
+    assert output.is_dir() and (output / "run.log").read_text() == "output data"

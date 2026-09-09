@@ -22,7 +22,7 @@
   {% endif %}
   <a class="ax-btn ax-btn--ghost" href="/agents" id="ax-cancel-btn">{% if show_form is not defined or show_form %}Cancel{% else %}Back{% endif %}</a>
   {% if mode == "edit" %}
-  <button type="button" class="ax-btn ax-btn--danger" id="ax-delete-btn">Delete</button>
+  <button type="button" class="ax-btn ax-btn--danger" id="ax-delete-btn" data-stem="{{ stem }}">Delete</button>
   {% endif %}
   {% if show_form is not defined or show_form %}
   <button type="submit" form="ax-agent-form" class="ax-btn ax-btn--primary" id="ax-save-btn">
@@ -89,7 +89,9 @@
 {% endblock %}
 
 {% block scripts %}
-  {% if show_form is not defined or show_form %}
+  {# Loaded whenever the form is shown, and also in edit mode for an uneditable
+     file so the Delete action stays wired even when no form is rendered. #}
+  {% if (show_form is not defined or show_form) or mode == "edit" %}
   <script type="module" src="/static/agent-form.js"></script>
   {% endif %}
 {% endblock %}

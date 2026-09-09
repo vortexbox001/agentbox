@@ -996,6 +996,115 @@ function onSaved(data) {
   window.location.href = `/agents/${name}`;
 }
 
+// ── Delete ──────────────────────────────────────────────
+// A confirmation modal that names the agent, states only agents/<stem>.yaml is
+// removed (workspace and outputs remain), and carries its own "Reload Dagster"
+// checkbox. Resolves to { reload } on confirm, or null on cancel.
+function deleteModal(stem) {
+  return new Promise((resolve) => {
+    openModal((modal, close) => {
+      const h = document.createElement("h2");
+      h.textContent = `Delete agent “${stem}”?`;
+      const p = document.createElement("p");
+      p.textContent =
+        `Only agents/${stem}.yaml is removed. This agent's workspace and output ` +
+        `directories are left untouched.`;
+
+      const label = document.createElement("label");
+      label.className = "ax-toggle";
+      label.setAttribute("for", "ax-delete-reload");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.id = "ax-delete-reload";
+      cb.checked = true;
+      const track = document.createElement("span");
+      track.className = "ax-toggle-track";
+      track.setAttribute("aria-hidden", "true");
+      const txt = document.createElement("span");
+      txt.textContent = "Reload Dagster after deleting";
+      label.append(cb, track, txt);
+
+      const actions = document.createElement("div");
+      actions.className = "ax-modal-actions";
+      const cancel = document.createElement("button");
+      cancel.className = "ax-btn ax-btn--ghost";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => { close(); resolve(null); });
+      const ok = document.createElement("button");
+      ok.className = "ax-btn ax-btn--danger";
+      ok.textContent = "Delete agent";
+      ok.addEventListener("click", () => { close(); resolve({ reload: cb.checked }); });
+      actions.append(cancel, ok);
+
+      modal.append(h, p, label, actions);
+      cancel.focus();
+    });
+  });
+}
+
+async function doDelete(stem, reloadWanted) {
+  let resp;
+  try {
+    resp = await fetch(`/api/agents/${encodeURIComponent(stem)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reload_dagster: !!reloadWanted }),
+    });
+  } catch (e) {
+    toast("Could not reach the agentbox server", { tone: "error" });
+    return;
+  }
+
+  saved = true;   // whatever the outcome, we navigate away: stop the dirty guard
+
+  if (resp.status === 404) {
+    flashStatus({ message: `Agent “${stem}” no longer exists.`, ok: false });
+    window.location.href = "/agents";
+    return;
+  }
+
+  let data = {};
+  try { data = await resp.json(); } catch (e) { /* leave empty */ }
+
+  if (!resp.ok) {
+    saved = false;   // no navigation; keep the guard as it was
+    toast((data && data.message) || "Delete failed.", { tone: "error" });
+    return;
+  }
+
+  const name = (data.deleted || `${stem}.yaml`).replace(/\.yaml$/, "");
+  const reload = data.reload || {};
+  const parts = [`Agent “${name}” deleted.`];
+  let status;
+  if (reload.requested && reload.ok) {
+    parts.push("Dagster workspace reloaded.");
+    status = { message: parts.join(" "), ok: true };
+  } else if (reload.requested && !reload.ok) {
+    parts.push(`Dagster reload failed: ${reload.message}`);
+    status = { message: parts.join(" "), ok: false, retry: true };
+  } else {
+    status = { message: parts.join(" "), ok: true };
+  }
+  flashStatus(status);
+  window.location.href = "/agents";
+}
+
+// Wire the Delete action. Runs even for an uneditable file (no form), so the
+// button's own data-stem is the source of truth for which agent to remove.
+function wireDelete() {
+  const btn = document.getElementById("ax-delete-btn");
+  if (!btn) return;
+  const target = (btn.dataset.stem || (form && form.dataset.stem) || "").trim();
+  btn.addEventListener("click", async () => {
+    if (!target) return;
+    const choice = await deleteModal(target);
+    if (!choice) return;
+    btn.disabled = true;
+    await doDelete(target, choice.reload);
+    btn.disabled = false;
+  });
+}
+
 // ── Start from template ─────────────────────────────────
 async function prefillFromTemplate(stem) {
   let resp;
@@ -1080,6 +1189,7 @@ async function populateTemplates() {
 }
 
 async function boot() {
+  wireDelete();        // the Delete action works with or without an editable form
   if (!form) return;   // uneditable file: the page renders no form to drive
   mode = form.dataset.mode || "create";
   stem = (form.dataset.stem || "").trim();

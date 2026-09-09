@@ -325,6 +325,41 @@ async def _api_update_agent(name: str, request: Request):
     return await _write_agent(request, name)
 
 
+@app.delete("/api/agents/{name}")
+async def _api_delete_agent(name: str, request: Request):
+    # Remove agents/<name>.yaml only; workspace and output directories are never
+    # touched (the store's delete_agent removes the single file). reload_dagster
+    # (query or JSON body, default true) drives an optional workspace reload whose
+    # outcome mirrors create/update's reload shape. 404 when the file is absent.
+    reload_requested = True
+    qp = request.query_params.get("reload_dagster")
+    if qp is not None:
+        reload_requested = qp.lower() not in ("false", "0", "no")
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        if isinstance(body, dict) and "reload_dagster" in body:
+            reload_requested = bool(body["reload_dagster"])
+
+    try:
+        deleted = agents_store.delete_agent(name)
+    except FileNotFoundError:
+        return JSONResponse(
+            {"error": "not_found", "message": f"agents/{name}.yaml does not exist"},
+            status_code=404,
+        )
+
+    if reload_requested:
+        outcome = await dagster.reload()
+        reload_result = {"requested": True, "ok": outcome["ok"], "message": outcome["message"]}
+    else:
+        reload_result = {"requested": False, "ok": None, "message": None}
+
+    return JSONResponse({"deleted": deleted, "reload": reload_result})
+
+
 @app.post("/api/agents/preview")
 async def _api_preview_agent(request: Request):
     # Return the exact YAML a save would write. No file write, no secret check.
