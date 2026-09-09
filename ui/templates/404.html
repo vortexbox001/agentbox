@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block breadcrumb %}
+  <a href="/agents">Agents</a>
+  <span class="ax-breadcrumb-sep" aria-hidden="true">/</span>
+  <span aria-current="page">{{ breadcrumb_leaf }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="ax-card ax-empty">
+  <p>No agent named <span class="ax-mono">{{ missing }}</span> exists.</p>
+  <p><a class="ax-btn ax-btn--primary" href="/agents">Back to agents</a></p>
+</div>
+{% endblock %}

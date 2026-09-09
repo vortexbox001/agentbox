@@ -47,6 +47,11 @@ def _dagster(name: str) -> tuple[str, str]:
     return job, f"{config.DAGSTER_URL}/jobs/{job}"
 
 
+def agent_exists(stem: str) -> bool:
+    """Whether ``agents/<stem>.yaml`` already exists (create uniqueness check)."""
+    return os.path.isfile(_path(stem))
+
+
 def read_agent(stem: str) -> dict:
     """Read one agent file into a rich definition dict.
 

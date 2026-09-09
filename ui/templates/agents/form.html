@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block breadcrumb %}
+  <a href="/agents">Agents</a>
+  <span class="ax-breadcrumb-sep" aria-hidden="true">/</span>
+  <span aria-current="page">{{ breadcrumb_leaf }}</span>
+{% endblock %}
+
+{% block actions %}
+  {% if mode == "edit" %}
+  <a class="ax-btn ax-btn--ghost" href="{{ dagster_url }}/jobs/{{ dagster_job }}"
+     target="_blank" rel="noopener" id="ax-job-link">
+    <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#external"></use></svg>
+    <span>Dagster job</span>
+  </a>
+  {% endif %}
+  {% if show_form is not defined or show_form %}
+  <button type="button" class="ax-btn ax-btn--ghost" id="ax-preview-btn">
+    <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#eye"></use></svg>
+    <span>Preview YAML</span>
+  </button>
+  {% endif %}
+  <a class="ax-btn ax-btn--ghost" href="/agents" id="ax-cancel-btn">{% if show_form is not defined or show_form %}Cancel{% else %}Back{% endif %}</a>
+  {% if mode == "edit" %}
+  <button type="button" class="ax-btn ax-btn--danger" id="ax-delete-btn">Delete</button>
+  {% endif %}
+  {% if show_form is not defined or show_form %}
+  <button type="submit" form="ax-agent-form" class="ax-btn ax-btn--primary" id="ax-save-btn">
+    <span>Save</span>
+  </button>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  {% if parse_error %}
+  <div class="ax-card ax-banner ax-banner--error" role="alert">
+    <p class="ax-banner-title">{{ parse_error }}</p>
+    {% if not editable %}
+    <p class="ax-muted">This file was written by a newer version of agentbox. Update agentbox to edit it here, or delete it and recreate the agent.</p>
+    {% else %}
+    <p class="ax-muted">The form below shows schema defaults. Saving replaces the file with a valid, UI-generated definition.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if show_form is not defined or show_form %}
+  <form id="ax-agent-form"
+        class="ax-form"
+        data-mode="{{ mode }}"
+        data-from="{{ from_template }}"
+        data-stem="{{ stem }}"
+        autocomplete="off"
+        novalidate>
+
+    {% if mode == "create" %}
+    <div class="ax-card ax-form-lead">
+      <label class="ax-field" for="ax-template-select">
+        <span>Start from template</span>
+        <select class="ax-select" id="ax-template-select" data-allow-dirty>
+          <option value="">Blank agent</option>
+        </select>
+        <span class="ax-help">Pre-fills the form from an existing <span class="ax-mono">_template-*.yaml</span>; the name is cleared and the agent starts disabled.</span>
+      </label>
+    </div>
+    {% endif %}
+
+    <div data-sections id="ax-form-sections">
+      <div class="ax-card ax-empty" id="ax-form-loading">
+        <p class="ax-muted">Loading the agent schema…</p>
+      </div>
+    </div>
+
+    <div class="ax-form-actionbar">
+      <label class="ax-toggle" for="ax-reload-checkbox">
+        <input type="checkbox" id="ax-reload-checkbox" checked>
+        <span class="ax-toggle-track" aria-hidden="true"></span>
+        <span>Reload Dagster after saving</span>
+      </label>
+    </div>
+  </form>
+  {% endif %}
+
+  {% if raw %}
+  <div class="ax-card">
+    <h2 class="ax-form-section-heading">File contents</h2>
+    <pre class="ax-preview-code" id="ax-raw-file" aria-readonly="true">{{ raw }}</pre>
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  {% if show_form is not defined or show_form %}
+  <script type="module" src="/static/agent-form.js"></script>
+  {% endif %}
+{% endblock %}

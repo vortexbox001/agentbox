@@ -1,0 +1,785 @@
+// Schema-driven create/edit form for an agent.
+//
+// Reads GET /api/schema (the single source of truth) and renders the fields that
+// apply to the selected harness, in section order, each with its explanation. It
+// collects the values into the POST /api/agents body, maps validation errors back
+// to inline messages, mirrors the server's secret heuristic for instant feedback,
+// offers an on-demand YAML preview, supports "Start from template", and guards
+// against leaving with unsaved changes. Phase 5 reuses this module for editing.
+
+import { toast, flashStatus, registerDirtyForm } from "/static/shell.js";
+
+const form = document.getElementById("ax-agent-form");
+const sectionsMount = document.getElementById("ax-form-sections");
+const reloadCheckbox = document.getElementById("ax-reload-checkbox");
+const templateSelect = document.getElementById("ax-template-select");
+const previewBtn = document.getElementById("ax-preview-btn");
+
+let SCHEMA = null;            // GET /api/schema payload
+let currentHarness = null;    // id of the harness whose fields are shown
+let values = {};              // fid -> raw value (sparse; defaults fill the gaps)
+let confirmNotSecret = [];    // env keys the user confirmed are not secrets
+let saved = false;            // set just before a post-save navigation
+let snapshot = "";            // serialise() at load, for dirty detection
+let mode = "create";          // "create" | "edit"
+let stem = "";                // edit target (filename stem); "" in create mode
+let unmanaged = null;         // keys the UI does not manage, carried through on edit
+let nameMismatch = false;     // stored name key differs from the filename
+
+// Tool-name suggestions for the list editors (help text names the same sets).
+const LIST_SUGGESTIONS = {
+  "allowed_tools:claude-code": ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch", "WebSearch"],
+  "allowed_tools:pi": ["read", "write", "edit", "bash", "grep", "find", "ls"],
+  "disallowed_tools:claude-code": ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch", "WebSearch"],
+};
+
+// ── Client mirror of secret_scan.py (instant feedback; server is authoritative) ──
+const PASSTHROUGH_RE = /^\$\{\w+\}$/;
+const SECRET_NAME_RE = /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY|CREDENTIAL|AUTH)/i;
+const VALUE_PREFIXES = ["sk-ant-", "sk-", "ghp_", "github_pat_", "gho_", "xoxa-", "xoxb-", "xoxp-", "AKIA", "AIza", "-----BEGIN"];
+
+function isPassthrough(v) { return typeof v === "string" && PASSTHROUGH_RE.test(v); }
+
+function highEntropy(v) {
+  if (v.length < 20 || /\s/.test(v)) return false;
+  let classes = 0;
+  if (/[a-z]/.test(v)) classes++;
+  if (/[A-Z]/.test(v)) classes++;
+  if (/[0-9]/.test(v)) classes++;
+  if (/[^a-zA-Z0-9\s]/.test(v)) classes++;
+  return classes >= 3;
+}
+
+function isSecretLike(name, value) {
+  if (isPassthrough(value)) return false;
+  if (SECRET_NAME_RE.test(String(name))) return true;
+  if (typeof value !== "string") return false;
+  if (VALUE_PREFIXES.some((p) => value.startsWith(p))) return true;
+  return highEntropy(value);
+}
+
+// ── Schema helpers ──────────────────────────────────────
+const fieldById = (id) => SCHEMA.fields.find((f) => f.id === id);
+const harnessById = (id) => SCHEMA.harnesses.find((h) => h.id === id);
+
+function defaultFor(fid) {
+  if (fid === "harness") return currentHarness;
+  if (fid === "network") return harnessById(currentHarness).default_network;
+  const f = fieldById(fid);
+  return f && f.default !== undefined ? f.default : null;
+}
+
+function getValue(fid) {
+  return fid in values ? values[fid] : defaultFor(fid);
+}
+
+function isEmptyValue(f, v) {
+  if (v === null || v === undefined) return true;
+  if (f.type === "list") return !Array.isArray(v) || v.length === 0;
+  if (f.type === "map") return !v || Object.keys(v).length === 0;
+  if (typeof v === "string" && v === "") return f.id !== "schedule";
+  return false;
+}
+
+function coerce(f, v) {
+  if (f.type === "int") { const n = parseInt(v, 10); return Number.isNaN(n) ? v : n; }
+  if (f.type === "number") { const n = parseFloat(v); return Number.isNaN(n) ? v : n; }
+  return v;
+}
+
+// The ordered field ids that apply to a harness (schema is the source of order).
+function harnessFieldIds(harness) {
+  return harnessById(harness).fields;
+}
+
+// ── Collect the form into a POST body agent ─────────────
+function collect() {
+  const agent = { harness: currentHarness };
+  const ids = new Set(harnessFieldIds(currentHarness));
+  for (const f of SCHEMA.fields) {
+    if (!ids.has(f.id) || f.id === "harness") continue;
+    let v = getValue(f.id);
+    if (f.type === "bool") { agent[f.id] = !!v; continue; }
+    if (f.id === "schedule") { agent[f.id] = v == null ? "" : String(v); continue; }
+    if (isEmptyValue(f, v)) continue;   // omit unset optionals; server treats as unset
+    agent[f.id] = coerce(f, v);
+  }
+  // Carry the file's unmanaged keys through edit saves and the preview untouched.
+  if (mode === "edit" && unmanaged && Object.keys(unmanaged).length) {
+    agent.unmanaged = unmanaged;
+  }
+  return agent;
+}
+
+function serialise() { return JSON.stringify(collect()); }
+function isDirty() { return !saved && serialise() !== snapshot; }
+
+// ── Field rendering ─────────────────────────────────────
+function labelText(f) { return f.required ? `${f.label} *` : f.label; }
+
+function setControlValue(fid, v) { values[fid] = v; }
+
+function makeField(f) {
+  const wrap = document.createElement("div");
+  wrap.className = "ax-field";
+  wrap.dataset.field = f.id;
+
+  const controlId = `f-${f.id}`;
+  let control;
+
+  if (f.id === "harness") {
+    control = renderHarnessSelect(controlId);
+  } else if (f.id === "model") {
+    control = renderModel(controlId, f);
+  } else if (f.id === "effort") {
+    control = renderEnumSelect(controlId, f, harnessById(currentHarness).effort_choices, true);
+  } else if (f.choice_source === "prompts") {
+    control = renderEnumSelect(controlId, f, SCHEMA.prompts || [], !f.required);
+  } else if (f.type === "enum") {
+    control = renderEnumSelect(controlId, f, f.choices || [], !f.required);
+  } else if (f.type === "bool") {
+    return renderToggleField(f, controlId);   // toggle owns its own label layout
+  } else if (f.type === "int" || f.type === "number") {
+    control = renderNumber(controlId, f);
+  } else if (f.type === "list") {
+    control = renderList(controlId, f);
+  } else if (f.type === "map") {
+    control = renderMap(controlId, f);
+  } else {
+    control = renderText(controlId, f);       // string, path, cron
+  }
+
+  const label = document.createElement("label");
+  label.setAttribute("for", controlId);
+  label.textContent = labelText(f);
+  wrap.append(label, control);
+
+  if (f.id === "harness") {
+    const meta = document.createElement("p");
+    meta.className = "ax-harness-meta";
+    meta.id = "ax-harness-meta";
+    wrap.appendChild(meta);
+  }
+
+  const help = document.createElement("span");
+  help.className = "ax-help";
+  help.textContent = f.help;
+  wrap.appendChild(help);
+
+  const err = document.createElement("span");
+  err.className = "ax-field-error";
+  err.hidden = true;
+  wrap.appendChild(err);
+
+  return wrap;
+}
+
+function renderHarnessSelect(id) {
+  const sel = document.createElement("select");
+  sel.className = "ax-select";
+  sel.id = id;
+  for (const h of SCHEMA.harnesses) {
+    const opt = document.createElement("option");
+    opt.value = h.id;
+    opt.textContent = h.label;
+    if (h.id === currentHarness) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.addEventListener("change", () => switchHarness(sel.value));
+  return sel;
+}
+
+function updateHarnessMeta() {
+  const meta = document.getElementById("ax-harness-meta");
+  if (!meta) return;
+  const h = harnessById(currentHarness);
+  meta.textContent = `${h.description} · image ${h.image}`;
+}
+
+function renderEnumSelect(id, f, choices, allowBlank) {
+  const sel = document.createElement("select");
+  sel.className = "ax-select";
+  sel.id = id;
+  if (allowBlank) {
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = f.id === "prompt_file" ? "Select a prompt…" : "—";
+    sel.appendChild(blank);
+  }
+  const cur = getValue(f.id);
+  for (const c of choices) {
+    const opt = document.createElement("option");
+    opt.value = String(c);
+    opt.textContent = String(c);
+    if (String(c) === String(cur)) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.addEventListener("change", () => {
+    const v = sel.value;
+    setControlValue(f.id, f.type === "bool" ? v === "true" : v === "" ? null : v);
+  });
+  return sel;
+}
+
+function renderModel(id, f) {
+  const h = harnessById(currentHarness);
+  const rule = h.model_rule || {};
+  const choices = (rule.choices || []).concat(h.model_suggestions || []);
+  if (rule.custom === "none") {
+    return renderEnumSelect(id, f, rule.choices || [], !!rule.blank_ok);
+  }
+  const box = document.createElement("div");
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "ax-input";
+  input.id = id;
+  input.value = getValue(f.id) || "";
+  input.placeholder = rule.custom === "provider-model" ? "alias, or provider/model" : "alias or full id";
+  if (choices.length) {
+    const listId = `${id}-list`;
+    const dl = document.createElement("datalist");
+    dl.id = listId;
+    for (const c of choices) {
+      const o = document.createElement("option");
+      o.value = String(c);
+      dl.appendChild(o);
+    }
+    input.setAttribute("list", listId);
+    box.appendChild(dl);
+  }
+  input.addEventListener("input", () => setControlValue(f.id, input.value));
+  box.appendChild(input);
+  return box;
+}
+
+function renderNumber(id, f) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.className = "ax-input";
+  input.id = id;
+  if (f.min !== undefined) input.min = f.min;
+  if (f.max !== undefined) input.max = f.max;
+  input.step = f.type === "int" ? "1" : "any";
+  const v = getValue(f.id);
+  input.value = v === null || v === undefined ? "" : v;
+  input.addEventListener("input", () => {
+    setControlValue(f.id, input.value === "" ? null : (f.type === "int" ? parseInt(input.value, 10) : parseFloat(input.value)));
+  });
+  return input;
+}
+
+function renderText(id, f) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "ax-input";
+  input.id = id;
+  if (f.pattern) input.pattern = f.pattern;
+  if (f.id === "name") input.placeholder = "my-agent";
+  if (f.id === "output_dir") input.placeholder = "/data/outputs/<name>";
+  if (f.type === "cron") input.placeholder = "e.g. 0 7 * * * (blank = manual only)";
+  input.value = getValue(f.id) || "";
+  input.addEventListener("input", () => {
+    setControlValue(f.id, input.value);
+    if (f.type === "cron") checkCronShape(f.id, input.value);
+  });
+  return input;
+}
+
+// Client-side shape check only; the server validates with croniter.
+function checkCronShape(fid, value) {
+  const s = String(value).trim();
+  if (!s) { setFieldError(fid, null); return; }
+  if (s.startsWith("@")) { setFieldError(fid, "cron macros like @daily are not supported; use a 5-field expression"); return; }
+  if (s.split(/\s+/).length !== 5) { setFieldError(fid, "cron must have exactly five fields (minute hour day month weekday)"); return; }
+  setFieldError(fid, null);
+}
+
+function renderToggleField(f, id) {
+  const wrap = document.createElement("div");
+  wrap.className = "ax-field";
+  wrap.dataset.field = f.id;
+  const label = document.createElement("label");
+  label.className = "ax-toggle";
+  label.setAttribute("for", id);
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.id = id;
+  input.checked = !!getValue(f.id);
+  const track = document.createElement("span");
+  track.className = "ax-toggle-track";
+  track.setAttribute("aria-hidden", "true");
+  const text = document.createElement("span");
+  text.textContent = labelText(f);
+  input.addEventListener("change", () => setControlValue(f.id, input.checked));
+  label.append(input, track, text);
+  const help = document.createElement("span");
+  help.className = "ax-help";
+  help.textContent = f.help;
+  const err = document.createElement("span");
+  err.className = "ax-field-error";
+  err.hidden = true;
+  wrap.append(label, help, err);
+  return wrap;
+}
+
+// ── Chip (list) editor ──────────────────────────────────
+function renderList(id, f) {
+  const box = document.createElement("div");
+  box.className = "ax-chips";
+  box.id = id;
+  const arr = Array.isArray(getValue(f.id)) ? getValue(f.id).slice() : [];
+
+  const render = () => {
+    box.replaceChildren();
+    arr.forEach((item, i) => {
+      const chip = document.createElement("span");
+      chip.className = "ax-chip";
+      const t = document.createElement("span");
+      t.textContent = item;
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "ax-chip-remove";
+      rm.setAttribute("aria-label", `Remove ${item}`);
+      rm.textContent = "×";
+      rm.addEventListener("click", () => { arr.splice(i, 1); setControlValue(f.id, arr.slice()); render(); });
+      chip.append(t, rm);
+      box.appendChild(chip);
+    });
+    box.appendChild(input);
+    input.focus({ preventScroll: true });
+  };
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "ax-chip-input";
+  input.placeholder = arr.length ? "" : "type a value, Enter to add";
+  const sugg = LIST_SUGGESTIONS[`${f.id}:${currentHarness}`];
+  if (sugg) {
+    const listId = `${id}-list`;
+    const dl = document.createElement("datalist");
+    dl.id = listId;
+    for (const s of sugg) { const o = document.createElement("option"); o.value = s; dl.appendChild(o); }
+    input.setAttribute("list", listId);
+    box.appendChild(dl);
+  }
+  const commit = () => {
+    const val = input.value.trim().replace(/,$/, "").trim();
+    if (val && !arr.includes(val)) { arr.push(val); setControlValue(f.id, arr.slice()); }
+    input.value = "";
+    render();
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); commit(); }
+    else if (e.key === "Backspace" && input.value === "" && arr.length) { arr.pop(); setControlValue(f.id, arr.slice()); render(); }
+  });
+  input.addEventListener("blur", () => { if (input.value.trim()) commit(); });
+
+  render();
+  return box;
+}
+
+// ── Key/value (map / env) editor ────────────────────────
+function renderMap(id, f) {
+  const box = document.createElement("div");
+  box.className = "ax-kv";
+  box.id = id;
+  const obj = getValue(f.id);
+  const rows = obj && typeof obj === "object" ? Object.entries(obj).map(([k, v]) => [k, String(v)]) : [];
+  if (rows.length === 0) rows.push(["", ""]);
+
+  const sync = () => {
+    const out = {};
+    for (const [k, v] of rows) { if (k.trim()) out[k.trim()] = v; }
+    setControlValue(f.id, out);
+  };
+
+  const render = () => {
+    box.replaceChildren();
+    rows.forEach((row, i) => {
+      const line = document.createElement("div");
+      line.className = "ax-kv-row";
+      const key = document.createElement("input");
+      key.type = "text";
+      key.className = "ax-input ax-kv-key";
+      key.placeholder = "NAME";
+      key.value = row[0];
+      const val = document.createElement("input");
+      val.type = "text";
+      val.className = "ax-input ax-kv-val";
+      val.placeholder = "value or ${HOST_VAR}";
+      val.value = row[1];
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "ax-kv-remove ax-btn ax-btn--ghost";
+      rm.setAttribute("aria-label", "Remove variable");
+      rm.textContent = "×";
+      const warn = document.createElement("span");
+      warn.className = "ax-secret-warn";
+      warn.hidden = true;
+
+      const refreshWarn = () => {
+        const secret = row[0].trim() && isSecretLike(row[0], row[1]);
+        warn.hidden = !secret;
+        if (secret) warn.textContent = "Looks like a secret. Use ${" + (row[0].trim() || "NAME") + "} to forward the host variable, or confirm on save.";
+      };
+      key.addEventListener("input", () => { row[0] = key.value; sync(); refreshWarn(); });
+      val.addEventListener("input", () => { row[1] = val.value; sync(); refreshWarn(); });
+      rm.addEventListener("click", () => { rows.splice(i, 1); if (rows.length === 0) rows.push(["", ""]); sync(); render(); });
+
+      line.append(key, val, rm);
+      box.appendChild(line);
+      box.appendChild(warn);
+      refreshWarn();
+    });
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "ax-kv-add ax-btn ax-btn--ghost";
+    add.textContent = "+ Add variable";
+    add.addEventListener("click", () => { rows.push(["", ""]); render(); });
+    box.appendChild(add);
+  };
+
+  render();
+  return box;
+}
+
+// ── Form assembly ───────────────────────────────────────
+function renderForm(harness) {
+  currentHarness = harness;
+  const ids = new Set(harnessFieldIds(harness));
+  sectionsMount.replaceChildren();
+  for (const section of SCHEMA.sections) {
+    const fields = SCHEMA.fields.filter((f) => f.section === section.id && ids.has(f.id));
+    if (!fields.length) continue;
+    const card = document.createElement("section");
+    card.className = "ax-card ax-form-section";
+    const h = document.createElement("h2");
+    h.textContent = section.label;
+    card.appendChild(h);
+    for (const f of fields) card.appendChild(makeField(f));
+    sectionsMount.appendChild(card);
+  }
+  updateHarnessMeta();
+}
+
+function switchHarness(harness) {
+  renderForm(harness);
+}
+
+// ── Field errors ────────────────────────────────────────
+function setFieldError(fid, message) {
+  const wrap = sectionsMount.querySelector(`[data-field="${CSS.escape(fid)}"]`);
+  if (!wrap) return false;
+  const err = wrap.querySelector(".ax-field-error");
+  const control = wrap.querySelector("input, select");
+  if (message) {
+    if (err) { err.textContent = message; err.hidden = false; }
+    if (control) control.setAttribute("aria-invalid", "true");
+  } else {
+    if (err) { err.textContent = ""; err.hidden = true; }
+    if (control) control.removeAttribute("aria-invalid");
+  }
+  return true;
+}
+
+function clearFieldErrors() {
+  sectionsMount.querySelectorAll(".ax-field-error").forEach((e) => { e.textContent = ""; e.hidden = true; });
+  sectionsMount.querySelectorAll('[aria-invalid="true"]').forEach((c) => c.removeAttribute("aria-invalid"));
+}
+
+function applyFieldErrors(fields) {
+  const unmapped = [];
+  for (const [fid, msg] of Object.entries(fields || {})) {
+    if (!setFieldError(fid, msg)) unmapped.push(`${fid}: ${msg}`);
+  }
+  if (unmapped.length) toast(unmapped.join("; "), { tone: "error" });
+}
+
+// ── Modals (preview, secret confirmation) ───────────────
+function openModal(build, { wide = false } = {}) {
+  const root = document.getElementById("ax-modal-root");
+  root.replaceChildren();
+  const modal = document.createElement("div");
+  modal.className = wide ? "ax-modal ax-modal--wide" : "ax-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  const close = () => { root.hidden = true; root.replaceChildren(); };
+  build(modal, close);
+  root.addEventListener("click", (e) => { if (e.target === root) close(); }, { once: true });
+  root.appendChild(modal);
+  root.hidden = false;
+  return close;
+}
+
+function previewModal(text, warnings) {
+  openModal((modal, close) => {
+    const h = document.createElement("h2");
+    h.textContent = "YAML preview";
+    const pre = document.createElement("pre");
+    pre.className = "ax-preview-code";
+    pre.textContent = text;
+    modal.append(h);
+    if (warnings && warnings.length) {
+      const w = document.createElement("p");
+      w.className = "ax-secret-warn";
+      w.textContent = warnings.join(" ");
+      modal.appendChild(w);
+    }
+    modal.appendChild(pre);
+    const actions = document.createElement("div");
+    actions.className = "ax-modal-actions";
+    const ok = document.createElement("button");
+    ok.className = "ax-btn ax-btn--primary";
+    ok.textContent = "Close";
+    ok.addEventListener("click", close);
+    actions.appendChild(ok);
+    modal.appendChild(actions);
+    ok.focus();
+  }, { wide: true });
+}
+
+function errorsModal(fields) {
+  openModal((modal, close) => {
+    const h = document.createElement("h2");
+    h.textContent = "Cannot preview yet";
+    const p = document.createElement("p");
+    p.textContent = "Fix these fields, then preview again:";
+    const ul = document.createElement("ul");
+    ul.className = "ax-error-list";
+    for (const [fid, msg] of Object.entries(fields || {})) {
+      const f = fieldById(fid);
+      const li = document.createElement("li");
+      li.textContent = `${f ? f.label : fid}: ${msg}`;
+      ul.appendChild(li);
+    }
+    const actions = document.createElement("div");
+    actions.className = "ax-modal-actions";
+    const ok = document.createElement("button");
+    ok.className = "ax-btn ax-btn--primary";
+    ok.textContent = "Close";
+    ok.addEventListener("click", close);
+    actions.appendChild(ok);
+    modal.append(h, p, ul, actions);
+    ok.focus();
+  });
+}
+
+function secretModal(flagged) {
+  return new Promise((resolve) => {
+    openModal((modal, close) => {
+      const h = document.createElement("h2");
+      h.textContent = "These values look like secrets";
+      const p = document.createElement("p");
+      p.textContent = "Storing a real secret in an agent file leaves it in the open. Forward it with ${NAME} instead, or confirm these are not secrets.";
+      const ul = document.createElement("ul");
+      ul.className = "ax-error-list";
+      for (const k of flagged) { const li = document.createElement("li"); li.className = "ax-mono"; li.textContent = k; ul.appendChild(li); }
+      const actions = document.createElement("div");
+      actions.className = "ax-modal-actions";
+      const cancel = document.createElement("button");
+      cancel.className = "ax-btn ax-btn--ghost";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => { close(); resolve(false); });
+      const ok = document.createElement("button");
+      ok.className = "ax-btn ax-btn--danger";
+      ok.textContent = "These are not secrets — save anyway";
+      ok.addEventListener("click", () => { close(); resolve(true); });
+      actions.append(cancel, ok);
+      modal.append(h, p, ul, actions);
+      cancel.focus();
+    });
+  });
+}
+
+// ── Preview ─────────────────────────────────────────────
+async function doPreview() {
+  clearFieldErrors();
+  let resp;
+  try {
+    resp = await fetch("/api/agents/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: collect() }),
+    });
+  } catch (e) { toast("Could not reach the agentbox server", { tone: "error" }); return; }
+  const data = await resp.json().catch(() => ({}));
+  if (resp.ok) { previewModal(data.yaml || "", data.warnings); return; }
+  if (resp.status === 400) { applyFieldErrors(data.fields); errorsModal(data.fields); return; }
+  toast(data.message || "Preview failed", { tone: "error" });
+}
+
+// ── Save ────────────────────────────────────────────────
+async function submitPayload() {
+  const payload = { agent: collect(), reload_dagster: !!reloadCheckbox.checked };
+  if (confirmNotSecret.length) payload.confirm_not_secret = confirmNotSecret.slice();
+  const url = mode === "edit" ? `/api/agents/${encodeURIComponent(stem)}` : "/api/agents";
+  const method = mode === "edit" ? "PUT" : "POST";
+  const okStatus = mode === "edit" ? 200 : 201;
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) { toast("Could not reach the agentbox server", { tone: "error" }); return; }
+  const data = await resp.json().catch(() => ({}));
+
+  if (resp.status === 404) { toast("This agent no longer exists.", { tone: "error" }); return; }
+  if (resp.status === okStatus) { onSaved(data); return; }
+  if (resp.status === 400) { applyFieldErrors(data.fields); toast("Some fields need fixing", { tone: "error" }); return; }
+  if (resp.status === 409 && data.error === "exists") { setFieldError("name", data.message || "an agent with this name already exists"); toast(data.message || "Name already exists", { tone: "error" }); return; }
+  if (resp.status === 409 && data.error === "secret_confirmation_required") {
+    const confirmed = await secretModal(data.flagged || []);
+    if (confirmed) { confirmNotSecret = Array.from(new Set(confirmNotSecret.concat(data.flagged || []))); await submitPayload(); }
+    return;
+  }
+  if (resp.status === 409 && data.error === "prompt_exists") { toast(data.message || "That prompt already exists", { tone: "error" }); return; }
+  if (resp.status === 507) { toast(data.message || "Storage error", { tone: "error" }); return; }
+  toast(data.message || `Save failed (${resp.status})`, { tone: "error" });
+}
+
+function onSaved(data) {
+  saved = true;   // stop the dirty guard before we navigate
+  const name = (data.file || "").replace(/\.yaml$/, "");
+  const parts = [`Agent “${name}” saved.`];
+  if (data.warnings && data.warnings.length) parts.push(data.warnings.join(" "));
+  const reload = data.reload || {};
+  let status;
+  if (reload.requested && reload.ok) {
+    parts.push("Dagster workspace reloaded.");
+    status = { message: parts.join(" "), ok: true };
+  } else if (reload.requested && !reload.ok) {
+    parts.push(`Dagster reload failed: ${reload.message}`);
+    status = { message: parts.join(" "), ok: false, retry: true };
+  } else {
+    status = { message: parts.join(" "), ok: true };
+  }
+  flashStatus(status);
+  window.location.href = `/agents/${name}`;
+}
+
+// ── Start from template ─────────────────────────────────
+async function prefillFromTemplate(stem) {
+  let resp;
+  try { resp = await fetch(`/api/agents/${encodeURIComponent(stem)}`); }
+  catch (e) { toast("Could not load the template", { tone: "error" }); return; }
+  if (!resp.ok) { toast("Could not load the template", { tone: "error" }); return; }
+  const data = await resp.json();
+  const src = data.agent || {};
+  values = {};
+  for (const [k, v] of Object.entries(src)) { if (k !== "unmanaged") values[k] = v; }
+  values.name = "";          // a template pre-fill is a starting point, not a copy
+  values.enabled = false;    // start disabled until the operator reviews it
+  const harness = src.harness && harnessById(src.harness) ? src.harness : currentHarness;
+  renderForm(harness);       // marks the form dirty vs. the blank snapshot
+}
+
+// ── Edit mode ───────────────────────────────────────────
+// Lock the name field: the filename is the agent's identity and cannot change.
+function lockName() {
+  const wrap = sectionsMount.querySelector('[data-field="name"]');
+  if (!wrap) return;
+  const input = wrap.querySelector("input");
+  if (input) {
+    input.readOnly = true;
+    input.setAttribute("aria-readonly", "true");
+    input.classList.add("ax-input--readonly");
+  }
+  const help = wrap.querySelector(".ax-help");
+  if (help) help.textContent = "The filename is the agent's identity. To rename, delete this agent and create a new one.";
+  if (nameMismatch) {
+    const warn = document.createElement("span");
+    warn.className = "ax-secret-warn";
+    warn.textContent = `The file's name key differs from its filename “${stem}”. Saving will set the name to “${stem}”.`;
+    wrap.appendChild(warn);
+  }
+}
+
+// Load the agent being edited and pre-fill every applicable field.
+async function loadForEdit() {
+  let resp;
+  try { resp = await fetch(`/api/agents/${encodeURIComponent(stem)}`); }
+  catch (e) { toast("Could not load this agent", { tone: "error" }); return; }
+  if (!resp.ok) { toast("Could not load this agent", { tone: "error" }); return; }
+  const data = await resp.json();
+  nameMismatch = !!data.name_mismatch;
+  const src = data.agent;
+  if (!src) {
+    // Unparsable file: keep the schema defaults already rendered (the server
+    // shows the error banner and the raw contents alongside the form).
+    lockName();
+    snapshot = serialise();
+    return;
+  }
+  values = {};
+  unmanaged = null;
+  for (const [k, v] of Object.entries(src)) {
+    if (k === "unmanaged") { unmanaged = v; continue; }
+    values[k] = v;
+  }
+  const harness = src.harness && harnessById(src.harness) ? src.harness : currentHarness;
+  renderForm(harness);
+  lockName();
+  snapshot = serialise();   // a freshly loaded edit form starts clean
+}
+
+// ── Boot ────────────────────────────────────────────────
+async function populateTemplates() {
+  if (!templateSelect) return;
+  try {
+    const data = await (await fetch("/api/agents")).json();
+    for (const t of data.templates || []) {
+      const stem = t.file.replace(/\.yaml$/, "");
+      const opt = document.createElement("option");
+      opt.value = stem;
+      opt.textContent = `${stem}${t.harness ? ` (${t.harness})` : ""}`;
+      templateSelect.appendChild(opt);
+    }
+  } catch (e) { /* no templates offered if the list cannot be read */ }
+  templateSelect.addEventListener("change", () => {
+    if (templateSelect.value) prefillFromTemplate(templateSelect.value);
+  });
+}
+
+async function boot() {
+  if (!form) return;   // uneditable file: the page renders no form to drive
+  mode = form.dataset.mode || "create";
+  stem = (form.dataset.stem || "").trim();
+
+  try {
+    SCHEMA = await (await fetch("/api/schema")).json();
+  } catch (e) {
+    sectionsMount.replaceChildren();
+    const card = document.createElement("div");
+    card.className = "ax-card ax-empty";
+    card.textContent = "Could not load the agent schema. Reload the page to try again.";
+    sectionsMount.appendChild(card);
+    return;
+  }
+
+  const defaultHarness = SCHEMA.harnesses[0].id;
+  renderForm(defaultHarness);
+  snapshot = serialise();     // blank baseline: a template pre-fill counts as dirty
+
+  if (mode === "edit") {
+    await loadForEdit();
+  } else {
+    await populateTemplates();
+    const from = (form.dataset.from || "").trim();
+    if (from) {
+      if (templateSelect) templateSelect.value = from;
+      await prefillFromTemplate(from);
+    }
+  }
+
+  previewBtn && previewBtn.addEventListener("click", doPreview);
+  form.addEventListener("submit", (e) => { e.preventDefault(); submitPayload(); });
+  registerDirtyForm(isDirty);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot);
+} else {
+  boot();
+}

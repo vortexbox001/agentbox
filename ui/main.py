@@ -22,7 +22,9 @@ import config
 import dagster
 import prompts_store
 import schema
+import secret_scan
 from agents_store import StorageError
+from prompts_store import PromptValidationError
 
 _UI_DIR = os.path.dirname(os.path.abspath(__file__))
 _TEMPLATES_DIR = os.path.join(_UI_DIR, "templates")
@@ -118,6 +120,60 @@ async def _agents_page(request: Request):
     )
 
 
+@app.get("/agents/new")
+async def _agents_new_page(request: Request):
+    # The schema-driven create form. ?from=<template-file> pre-fills from a template
+    # (the JS reads GET /api/agents/{from}). The page itself is side-effect free.
+    from_stem = request.query_params.get("from") or ""
+    return templates.TemplateResponse(
+        request,
+        "agents/form.html",
+        _shell_context(
+            request,
+            title="New agent",
+            mode="create",
+            from_template=from_stem,
+            breadcrumb_leaf="New",
+        ),
+    )
+
+
+@app.get("/agents/{name}")
+async def _agents_edit_page(request: Request, name: str):
+    # The edit form for one agent. Fields are rendered client-side (agent-form.js
+    # reads GET /api/agents/{name}); the server sets the mode/stem the module needs,
+    # and renders the error banner + raw file block for a broken or too-new file.
+    # A file written by a newer schema (editable is false) shows no form at all —
+    # only the banner, the raw contents, and the Delete action.
+    try:
+        info = agents_store.read_agent(name)
+    except FileNotFoundError:
+        return templates.TemplateResponse(
+            request,
+            "404.html",
+            _shell_context(request, title="Not found", breadcrumb_leaf="Not found", missing=name),
+            status_code=404,
+        )
+    return templates.TemplateResponse(
+        request,
+        "agents/form.html",
+        _shell_context(
+            request,
+            title=info["name"],
+            mode="edit",
+            stem=name,
+            from_template="",
+            breadcrumb_leaf=info["name"],
+            editable=info["editable"],
+            show_form=info["editable"],
+            parse_error=info["parse_error"],
+            raw=info["raw"],
+            name_mismatch=info["name_mismatch"],
+            dagster_job=info["dagster_job"],
+        ),
+    )
+
+
 # --- API ------------------------------------------------------------------
 @app.get("/api/agents")
 async def _api_agents():
@@ -125,6 +181,175 @@ async def _api_agents():
     # Broken files carry parse_error with other fields null; a file written by a
     # newer schema is reported editable: false (agents_store.list_agents).
     return JSONResponse(agents_store.list_agents())
+
+
+def _normalise_prompt_filename(new_prompt: dict | None) -> str | None:
+    """The .md filename a new_prompt block will produce, or None when absent."""
+    if not new_prompt:
+        return None
+    fn = str(new_prompt.get("filename") or "").strip()
+    if not fn:
+        return None
+    return fn if fn.endswith(".md") else f"{fn}.md"
+
+
+def _prompt_exists_factory(pending_name: str | None):
+    """A prompt_exists predicate that also accepts a prompt created in the same save."""
+
+    def _exists(pf: str) -> bool:
+        return (pending_name is not None and pf == pending_name) or prompts_store.exists(pf)
+
+    return _exists
+
+
+def _stored_agent(stem: str) -> dict | None:
+    """Read back the just-written definition so the response reflects the file."""
+    try:
+        return agents_store.read_agent(stem)["agent"]
+    except FileNotFoundError:
+        return None
+
+
+async def _write_agent(request: Request, stem_from_path: str | None) -> JSONResponse:
+    """Shared create/update pipeline (contract POST/PUT /api/agents).
+
+    ``stem_from_path`` is None for create (name comes from the body) and the path
+    segment for update. On update the file must already exist, the name (the
+    filename identity) cannot change, and keys the UI does not manage are carried
+    over from the stored file when the payload omits them.
+    """
+    body = await request.json()
+    agent = dict(body.get("agent") or {})
+    new_prompt = body.get("new_prompt")
+    confirmed = set(body.get("confirm_not_secret") or [])
+    reload_requested = bool(body.get("reload_dagster", True))
+    is_update = stem_from_path is not None
+
+    if is_update:
+        try:
+            existing = agents_store.read_agent(stem_from_path)
+        except FileNotFoundError:
+            return JSONResponse(
+                {"error": "not_found", "message": f"agents/{stem_from_path}.yaml does not exist"},
+                status_code=404,
+            )
+        # The filename is the agent's identity: an edit can never rename it.
+        payload_name = agent.get("name")
+        if payload_name is not None and str(payload_name) != stem_from_path:
+            return JSONResponse(
+                {"error": "validation",
+                 "fields": {"name": "name cannot be changed; delete and recreate"}},
+                status_code=400,
+            )
+        agent["name"] = stem_from_path
+        # Preserve keys the UI does not know when the payload leaves them out.
+        if "unmanaged" not in agent:
+            loaded = existing.get("agent") or {}
+            if loaded.get("unmanaged"):
+                agent["unmanaged"] = loaded["unmanaged"]
+
+    pending_prompt = _normalise_prompt_filename(new_prompt)
+    if pending_prompt:
+        agent["prompt_file"] = pending_prompt
+
+    # Validation (400). A prompt created in this same save counts as existing.
+    errors = schema.validate(agent, prompt_exists=_prompt_exists_factory(pending_prompt))
+    if errors:
+        return JSONResponse({"error": "validation", "fields": errors}, status_code=400)
+
+    stem = str(agent.get("name"))
+    if not is_update and agents_store.agent_exists(stem):
+        return JSONResponse(
+            {"error": "exists", "message": f"agents/{stem}.yaml already exists"},
+            status_code=409,
+        )
+
+    # Secret confirmation (409). ${NAME} passthrough is never flagged.
+    flagged = [k for k in secret_scan.flagged_keys(agent.get("env") or {}) if k not in confirmed]
+    if flagged:
+        return JSONResponse(
+            {"error": "secret_confirmation_required", "flagged": flagged},
+            status_code=409,
+        )
+
+    # Create the inline prompt first, then point the agent at it.
+    if new_prompt:
+        try:
+            created = prompts_store.create_prompt(new_prompt.get("filename"), new_prompt.get("content"))
+        except FileExistsError as e:
+            return JSONResponse({"error": "prompt_exists", "message": str(e)}, status_code=409)
+        except PromptValidationError as e:
+            return JSONResponse(
+                {"error": "validation", "fields": {"new_prompt": str(e)}}, status_code=400
+            )
+        agent["prompt_file"] = created
+
+    agents_store.write_agent(stem, agent)
+
+    warning = schema.network_mismatch_warning(agent)
+    warnings = [warning] if warning else []
+
+    if reload_requested:
+        outcome = await dagster.reload()
+        reload_result = {"requested": True, "ok": outcome["ok"], "message": outcome["message"]}
+    else:
+        reload_result = {"requested": False, "ok": None, "message": None}
+
+    return JSONResponse(
+        {
+            "agent": _stored_agent(stem),
+            "file": f"{stem}.yaml",
+            "warnings": warnings,
+            "reload": reload_result,
+        },
+        status_code=200 if is_update else 201,
+    )
+
+
+@app.post("/api/agents")
+async def _api_create_agent(request: Request):
+    # Create a new agent file, optionally an inline prompt, optionally reload Dagster.
+    return await _write_agent(request, None)
+
+
+@app.put("/api/agents/{name}")
+async def _api_update_agent(name: str, request: Request):
+    # Rewrite an existing agent file; same pipeline as create, keyed by the path stem.
+    return await _write_agent(request, name)
+
+
+@app.post("/api/agents/preview")
+async def _api_preview_agent(request: Request):
+    # Return the exact YAML a save would write. No file write, no secret check.
+    body = await request.json()
+    agent = dict(body.get("agent") or {})
+    errors = schema.validate(agent, prompt_exists=prompts_store.exists)
+    if errors:
+        return JSONResponse({"error": "validation", "fields": errors}, status_code=400)
+    warning = schema.network_mismatch_warning(agent)
+    return JSONResponse(
+        {"yaml": agents_store.emit_yaml(agent), "warnings": [warning] if warning else []}
+    )
+
+
+@app.get("/api/agents/{name}")
+async def _api_read_agent(name: str):
+    # Full stored definition for the edit form and ?from= template pre-fill.
+    try:
+        info = agents_store.read_agent(name)
+    except FileNotFoundError:
+        return JSONResponse(
+            {"error": "not_found", "message": f"agents/{name}.yaml does not exist"},
+            status_code=404,
+        )
+    return JSONResponse({
+        "agent": info["agent"],
+        "file": info["file"],
+        "parse_error": info["parse_error"],
+        "raw": info["raw"],
+        "name_mismatch": info["name_mismatch"],
+        "editable": info["editable"],
+    })
 
 
 @app.get("/api/schema")

@@ -301,3 +301,94 @@
 /* ── Utility ──────────────────────────────────────────── */
 .ax-muted { color: var(--ax-text-low); }
 .ax-empty { padding: var(--ax-space-13); text-align: center; color: var(--ax-text-low); font: var(--ax-type-body-lg); }
+
+/* ── Create/edit form: breadcrumb, layout, action bar ─── */
+.ax-breadcrumb-sep { margin: 0 var(--ax-space-3); color: var(--ax-text-ghost); }
+.ax-form-lead { margin-bottom: var(--ax-space-9); }
+.ax-form-lead .ax-field { margin-bottom: 0; max-width: var(--ax-space-14); }
+.ax-form-actionbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ax-space-6);
+  padding: var(--ax-space-7) 0;
+}
+
+/* ── Harness picker meta line ─────────────────────────── */
+.ax-harness-meta { margin: var(--ax-space-3) 0 0; font: var(--ax-type-body-sm); color: var(--ax-text-mid); }
+
+/* ── Chip (list) editor ───────────────────────────────── */
+.ax-chips {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--ax-space-3);
+  padding: var(--ax-space-4);
+  min-height: var(--ax-space-11);
+  background: var(--ax-bg-input);
+  border: 1px solid var(--ax-border-input);
+  border-radius: var(--ax-radius-md);
+}
+.ax-chip {
+  display: inline-flex; align-items: center; gap: var(--ax-space-3);
+  padding: var(--ax-space-2) var(--ax-space-5);
+  background: var(--ax-cyan-bg); color: var(--ax-cyan);
+  border: 1px solid var(--ax-cyan-border); border-radius: var(--ax-radius-pill);
+  font: var(--ax-type-mono-sm);
+}
+.ax-chip-remove {
+  background: none; border: none; cursor: pointer; padding: 0;
+  color: var(--ax-cyan); font: var(--ax-type-body-md); line-height: 1;
+}
+.ax-chip-input {
+  flex: 1; min-width: var(--ax-space-13);
+  background: none; border: none; outline: none;
+  color: var(--ax-text-high); font: var(--ax-type-body-md);
+}
+
+/* ── Key/value (env) editor ───────────────────────────── */
+.ax-kv { display: flex; flex-direction: column; gap: var(--ax-space-4); }
+.ax-kv-row { display: flex; gap: var(--ax-space-4); align-items: center; }
+.ax-kv-key { flex: 1; }
+.ax-kv-val { flex: 2; }
+.ax-kv-remove { flex: none; padding: var(--ax-space-3) var(--ax-space-5); line-height: 1; }
+.ax-kv-add { align-self: flex-start; }
+
+/* ── Secret warning (inline + preview) ────────────────── */
+.ax-secret-warn {
+  margin-top: var(--ax-space-3);
+  padding: var(--ax-space-3) var(--ax-space-5);
+  background: var(--ax-yellow-bg); color: var(--ax-yellow);
+  border: 1px solid var(--ax-yellow-border); border-radius: var(--ax-radius-md);
+  font: var(--ax-type-body-sm);
+}
+
+/* ── YAML preview modal ───────────────────────────────── */
+.ax-modal--wide { width: min(760px, calc(100vw - var(--ax-space-12))); }
+.ax-preview-code {
+  margin: 0; padding: var(--ax-space-7);
+  max-height: 60vh; overflow: auto;
+  background: var(--ax-bg-root); border: 1px solid var(--ax-border-subtle);
+  border-radius: var(--ax-radius-md);
+  color: var(--ax-text-high); font: var(--ax-type-mono-sm);
+  white-space: pre;
+}
+.ax-error-list { margin: 0 0 var(--ax-space-9); padding-left: var(--ax-space-9); color: var(--ax-text-mid); font: var(--ax-type-body-md); }
+.ax-error-list li { margin-bottom: var(--ax-space-3); }
+
+/* ── Edit-mode banner (parse error / newer schema) ────── */
+.ax-banner {
+  margin-bottom: var(--ax-space-9);
+  padding: var(--ax-space-7);
+  border-radius: var(--ax-radius-md);
+}
+.ax-banner--error {
+  background: var(--ax-error-bg);
+  border: 1px solid var(--ax-error-border);
+}
+.ax-banner-title { margin: 0; color: var(--ax-error); font: var(--ax-type-body-md); }
+.ax-banner .ax-muted { margin: var(--ax-space-3) 0 0; color: var(--ax-text-mid); font: var(--ax-type-body-sm); }
+.ax-form-section-heading { margin: 0 0 var(--ax-space-6); color: var(--ax-text-high); font: var(--ax-type-display-sm); }
+
+/* Read-only name field on the edit form (identity cannot change). */
+.ax-input--readonly {
+  background: var(--ax-bg-elevated);
+  color: var(--ax-text-mid);
+  cursor: not-allowed;
+}
