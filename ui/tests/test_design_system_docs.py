@@ -95,3 +95,22 @@ def test_guide_toggle_matches_reference():
     assert "width:36px;height:20px" in reference
     assert "width:16px;height:16px" in reference
     assert "cyan" in body and "background:var(--ax-cyan)" in reference
+
+
+APP_CSS = os.path.join(UI_DIR, "static", "app.css")
+
+
+# ── 003 Agent form layout: the guide's thresholds match the stylesheet ──
+def test_guide_agent_form_layout_matches_stylesheet():
+    css = _read(APP_CSS)
+    thresholds = re.findall(r"@container ax-content \(min-width:\s*(\d+)px\)", css)
+    assert len(thresholds) >= 2, "expected two ax-content container-query thresholds"
+    body = _section(_read(GUIDE), "Agent form layout")
+    assert "ax-grid-agent" in body
+    for n in sorted(set(thresholds)):
+        assert n in body, f"guide's 'Agent form layout' omits the {n}px threshold"
+
+
+def test_guide_grid_rule_1_notes_the_agent_form_exception():
+    rules = _section(_read(GUIDE), "Grid Rules")
+    assert "ax-grid-agent" in rules or "Agent form layout" in rules

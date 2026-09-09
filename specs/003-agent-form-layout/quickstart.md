@@ -37,11 +37,11 @@ Then review `git diff ui/tests/golden/`: every hunk should be a moved block or a
 
 Open `/agents/<a claude-code agent>` and confirm:
 
-- [ ] Reload toggle at the top right under Save; name in a read-only lead strip; no Identity card.
-- [ ] Runs: Schedule (Enabled, Schedule) then Limits (Timeout, Max turns).
-- [ ] Job: Prompt, Directories, Environment, Tools & permissions, in that order, with the fields listed in [data-model.md](data-model.md).
-- [ ] Box: Harness & model (Harness with its meta line, Model, Effort, Fallback model) then Container (Network, Memory, CPUs).
-- [ ] Group headings Runs, Job, Box are visible.
+- [x] Reload toggle at the top right under Save; name in a read-only lead strip; no Identity card.
+- [x] Runs: Schedule (Enabled, Schedule) then Limits (Timeout, Max turns).
+- [x] Job: Prompt, Directories, Environment, Tools & permissions, in that order, with the fields listed in [data-model.md](data-model.md).
+- [x] Box: Harness & model (Harness with its meta line, Model, Effort, Fallback model) then Container (Network, Memory, CPUs).
+- [x] Group headings Runs, Job, Box are visible.
 
 Open `/agents/new` and confirm the template picker and an editable Name share the lead strip. Pick the api template and confirm Tools & permissions disappears, Limits shows only Timeout, Directories shows only Output directory, and Harness & model shows Max tokens.
 
@@ -61,16 +61,16 @@ Drag the width across 720px and 1320px of pane width (about 996px and 1596px of 
 
 ## 5. Behaviour preserved (spec FR-016)
 
-- [ ] Change harness on the create page: cards appear/disappear; the groups and lead strip stay put; model/effort memory and the network warning behave as before.
-- [ ] Submit with an invalid value (for example memory `abc`): the error shows inline in the Container card and the field is scrolled to and focused.
-- [ ] Add an env var named `MY_TOKEN` with a literal value: the secret warning and confirmation still appear in the Environment card.
-- [ ] Preview YAML: blocks follow the new order (Identity, Schedule, Limits, Prompt, Directories, Environment, Tools & permissions, Harness & model, Container).
-- [ ] Edit then navigate away: the unsaved-changes guard still fires.
+- [x] Change harness on the create page: cards appear/disappear; the groups and lead strip stay put; model/effort memory and the network warning behave as before.
+- [x] Submit with an invalid value (for example memory `abc`): the error shows inline in the Container card and the field is scrolled to and focused.
+- [x] Add an env var named `MY_TOKEN` with a literal value: the secret warning and confirmation still appear in the Environment card.
+- [x] Preview YAML: blocks follow the new order (Identity, Schedule, Limits, Prompt, Directories, Environment, Tools & permissions, Harness & model, Container).
+- [x] Edit then navigate away: the unsaved-changes guard still fires.
 
 ## 6. YAML on disk (spec US5)
 
 Save an existing agent without changes, then open its file:
 
-- [ ] Section headers and key order match [contracts/schema-and-yaml.md](contracts/schema-and-yaml.md) §2.
-- [ ] Every value equals its pre-save value (`git diff agents/<name>.yaml` shows only moved lines and renamed headers).
-- [ ] An unmanaged key added by hand survives in the trailing Unmanaged block.
+- [x] Section headers and key order match [contracts/schema-and-yaml.md](contracts/schema-and-yaml.md) §2.
+- [x] Every value equals its pre-save value (`git diff agents/<name>.yaml` shows only moved lines and renamed headers).
+- [x] An unmanaged key added by hand survives in the trailing Unmanaged block.

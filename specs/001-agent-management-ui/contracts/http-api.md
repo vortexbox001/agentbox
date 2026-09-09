@@ -25,18 +25,21 @@ Page JavaScript performs all reads/writes through the API below; pages themselve
 
 Returns the field and harness definitions the form renders from. Its `prompts` array is the source the form uses to populate the prompt selector (the same set as `GET /api/prompts`, filenames only); a prompt created inline is written before the agent in the same save and appears in this list for any form loaded afterward (SC-005), so no separate refresh call is defined.
 
+Feature 003 added a `groups` array and a `group` key on every section (Runs/Job/Box); the full group and section list is defined in [`specs/003-agent-form-layout/contracts/schema-and-yaml.md` §1](../../003-agent-form-layout/contracts/schema-and-yaml.md).
+
 ```json
 {
-  "sections": [{"id": "identity", "label": "Identity"}, {"id": "model", "label": "Model"}, "..."],
+  "groups": [{"id": "runs", "label": "Runs"}, {"id": "job", "label": "Job"}, {"id": "box", "label": "Box"}],
+  "sections": [{"id": "identity", "label": "Identity", "group": null}, {"id": "schedule", "label": "Schedule", "group": "runs"}, "..."],
   "fields": [
-    {"id": "permission_mode", "section": "execution", "label": "Permission mode", "type": "enum",
+    {"id": "permission_mode", "section": "tools", "label": "Permission mode", "type": "enum",
      "required": false, "default": null, "choices": ["default", "acceptEdits", "auto", "bypassPermissions", "dontAsk", "plan"],
      "help": "Claude Code permission mode.", "harnesses": ["claude-code"]},
     "..."
   ],
   "harnesses": [
     {"id": "claude-code", "label": "Claude Code", "description": "...", "image": "agentbox/agent-claude",
-     "fields": ["name", "enabled", "harness", "model", "..."],
+     "fields": ["name", "enabled", "schedule", "timeout_seconds", "..."],
      "model_rule": {"choices": ["sonnet", "opus", "haiku", "fable"], "custom": "claude-id", "blank_ok": true},
      "effort_choices": ["low", "medium", "high", "xhigh", "max"], "default_network": "bridge"},
     "..."

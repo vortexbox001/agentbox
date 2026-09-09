@@ -460,9 +460,23 @@ Archon uses **named grid patterns** instead of fixed breakpoints. Layouts are in
 | `ax-grid-split` | `1fr 1fr` | 20px | Equal two-column (project detail panels) |
 | `ax-grid-form` | `repeat(auto-fill, minmax(280px, 1fr))` | 24px | Form field pairs (agent config, settings) |
 
+### Agent form layout
+
+The agent create/edit form groups its cards into three columns — **Runs**, **Job**, **Box** — laid out with the named grid `ax-grid-agent` on an inline-size container (`.ax-content` carries `container-type: inline-size; container-name: ax-content`). It uses `grid-template-areas` with the areas `runs`, `job`, and `box`, and folds by the **content pane's** width, not the viewport:
+
+| Pane inline size | Columns | Areas |
+|---|---|---|
+| below 720px | 1 | `"runs" "job" "box"` |
+| 720px–1319px | 2 | `"runs job" "box job"` (Box folds under Runs; Job spans both rows) |
+| 1320px and up | 3 | `"runs job box"` with tracks `minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr)` |
+
+Job carries every wide control (prompt picker, chip editors, env rows), so it takes the widest track (`1.4fr`) at three columns. The grid uses `align-items: start` so a short group never stretches to a taller neighbour's height, and every group is a flex column of cards at the shared 20px gap.
+
+This is the **one deliberate exception** to Grid Rule 1's "no fixed breakpoints": `auto-fill` cannot fold a third column under the first while letting the second span both rows, so `ax-grid-agent` uses two explicit container-width thresholds (720px and 1320px). They are the only literals in its CSS.
+
 ### Grid Rules
 
-1. **No fixed breakpoints.** Use `auto-fill + minmax()` for intrinsic responsiveness. Cards flow from 1→N columns based on container width.
+1. **No fixed breakpoints.** Use `auto-fill + minmax()` for intrinsic responsiveness. Cards flow from 1→N columns based on container width. *(The sole exception is `ax-grid-agent` — the agent form layout above — which needs two explicit container-query thresholds; see that subsection for why.)*
 2. **Gap is always 16px or 20px.** Use 16px for card grids and stat rows; 20–24px for detail layouts and form grids.
 3. **Page padding is 28px.** Content area of the main panel uses `padding: 28px` on all sides.
 4. **Sidebar max-width is capped.** Detail sidebars use `minmax(0, 340px)`, never fixed width — they shrink gracefully.

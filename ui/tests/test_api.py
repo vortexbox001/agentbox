@@ -821,3 +821,84 @@ def test_app_css_defines_form_grid():
     assert "gap:var(--ax-space-10)" in grid
     wide = _css_block(css, ".ax-field--wide")
     assert "grid-column:1/-1" in wide
+
+
+# The inner text of a `@container <condition> { ... }` at-rule (brace-matched so a
+# nested rule's braces do not truncate it), whitespace-squashed for comparison.
+def _container_block(text, condition):
+    start = text.index(f"@container {condition}")
+    brace = text.index("{", start)
+    depth, i = 1, brace + 1
+    while depth and i < len(text):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+        i += 1
+    assert depth == 0, f"unbalanced @container {condition!r}"
+    return re.sub(r"\s+", "", text[brace + 1:i - 1])
+
+
+# ── 003 Agent Form Layout: base grid (US1/US4) ───────────
+def test_app_css_defines_base_grid_agent():
+    css = _app_css()
+    base = _css_block(css, ".ax-grid-agent")
+    assert 'grid-template-areas:"runs""job""box"' in base
+    assert "align-items:start" in base
+    group = _css_block(css, ".ax-form-group")
+    assert "min-width:0" in group
+
+
+# ── 003 US2: three columns on a wide pane ────────────────
+def test_app_css_three_column_container_query():
+    css = _app_css()
+    block = _container_block(css, "ax-content (min-width: 1320px)")
+    assert 'grid-template-areas:"runsjobbox"' in block
+    assert "grid-template-columns:minmax(0,1fr)minmax(0,1.4fr)minmax(0,1fr)" in block
+
+
+# ── 003 US3: two columns on a mid-width pane ─────────────
+def test_app_css_two_column_container_query():
+    css = _app_css()
+    block = _container_block(css, "ax-content (min-width: 720px)")
+    assert 'grid-template-areas:"runsjob""boxjob"' in block
+    assert "grid-template-columns:minmax(0,1fr)minmax(0,1fr)" in block
+    # The wider query must come later in the file so it wins the cascade.
+    assert css.index("@container ax-content (min-width: 720px)") \
+        < css.index("@container ax-content (min-width: 1320px)")
+
+
+# ── 003 Agent Form Layout: page markup (US1) ─────────────
+# The lead strip, group grid, and reload actionbar order are server-rendered; the
+# groups and cards themselves are built client-side by agent-form.js.
+def test_new_agent_page_has_lead_strip_and_group_grid(client):
+    html = client.get("/agents/new").text
+    assert 'id="ax-form-lead"' in html
+    assert 'class="ax-form-lead ax-grid-form"' in html
+    assert 'id="ax-form-lead-fields"' in html
+    assert 'id="ax-form-sections"' in html
+    sections = re.search(r'<div[^>]*id="ax-form-sections"[^>]*>', html).group(0)
+    assert "ax-grid-agent" in sections
+    # Document order: actionbar → lead strip → sections mount.
+    assert (html.index("ax-form-actionbar")
+            < html.index('id="ax-form-lead"')
+            < html.index('id="ax-form-sections"'))
+    # The template picker lives inside the lead strip, which is not a card.
+    lead = re.search(r'<div[^>]*id="ax-form-lead".*?</div>\s*</div>', html, re.S).group(0)
+    assert 'id="ax-template-select"' in lead
+    lead_open = re.search(r'<div[^>]*id="ax-form-lead"[^>]*>', html).group(0)
+    assert "ax-card" not in lead_open
+
+
+def test_edit_agent_page_has_lead_strip_and_group_grid(client, tmp_agents):
+    _write_agent_file(tmp_agents, "edit-me", EDIT_FIXTURE)
+    html = client.get("/agents/edit-me").text
+    assert 'id="ax-form-lead"' in html
+    assert 'id="ax-form-lead-fields"' in html
+    sections = re.search(r'<div[^>]*id="ax-form-sections"[^>]*>', html).group(0)
+    assert "ax-grid-agent" in sections
+    assert (html.index("ax-form-actionbar")
+            < html.index('id="ax-form-lead"')
+            < html.index('id="ax-form-sections"'))
+    # Edit mode has no template picker in the lead strip.
+    assert 'id="ax-template-select"' not in html

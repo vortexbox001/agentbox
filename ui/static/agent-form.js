@@ -12,6 +12,7 @@ import { enhanceSelect, enhanceSelects } from "/static/dropdown.js";
 
 const form = document.getElementById("ax-agent-form");
 const sectionsMount = document.getElementById("ax-form-sections");
+const leadMount = document.getElementById("ax-form-lead-fields");
 const reloadCheckbox = document.getElementById("ax-reload-checkbox");
 const templateSelect = document.getElementById("ax-template-select");
 const previewBtn = document.getElementById("ax-preview-btn");
@@ -731,10 +732,33 @@ function renderMap(id, f) {
 function renderForm(harness) {
   currentHarness = harness;
   const ids = new Set(harnessFieldIds(harness));
+  if (leadMount) leadMount.replaceChildren();
   sectionsMount.replaceChildren();
+
+  // One container per group (Runs, Job, Box), in order, each led by its heading.
+  // All three always render — every harness has at least one card per group — so
+  // the grid areas are always occupied (contracts/layout.md §1).
+  const groupEls = new Map();
+  for (const g of SCHEMA.groups) {
+    const groupEl = document.createElement("section");
+    groupEl.className = "ax-form-group";
+    groupEl.dataset.group = g.id;
+    const heading = document.createElement("h2");
+    heading.className = "ax-form-section-heading";
+    heading.textContent = g.label;
+    groupEl.appendChild(heading);
+    groupEls.set(g.id, groupEl);
+  }
+
   for (const section of SCHEMA.sections) {
     const fields = SCHEMA.fields.filter((f) => f.section === section.id && ids.has(f.id));
     if (!fields.length) continue;
+    if (section.group == null) {
+      // Lead-strip section (identity): fields render straight into the lead mount,
+      // not a card, so name (and the template picker) share one strip.
+      if (leadMount) for (const f of fields) leadMount.appendChild(makeField(f));
+      continue;
+    }
     const card = document.createElement("section");
     card.className = "ax-card ax-form-section";
     const h = document.createElement("h2");
@@ -744,9 +768,16 @@ function renderForm(harness) {
     grid.className = "ax-grid-form";
     for (const f of fields) grid.appendChild(makeField(f));
     card.appendChild(grid);
-    sectionsMount.appendChild(card);
+    const groupEl = groupEls.get(section.group);
+    if (groupEl) groupEl.appendChild(card);
   }
-  enhanceSelects(sectionsMount);   // custom dropdown over every select (spec 002 US1)
+
+  for (const g of SCHEMA.groups) sectionsMount.appendChild(groupEls.get(g.id));
+
+  // Enhance every select on the whole form — the lead strip's controls included,
+  // not only the group cards (spec 002 US1). enhanceSelect is idempotent and its
+  // MutationObserver re-syncs the template picker when its options load later.
+  enhanceSelects(form);
   updateHarnessMeta();
   updateNetworkWarning();
 }
@@ -793,7 +824,8 @@ function switchHarness(harness) {
 
 // ── Field errors ────────────────────────────────────────
 function setFieldError(fid, message) {
-  const wrap = sectionsMount.querySelector(`[data-field="${CSS.escape(fid)}"]`);
+  // Query the whole form: the name field lives in the lead strip, not sectionsMount.
+  const wrap = form.querySelector(`[data-field="${CSS.escape(fid)}"]`);
   if (!wrap) return false;
   const err = wrap.querySelector(".ax-field-error");
   const control = wrap.querySelector("input, select");
@@ -808,8 +840,8 @@ function setFieldError(fid, message) {
 }
 
 function clearFieldErrors() {
-  sectionsMount.querySelectorAll(".ax-field-error").forEach((e) => { e.textContent = ""; e.hidden = true; });
-  sectionsMount.querySelectorAll('[aria-invalid="true"]').forEach((c) => c.removeAttribute("aria-invalid"));
+  form.querySelectorAll(".ax-field-error").forEach((e) => { e.textContent = ""; e.hidden = true; });
+  form.querySelectorAll('[aria-invalid="true"]').forEach((c) => c.removeAttribute("aria-invalid"));
 }
 
 function applyFieldErrors(fields) {
@@ -1139,7 +1171,8 @@ async function prefillFromTemplate(stem) {
 // ── Edit mode ───────────────────────────────────────────
 // Lock the name field: the filename is the agent's identity and cannot change.
 function lockName() {
-  const wrap = sectionsMount.querySelector('[data-field="name"]');
+  // name renders in the lead strip (group-less identity section), so search the form.
+  const wrap = form.querySelector('[data-field="name"]');
   if (!wrap) return;
   const input = wrap.querySelector("input");
   if (input) {

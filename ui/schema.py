@@ -37,18 +37,28 @@ class SchemaTooNew(Exception):
         super().__init__(f"written by a newer agentbox (schema {version})")
 
 
-# --- Sections -------------------------------------------------------------
-# FR-002 order. The emitter writes them in this order; "Unmanaged" is appended
-# by the emitter for keys the schema does not define and is not a form section.
+# --- Groups & sections ----------------------------------------------------
+# Groups are the form's three columns (spec 003 FR-015). A section belongs to one
+# group, or to none — the lone group-less section (identity) renders in the lead
+# strip while still being written first in the file. The emitter writes sections
+# in this order; "Unmanaged" is appended by the emitter for keys the schema does
+# not define and is not a form section.
+GROUPS: list[dict] = [
+    {"id": "runs", "label": "Runs"},
+    {"id": "job", "label": "Job"},
+    {"id": "box", "label": "Box"},
+]
+
 SECTIONS: list[dict] = [
-    {"id": "identity", "label": "Identity"},
-    {"id": "model", "label": "Model"},
-    {"id": "prompt_output", "label": "Prompt & output"},
-    {"id": "workspace", "label": "Workspace"},
-    {"id": "execution", "label": "Execution"},
-    {"id": "scheduling", "label": "Scheduling"},
-    {"id": "resources", "label": "Container resources"},
-    {"id": "environment", "label": "Environment"},
+    {"id": "identity", "label": "Identity", "group": None},
+    {"id": "schedule", "label": "Schedule", "group": "runs"},
+    {"id": "limits", "label": "Limits", "group": "runs"},
+    {"id": "prompt", "label": "Prompt", "group": "job"},
+    {"id": "directories", "label": "Directories", "group": "job"},
+    {"id": "environment", "label": "Environment", "group": "job"},
+    {"id": "tools", "label": "Tools & permissions", "group": "job"},
+    {"id": "harness_model", "label": "Harness & model", "group": "box"},
+    {"id": "container", "label": "Container", "group": "box"},
 ]
 
 _ALL = ["claude-code", "pi", "api", "codex"]
@@ -76,126 +86,62 @@ class SchemaField:
 # strings state what the field does, its valid values, and its default; they are
 # emitted verbatim as the YAML comments and shown in the form.
 FIELDS: list[SchemaField] = [
-    # Identity
+    # Identity (lead strip)
     SchemaField(
         "name", "identity", "Name", "string",
         "Unique kebab-case identifier. Becomes the Dagster job agent_<name> (hyphens become underscores).",
         _ALL, required=True, pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$",
     ),
+    # Schedule (Runs)
     SchemaField(
-        "enabled", "identity", "Enabled", "bool",
+        "enabled", "schedule", "Enabled", "bool",
         "Disabled agents are skipped when Dagster loads the workspace. true or false; default true.",
         _ALL, required=True, default=True, choices=[True, False],
     ),
     SchemaField(
-        "harness", "identity", "Harness", "enum",
-        "Which runtime runs this agent; determines the available fields and models. One of claude-code, pi, api, codex.",
-        _ALL, required=True, choices=list(_ALL),
+        "schedule", "schedule", "Schedule (cron)", "cron",
+        "Cron expression for automatic runs; leave empty for manual-only. Five fields, e.g. 0 7 * * *.",
+        _ALL, default="",
     ),
-    # Model
+    # Limits (Runs)
     SchemaField(
-        "model", "model", "Model", "string",
-        "Model the harness talks to.",
-        _ALL,
-    ),
-    SchemaField(
-        "effort", "model", "Effort", "enum",
-        "Reasoning/thinking effort level.",
-        ["claude-code", "pi", "codex"],
-    ),
-    SchemaField(
-        "fallback_model", "model", "Fallback model", "string",
-        "Model to use if the primary is overloaded.",
-        ["claude-code"],
-    ),
-    SchemaField(
-        "max_tokens", "model", "Max tokens", "int",
-        "Cap on response tokens. 1 to 200000; default 1024.",
-        ["api"], default=1024, min=1, max=200000,
-    ),
-    # Prompt & output
-    SchemaField(
-        "prompt_file", "prompt_output", "Prompt file", "string",
-        "File in prompts/ read at launch and given to the agent as its prompt.",
-        _ALL, required=True, choice_source="prompts",
-    ),
-    SchemaField(
-        "output_dir", "prompt_output", "Output directory", "path",
-        "Host directory mounted at /output; every run writes its result files here.",
-        _ALL, required=True,
-    ),
-    SchemaField(
-        "append_system_prompt", "prompt_output", "Append system prompt", "string",
-        "Extra text appended to the system prompt.",
-        ["claude-code", "pi", "codex"],
-    ),
-    # Workspace
-    SchemaField(
-        "workspace", "workspace", "Workspace", "path",
-        "Host directory mounted at /workspace; scratch space for the run. Default /data/workspaces/<name>.",
-        ["claude-code", "pi", "codex"],
-    ),
-    SchemaField(
-        "wipe_workspace", "workspace", "Wipe workspace", "bool",
-        "Empty the workspace before every run so each run starts clean. true or false; default false.",
-        ["claude-code", "pi", "codex"], default=False, choices=[True, False],
-    ),
-    # Execution
-    SchemaField(
-        "timeout_seconds", "execution", "Timeout (seconds)", "int",
+        "timeout_seconds", "limits", "Timeout (seconds)", "int",
         "The run is killed after this many seconds. 1 to 86400; default 900.",
         _ALL, default=900, min=1, max=86400,
     ),
     SchemaField(
-        "max_turns", "execution", "Max turns", "int",
+        "max_turns", "limits", "Max turns", "int",
         "Cap on agentic turns. 1 to 1000; default 10.",
         ["claude-code"], default=10, min=1, max=1000,
     ),
+    # Prompt (Job)
     SchemaField(
-        "permission_mode", "execution", "Permission mode", "enum",
-        "Claude Code permission mode.",
-        ["claude-code"],
-        choices=["default", "acceptEdits", "auto", "bypassPermissions", "dontAsk", "plan"],
+        "prompt_file", "prompt", "Prompt file", "string",
+        "File in prompts/ read at launch and given to the agent as its prompt.",
+        _ALL, required=True, choice_source="prompts",
     ),
     SchemaField(
-        "allowed_tools", "execution", "Allowed tools", "list",
-        "Tool allowlist.",
-        ["claude-code", "pi"],
+        "append_system_prompt", "prompt", "Append system prompt", "string",
+        "Extra text appended to the system prompt.",
+        ["claude-code", "pi", "codex"],
+    ),
+    # Directories (Job)
+    SchemaField(
+        "workspace", "directories", "Workspace", "path",
+        "Host directory mounted at /workspace; scratch space for the run. Default /data/workspaces/<name>.",
+        ["claude-code", "pi", "codex"],
     ),
     SchemaField(
-        "disallowed_tools", "execution", "Disallowed tools", "list",
-        "Tool denylist (pi has no such flag).",
-        ["claude-code"],
+        "wipe_workspace", "directories", "Wipe workspace", "bool",
+        "Empty the workspace before every run so each run starts clean. true or false; default false.",
+        ["claude-code", "pi", "codex"], default=False, choices=[True, False],
     ),
     SchemaField(
-        "mcp_config", "execution", "MCP config", "path",
-        "Path to an MCP server config JSON inside the container.",
-        ["claude-code"],
+        "output_dir", "directories", "Output directory", "path",
+        "Host directory mounted at /output; every run writes its result files here.",
+        _ALL, required=True,
     ),
-    # Scheduling
-    SchemaField(
-        "schedule", "scheduling", "Schedule (cron)", "cron",
-        "Cron expression for automatic runs; leave empty for manual-only. Five fields, e.g. 0 7 * * *.",
-        _ALL, default="",
-    ),
-    # Container resources
-    SchemaField(
-        "network", "resources", "Network", "enum",
-        "Docker network: agentnet-isolated (LiteLLM only, no internet), agentnet (LiteLLM + internet), "
-        "bridge (full internet — needed by claude-code and codex). Default depends on harness.",
-        _ALL, required=True, choices=["agentnet-isolated", "agentnet", "bridge"],
-    ),
-    SchemaField(
-        "memory", "resources", "Memory", "string",
-        "Container memory limit (e.g. 512m, 1g). Default 1g.",
-        _ALL, default="1g", pattern=r"^\d+[kmg]$",
-    ),
-    SchemaField(
-        "cpus", "resources", "CPUs", "number",
-        "Container CPU limit (e.g. 1.5). 0.1 to 64; default 1.5.",
-        _ALL, default=1.5, min=0.1, max=64,
-    ),
-    # Environment
+    # Environment (Job)
     SchemaField(
         "env_file", "environment", "Env file", "path",
         "Host path to an env file passed to the container (keeps secrets off the command line). Applies to every harness.",
@@ -205,6 +151,71 @@ FIELDS: list[SchemaField] = [
         "env", "environment", "Environment variables", "map",
         "Environment variables for the container. ${NAME} forwards the host variable by name without exposing its value.",
         _ALL,
+    ),
+    # Tools & permissions (Job)
+    SchemaField(
+        "permission_mode", "tools", "Permission mode", "enum",
+        "Claude Code permission mode.",
+        ["claude-code"],
+        choices=["default", "acceptEdits", "auto", "bypassPermissions", "dontAsk", "plan"],
+    ),
+    SchemaField(
+        "allowed_tools", "tools", "Allowed tools", "list",
+        "Tool allowlist.",
+        ["claude-code", "pi"],
+    ),
+    SchemaField(
+        "disallowed_tools", "tools", "Disallowed tools", "list",
+        "Tool denylist (pi has no such flag).",
+        ["claude-code"],
+    ),
+    SchemaField(
+        "mcp_config", "tools", "MCP config", "path",
+        "Path to an MCP server config JSON inside the container.",
+        ["claude-code"],
+    ),
+    # Harness & model (Box)
+    SchemaField(
+        "harness", "harness_model", "Harness", "enum",
+        "Which runtime runs this agent; determines the available fields and models. One of claude-code, pi, api, codex.",
+        _ALL, required=True, choices=list(_ALL),
+    ),
+    SchemaField(
+        "model", "harness_model", "Model", "string",
+        "Model the harness talks to.",
+        _ALL,
+    ),
+    SchemaField(
+        "effort", "harness_model", "Effort", "enum",
+        "Reasoning/thinking effort level.",
+        ["claude-code", "pi", "codex"],
+    ),
+    SchemaField(
+        "fallback_model", "harness_model", "Fallback model", "string",
+        "Model to use if the primary is overloaded.",
+        ["claude-code"],
+    ),
+    SchemaField(
+        "max_tokens", "harness_model", "Max tokens", "int",
+        "Cap on response tokens. 1 to 200000; default 1024.",
+        ["api"], default=1024, min=1, max=200000,
+    ),
+    # Container (Box)
+    SchemaField(
+        "network", "container", "Network", "enum",
+        "Docker network: agentnet-isolated (LiteLLM only, no internet), agentnet (LiteLLM + internet), "
+        "bridge (full internet — needed by claude-code and codex). Default depends on harness.",
+        _ALL, required=True, choices=["agentnet-isolated", "agentnet", "bridge"],
+    ),
+    SchemaField(
+        "memory", "container", "Memory", "string",
+        "Container memory limit (e.g. 512m, 1g). Default 1g.",
+        _ALL, default="1g", pattern=r"^\d+[kmg]$",
+    ),
+    SchemaField(
+        "cpus", "container", "CPUs", "number",
+        "Container CPU limit (e.g. 1.5). 0.1 to 64; default 1.5.",
+        _ALL, default=1.5, min=0.1, max=64,
     ),
 ]
 
@@ -560,6 +571,7 @@ def to_public() -> dict:
     """
     return {
         "schema_version": SCHEMA_VERSION,
+        "groups": [dict(g) for g in GROUPS],
         "sections": [dict(s) for s in SECTIONS],
         "fields": [_field_public(f) for f in FIELDS],
         "harnesses": [_harness_public(h) for h in HARNESSES],

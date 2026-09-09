@@ -176,3 +176,79 @@ def test_to_public_shape(settings):
     assert "cheap" in pi["model_rule"]["choices"]
     cc = next(h for h in pub["harnesses"] if h["id"] == "claude-code")
     assert cc["model_rule"]["choices"] == ["sonnet", "opus", "haiku", "fable"]
+
+
+# ── Groups, sections, and field re-homing (003 data-model.md) ──
+# The section each field must live in after the 003 regrouping (data-model.md
+# "Field re-homing"). Every managed field appears exactly once.
+_FIELD_SECTION = {
+    "name": "identity",
+    "enabled": "schedule",
+    "schedule": "schedule",
+    "timeout_seconds": "limits",
+    "max_turns": "limits",
+    "prompt_file": "prompt",
+    "append_system_prompt": "prompt",
+    "workspace": "directories",
+    "wipe_workspace": "directories",
+    "output_dir": "directories",
+    "env_file": "environment",
+    "env": "environment",
+    "permission_mode": "tools",
+    "allowed_tools": "tools",
+    "disallowed_tools": "tools",
+    "mcp_config": "tools",
+    "harness": "harness_model",
+    "model": "harness_model",
+    "effort": "harness_model",
+    "fallback_model": "harness_model",
+    "max_tokens": "harness_model",
+    "network": "container",
+    "memory": "container",
+    "cpus": "container",
+}
+
+
+def test_groups_are_runs_job_box_in_order():
+    assert [g["id"] for g in schema.GROUPS] == ["runs", "job", "box"]
+    assert [g["label"] for g in schema.GROUPS] == ["Runs", "Job", "Box"]
+
+
+def test_every_section_group_is_valid_and_one_is_lead():
+    group_ids = {g["id"] for g in schema.GROUPS}
+    lead = [s for s in schema.SECTIONS if s["group"] is None]
+    assert [s["id"] for s in lead] == ["identity"]   # exactly one, and it is identity
+    for s in schema.SECTIONS:
+        assert s["group"] is None or s["group"] in group_ids, s
+
+
+def test_every_field_section_names_a_section():
+    section_ids = {s["id"] for s in schema.SECTIONS}
+    for f in schema.FIELDS:
+        assert f.section in section_ids, f"{f.id} → unknown section {f.section}"
+
+
+def test_fields_contiguous_by_section_in_sections_order():
+    order = [s["id"] for s in schema.SECTIONS]
+    seen: list[str] = []
+    for f in schema.FIELDS:
+        if not seen or seen[-1] != f.section:
+            seen.append(f.section)
+    # Each section id appears once in FIELDS, in SECTIONS order (contiguous blocks).
+    assert seen == [sid for sid in order if any(fl.section == sid for fl in schema.FIELDS)]
+    assert seen == order   # every section has at least one field
+
+
+def test_field_re_homing_matches_data_model():
+    assert {f.id for f in schema.FIELDS} == set(_FIELD_SECTION)
+    for f in schema.FIELDS:
+        assert f.section == _FIELD_SECTION[f.id], f"{f.id} in {f.section}, expected {_FIELD_SECTION[f.id]}"
+
+
+def test_to_public_exposes_groups_and_section_group():
+    pub = schema.to_public()
+    assert [g["id"] for g in pub["groups"]] == ["runs", "job", "box"]
+    for s in pub["sections"]:
+        assert "group" in s
+    identity = next(s for s in pub["sections"] if s["id"] == "identity")
+    assert identity["group"] is None

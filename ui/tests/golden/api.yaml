@@ -4,29 +4,31 @@
 
 # --- Identity ---
 name: nightly-digest  # Unique kebab-case identifier. Becomes the Dagster job agent_<name> (hyphens become underscores).
+
+# --- Schedule ---
 enabled: true  # Disabled agents are skipped when Dagster loads the workspace. true or false; default true.
-harness: api  # Which runtime runs this agent; determines the available fields and models. One of claude-code, pi, api, codex.
-
-# --- Model ---
-model: cheap  # Model the harness talks to. api: a LiteLLM alias from litellm/config.yaml.
-max_tokens: 1024  # Cap on response tokens. 1 to 200000; default 1024.
-
-# --- Prompt & output ---
-prompt_file: repo-librarian.md  # File in prompts/ read at launch and given to the agent as its prompt.
-output_dir: /data/outputs/nightly-digest  # Host directory mounted at /output; every run writes its result files here.
-
-# --- Execution ---
-timeout_seconds: 600  # The run is killed after this many seconds. 1 to 86400; default 900.
-
-# --- Scheduling ---
 schedule: 0 7 * * *  # Cron expression for automatic runs; leave empty for manual-only. Five fields, e.g. 0 7 * * *.
 
-# --- Container resources ---
-network: agentnet-isolated  # Docker network: agentnet-isolated (LiteLLM only, no internet), agentnet (LiteLLM + internet), bridge (full internet — needed by claude-code and codex). Default depends on harness.
-memory: 1g  # Container memory limit (e.g. 512m, 1g). Default 1g.
-cpus: 1.5  # Container CPU limit (e.g. 1.5). 0.1 to 64; default 1.5.
+# --- Limits ---
+timeout_seconds: 600  # The run is killed after this many seconds. 1 to 86400; default 900.
+
+# --- Prompt ---
+prompt_file: repo-librarian.md  # File in prompts/ read at launch and given to the agent as its prompt.
+
+# --- Directories ---
+output_dir: /data/outputs/nightly-digest  # Host directory mounted at /output; every run writes its result files here.
 
 # --- Environment ---
 env_file: /data/credentials/agent-secrets.env  # Host path to an env file passed to the container (keeps secrets off the command line). Applies to every harness.
 env:  # Environment variables for the container. ${NAME} forwards the host variable by name without exposing its value.
   GITHUB_USER: leeclemmer
+
+# --- Harness & model ---
+harness: api  # Which runtime runs this agent; determines the available fields and models. One of claude-code, pi, api, codex.
+model: cheap  # Model the harness talks to. api: a LiteLLM alias from litellm/config.yaml.
+max_tokens: 1024  # Cap on response tokens. 1 to 200000; default 1024.
+
+# --- Container ---
+network: agentnet-isolated  # Docker network: agentnet-isolated (LiteLLM only, no internet), agentnet (LiteLLM + internet), bridge (full internet — needed by claude-code and codex). Default depends on harness.
+memory: 1g  # Container memory limit (e.g. 512m, 1g). Default 1g.
+cpus: 1.5  # Container CPU limit (e.g. 1.5). 0.1 to 64; default 1.5.

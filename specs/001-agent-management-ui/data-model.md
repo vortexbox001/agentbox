@@ -41,20 +41,22 @@ The "Explanation" column below is **illustrative**; the authoritative help text 
 
 | Section | claude-code | pi | api | codex |
 |---|---|---|---|---|
-| Identity: `name`, `enabled`, `harness` | ✓ | ✓ | ✓ | ✓ |
-| Model: `model` | ✓ | ✓ | ✓ | ✓ |
-| Model: `effort` | ✓ | ✓ | — | ✓ |
-| Model: `fallback_model` | ✓ | — | — | — |
-| Model: `max_tokens` | — | — | ✓ | — |
-| Prompt & output: `prompt_file`, `output_dir` | ✓ | ✓ | ✓ | ✓ |
-| Prompt & output: `append_system_prompt` | ✓ | ✓ | — | ✓ |
-| Workspace: `workspace`, `wipe_workspace` | ✓ | ✓ | — | ✓ |
-| Execution: `timeout_seconds` | ✓ | ✓ | ✓ | ✓ |
-| Execution: `max_turns`, `permission_mode`, `disallowed_tools`, `mcp_config` | ✓ | — | — | — |
-| Execution: `allowed_tools` | ✓ | ✓ | — | — |
-| Scheduling: `schedule` | ✓ | ✓ | ✓ | ✓ |
-| Resources: `network`, `memory`, `cpus` | ✓ | ✓ | ✓ | ✓ |
+| Identity: `name` | ✓ | ✓ | ✓ | ✓ |
+| Schedule: `enabled`, `schedule` | ✓ | ✓ | ✓ | ✓ |
+| Limits: `timeout_seconds` | ✓ | ✓ | ✓ | ✓ |
+| Limits: `max_turns` | ✓ | — | — | — |
+| Prompt: `prompt_file` | ✓ | ✓ | ✓ | ✓ |
+| Prompt: `append_system_prompt` | ✓ | ✓ | — | ✓ |
+| Directories: `workspace`, `wipe_workspace` | ✓ | ✓ | — | ✓ |
+| Directories: `output_dir` | ✓ | ✓ | ✓ | ✓ |
 | Environment: `env`, `env_file` | ✓ | ✓ | ✓ | ✓ |
+| Tools & permissions: `permission_mode`, `disallowed_tools`, `mcp_config` | ✓ | — | — | — |
+| Tools & permissions: `allowed_tools` | ✓ | ✓ | — | — |
+| Harness & model: `harness`, `model` | ✓ | ✓ | ✓ | ✓ |
+| Harness & model: `effort` | ✓ | ✓ | — | ✓ |
+| Harness & model: `fallback_model` | ✓ | — | — | — |
+| Harness & model: `max_tokens` | — | — | ✓ | — |
+| Container: `network`, `memory`, `cpus` | ✓ | ✓ | ✓ | ✓ |
 
 Source of truth for this matrix: `orchestrator/factory.py` (which keys each harness branch reads, and which are applied in the common section) — the README's YAML reference is descriptive and must be corrected if it disagrees with the code.
 

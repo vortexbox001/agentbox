@@ -55,6 +55,21 @@ def test_golden_file_matches_emitter(settings, harness):
     assert st.emit_yaml(GOLDEN[harness]) == expected
 
 
+@pytest.mark.parametrize("harness", list(GOLDEN))
+def test_emitted_section_headers_follow_schema_order(settings, harness):
+    """The `# --- <label> ---` headers appear in schema.SECTIONS label order, and
+    `name:` is the first key line of the file (003 contract schema-and-yaml.md §2)."""
+    text = st.emit_yaml(GOLDEN[harness])
+    headers = [ln[6:-4].strip() for ln in text.splitlines() if ln.startswith("# --- ")]
+    section_labels = [s["label"] for s in schema.SECTIONS]
+    # The emitted headers are a subsequence of the schema's section labels (a card
+    # is skipped when it has no applicable value), in the same relative order.
+    positions = [section_labels.index(h) for h in headers if h in section_labels]
+    assert positions == sorted(positions), headers
+    first_key = next(ln for ln in text.splitlines() if ln and not ln.startswith("#"))
+    assert first_key.startswith("name:"), first_key
+
+
 def test_repo_agents_round_trip(settings):
     """Every real agents/*.yaml (templates included) survives emit + reload."""
     paths = sorted(glob.glob(os.path.join(settings.AGENTS_DIR, "*.yaml")))

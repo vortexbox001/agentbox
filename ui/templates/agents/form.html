@@ -61,8 +61,10 @@
       </label>
     </div>
 
-    {% if mode == "create" %}
-    <div class="ax-card ax-form-lead">
+    {# Lead strip (not a card): the template picker (create only) sits beside the
+       agent name, which agent-form.js renders into #ax-form-lead-fields. #}
+    <div class="ax-form-lead ax-grid-form" id="ax-form-lead">
+      {% if mode == "create" %}
       <label class="ax-field" for="ax-template-select">
         <span>Start from template</span>
         <select class="ax-select" id="ax-template-select" data-allow-dirty>
@@ -70,10 +72,11 @@
         </select>
         <span class="ax-help">Pre-fills the form from an existing <span class="ax-mono">_template-*.yaml</span>; the name is cleared and the agent starts disabled.</span>
       </label>
+      {% endif %}
+      <div id="ax-form-lead-fields"></div>
     </div>
-    {% endif %}
 
-    <div data-sections id="ax-form-sections">
+    <div data-sections id="ax-form-sections" class="ax-grid-agent">
       <div class="ax-card ax-empty" id="ax-form-loading">
         <p class="ax-muted">Loading the agent schema…</p>
       </div>
