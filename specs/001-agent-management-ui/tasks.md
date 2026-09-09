@@ -24,13 +24,13 @@ Single package at `ui/`: modules at `ui/*.py`, pages in `ui/templates/`, browser
 
 **Purpose**: Get the package, container, and test harness in place
 
-- [ ] T001 Rename the design reference folder with `git mv "ui/Archon Agent Orchestration Platform" ui/design-system` (no content changes; verify `ui/design-system/support.js`, `archon-tokens.css`, and the three `.dc.html` files are present)
-- [ ] T002 Create `ui/requirements.txt` (pinned: fastapi, uvicorn, jinja2, python-multipart, httpx, pyyaml, croniter, pytest) and change `ui/Dockerfile` to `COPY requirements.txt` + `pip install --no-cache-dir -r requirements.txt`, keeping the existing `WORKDIR`/`CMD`
-- [ ] T003 [P] Update the `ui` service in `docker-compose.yml`: add `./prompts:/opt/agentbox/prompts` (rw) and `./litellm/config.yaml:/opt/agentbox/litellm/config.yaml:ro`, add `user: "${AGENTBOX_UID:-1000}:${AGENTBOX_GID:-1000}"`, and pass `AGENTS_DIR`, `PROMPTS_DIR`, `LITELLM_CONFIG`, `DAGSTER_URL` as environment
-- [ ] T004 [P] Document `AGENTBOX_UID` / `AGENTBOX_GID` (with `id -u` / `id -g` hint) in `.env.example`
-- [ ] T005 [P] Create `ui/config.py` exposing `AGENTS_DIR`, `PROMPTS_DIR`, `LITELLM_CONFIG`, `DAGSTER_URL`, `DESIGN_SYSTEM_DIR`, `RELOAD_TIMEOUT_S = 10` from environment variables with the container-path defaults from plan.md
-- [ ] T006 [P] Create `ui/tests/conftest.py` with fixtures: `tmp_agents` (copies of every repo `agents/*.yaml` into `tmp_path`), `tmp_prompts` (copies of `prompts/*.md`), `litellm_cfg` (copy of `litellm/config.yaml`), a `settings` fixture that monkeypatches `ui/config.py` to those paths, a `client` fixture returning `fastapi.testclient.TestClient(app)`, and a `dagster_stub` fixture that monkeypatches `ui/dagster.py` reload/status to return canned `{ok, message}` values
-- [ ] T007 [P] Create `ui/pytest.ini` (`testpaths = tests`, `pythonpath = .`) so `pytest -q` runs from `ui/`
+- [x] T001 Rename the design reference folder with `git mv "ui/Archon Agent Orchestration Platform" ui/design-system` (no content changes; verify `ui/design-system/support.js`, `archon-tokens.css`, and the three `.dc.html` files are present)
+- [x] T002 Create `ui/requirements.txt` (pinned: fastapi, uvicorn, jinja2, python-multipart, httpx, pyyaml, croniter, pytest) and change `ui/Dockerfile` to `COPY requirements.txt` + `pip install --no-cache-dir -r requirements.txt`, keeping the existing `WORKDIR`/`CMD`
+- [x] T003 [P] Update the `ui` service in `docker-compose.yml`: add `./prompts:/opt/agentbox/prompts` (rw) and `./litellm/config.yaml:/opt/agentbox/litellm/config.yaml:ro`, add `user: "${AGENTBOX_UID:-1000}:${AGENTBOX_GID:-1000}"`, and pass `AGENTS_DIR`, `PROMPTS_DIR`, `LITELLM_CONFIG`, `DAGSTER_URL` as environment
+- [x] T004 [P] Document `AGENTBOX_UID` / `AGENTBOX_GID` (with `id -u` / `id -g` hint) in `.env.example`
+- [x] T005 [P] Create `ui/config.py` exposing `AGENTS_DIR`, `PROMPTS_DIR`, `LITELLM_CONFIG`, `DAGSTER_URL`, `DESIGN_SYSTEM_DIR`, `RELOAD_TIMEOUT_S = 10` from environment variables with the container-path defaults from plan.md
+- [x] T006 [P] Create `ui/tests/conftest.py` with fixtures: `tmp_agents` (copies of every repo `agents/*.yaml` into `tmp_path`), `tmp_prompts` (copies of `prompts/*.md`), `litellm_cfg` (copy of `litellm/config.yaml`), a `settings` fixture that monkeypatches `ui/config.py` to those paths, a `client` fixture returning `fastapi.testclient.TestClient(app)`, and a `dagster_stub` fixture that monkeypatches `ui/dagster.py` reload/status to return canned `{ok, message}` values
+- [x] T007 [P] Create `ui/pytest.ini` (`testpaths = tests`, `pythonpath = .`) so `pytest -q` runs from `ui/`
 
 ---
 

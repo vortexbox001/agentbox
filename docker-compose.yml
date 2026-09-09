@@ -47,11 +47,18 @@ services:
   ui:
     build: ./ui
     restart: unless-stopped
+    # run as the host user so files the UI writes into agents/ and prompts/ stay owned by you
+    user: "${AGENTBOX_UID:-1000}:${AGENTBOX_GID:-1000}"
     environment:
       DAGSTER_URL: http://dagster-webserver:3000
+      AGENTS_DIR: /opt/agentbox/agents
+      PROMPTS_DIR: /opt/agentbox/prompts
+      LITELLM_CONFIG: /opt/agentbox/litellm/config.yaml
     volumes:
       - ./ui:/opt/agentbox/ui:ro
-      - ./agents:/opt/agentbox/agents        # writable: the UI edits these
+      - ./agents:/opt/agentbox/agents                              # writable: the UI edits these
+      - ./prompts:/opt/agentbox/prompts                            # writable: the UI creates prompt files
+      - ./litellm/config.yaml:/opt/agentbox/litellm/config.yaml:ro # read-only: source of model aliases
     ports:
       - "8080:8080"
     networks: [agentnet]
