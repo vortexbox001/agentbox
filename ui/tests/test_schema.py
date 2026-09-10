@@ -1,10 +1,27 @@
 """Tests for the schema module: field matrix, validation, migrations, aliases."""
+import re
+
 import pytest
 
 import schema
 
 
 ALWAYS_TRUE = lambda name: True
+
+# The asset-key regex is stated once per package (research R6). These shared fixtures are
+# duplicated verbatim in orchestrator/tests/test_factory.py so the two copies cannot drift.
+ASSET_KEY_EXPECTED_RE = r"^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$"
+ASSET_KEY_ACCEPT = ["repo-review/agentbox", "code-map/agentbox", "a", "a-b/c-d/e", "x1/y2"]
+ASSET_KEY_REJECT = ["Bad Key", "", "/leading", "trailing/", "Repo/Agentbox", "a//b",
+                    "a_b", "a b", "-x", "x-", "a-/b"]
+
+
+def test_asset_key_regex_pinned_to_shared_fixtures():
+    assert schema.ASSET_KEY_RE == ASSET_KEY_EXPECTED_RE
+    for s in ASSET_KEY_ACCEPT:
+        assert re.match(schema.ASSET_KEY_RE, s), f"should accept {s!r}"
+    for s in ASSET_KEY_REJECT:
+        assert not re.match(schema.ASSET_KEY_RE, s), f"should reject {s!r}"
 
 
 def _base(harness, **over):
@@ -129,11 +146,95 @@ def test_unknown_harness_reported(settings):
     assert "harness" in errors
 
 
+# ── Produces block (US3, contract schema-and-yaml §2/§5) ─
+def test_produces_section_is_a_runs_card():
+    sec = next((s for s in schema.SECTIONS if s["id"] == "produces"), None)
+    assert sec == {"id": "produces", "label": "Produces", "group": "runs"}
+
+
+def test_asset_and_partition_apply_to_every_harness():
+    for h in ("claude-code", "pi", "api", "codex"):
+        fields = schema.applicable_fields(h)
+        assert "asset" in fields and "partition" in fields
+
+
+def test_asset_field_shape():
+    f = schema.FIELDS_BY_ID["asset"]
+    assert f.section == "produces" and f.block == "produces"
+    assert f.type == "string"
+    assert f.pattern == schema.ASSET_KEY_RE
+    assert "repo-review/agentbox" in f.help
+
+
+def test_partition_field_shape():
+    f = schema.FIELDS_BY_ID["partition"]
+    assert f.section == "produces" and f.block == "produces"
+    assert f.type == "enum"
+    assert f.choices == ["none", "daily"]
+    assert f.default == "none"
+
+
+def test_public_payload_exposes_produces():
+    pub = schema.to_public()
+    assert pub["schema_version"] == 2
+    assert {"id": "produces", "label": "Produces", "group": "runs"} in pub["sections"]
+    by_id = {f["id"]: f for f in pub["fields"]}
+    assert by_id["asset"]["pattern"] == schema.ASSET_KEY_RE
+    assert by_id["partition"]["choices"] == ["none", "daily"]
+    # every harness's field list carries both
+    for h in pub["harnesses"]:
+        assert "asset" in h["fields"] and "partition" in h["fields"]
+
+
+# ── Validation of the produces block (US4, contract §4) ──
+def test_validate_accepts_valid_asset_and_partition():
+    a = _base("api", asset="repo-review/agentbox", partition="daily")
+    assert schema.validate(a, prompt_exists=ALWAYS_TRUE) == {}
+
+
+def test_validate_rejects_bad_asset_key():
+    a = _base("api", asset="Bad Key")
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert "asset" in errors
+
+
+def test_validate_rejects_empty_declaration():
+    # produces present but no asset (surfaced by the reader as an empty asset).
+    a = _base("api", asset="")
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert "asset" in errors
+
+
+def test_validate_rejects_bad_partition():
+    a = _base("api", asset="repo-review/agentbox", partition="hourly")
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert "partition" in errors
+
+
+def test_validate_no_asset_key_is_not_an_error():
+    # A plain agent (no asset field at all) stays a job with no produces error.
+    a = _base("api")
+    assert "asset" not in schema.validate(a, prompt_exists=ALWAYS_TRUE)
+
+
 # ── Migrations ──────────────────────────────────────────
+def test_schema_version_is_two():
+    assert schema.SCHEMA_VERSION == 2
+
+
 def test_migrations_noop_at_current_version():
     data = {"name": "x", "harness": "api"}
     assert schema.apply_migrations(dict(data), schema.SCHEMA_VERSION) == data
     assert schema.apply_migrations(dict(data), 0) == data
+
+
+def test_migrate_1_to_2_is_identity(settings):
+    # SC-005: a schema-1 agent (no produces) migrates to 2 unchanged, no transform.
+    data = {"name": "x", "harness": "api", "model": "cheap",
+            "prompt_file": "p.md", "output_dir": "/o"}
+    migrated = schema.apply_migrations(dict(data), 1)
+    assert migrated == data
+    assert "produces" not in migrated and "asset" not in migrated
 
 
 def test_schema_too_new_raises():
@@ -187,6 +288,8 @@ _FIELD_SECTION = {
     "schedule": "schedule",
     "timeout_seconds": "limits",
     "max_turns": "limits",
+    "asset": "produces",
+    "partition": "produces",
     "prompt_file": "prompt",
     "append_system_prompt": "prompt",
     "workspace": "directories",

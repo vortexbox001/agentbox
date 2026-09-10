@@ -3,7 +3,7 @@
 # agentbox-schema: 2
 
 # --- Identity ---
-name: repo-librarian-pi-kimi  # Unique kebab-case identifier. Becomes the Dagster job agent_<name> (hyphens become underscores).
+name: list-commits-pi-kimi  # Unique kebab-case identifier. Becomes the Dagster job agent_<name> (hyphens become underscores).
 
 # --- Schedule ---
 enabled: true  # Disabled agents are skipped when Dagster loads the workspace. true or false; default true.
@@ -13,35 +13,35 @@ schedule: ''  # Cron expression for automatic runs; leave empty for manual-only.
 timeout_seconds: 1800  # The run is killed after this many seconds. 1 to 86400; default 900.
 
 # --- Produces ---
-#produces:  # Declare an output asset so this agent is a tracked Dagster asset; leave commented to stay a plain job.
-#  asset:  # Asset key this agent materializes, e.g. repo-review/agentbox. Kebab segments joined by / for grouping. Leave empty to stay a plain job.
-#  partition: none  # Partition set for the asset: none (single) or daily. A tracking label only — it does not change the run or output. Default none.
+produces:  # Declare an output asset so this agent is a tracked Dagster asset; leave commented to stay a plain job.
+  asset: repo-review/list-commits  # Asset key this agent materializes, e.g. repo-review/agentbox. Kebab segments joined by / for grouping. Leave empty to stay a plain job.
+  partition: daily  # Partition set for the asset: none (single) or daily. A tracking label only — it does not change the run or output. Default none.
 
 # --- Prompt ---
-prompt_file: repo-librarian.md  # File in prompts/ read at launch and given to the agent as its prompt.
+prompt_file: list_of_commits.md  # File in prompts/ read at launch and given to the agent as its prompt.
 #append_system_prompt:  # Extra text appended to the system prompt.
 
 # --- Directories ---
-workspace: /data/workspaces/repo-librarian/pi-kimi  # Host directory mounted at /workspace; scratch space for the run. Default /data/workspaces/<name>.
+workspace: /data/workspaces/my-pi-agent  # Host directory mounted at /workspace; scratch space for the run. Default /data/workspaces/<name>.
 wipe_workspace: true  # Empty the workspace before every run so each run starts clean. true or false; default false.
-output_dir: /data/outputs/repo-librarian/pi-kimi  # Host directory mounted at /output; every run writes its result files here.
+output_dir: /data/outputs/my-pi-agent  # Host directory mounted at /output; every run writes its result files here.
 
 # --- Environment ---
 #env_file:  # Host path to an env file passed to the container (keeps secrets off the command line). Applies to every harness.
 env:  # Environment variables for the container. ${NAME} forwards the host variable by name without exposing its value.
   GITHUB_TOKEN: ${GITHUB_TOKEN}
   GITHUB_USER: leeclemmer
+  GITHUB_REPO: agentbox
 
 # --- Tools & permissions ---
 allowed_tools:  # Tool allowlist. pi: any of read, write, edit, bash, grep, find, ls.
-  - read
-  - write
-  - bash
+  - git
+  - gh
 
 # --- Harness & model ---
 harness: pi  # Which runtime runs this agent; determines the available fields and models. One of claude-code, pi, api, codex.
 model: kimi  # Model the harness talks to. pi: a LiteLLM alias from litellm/config.yaml, or provider/model.
-effort: max  # Reasoning/thinking effort level. pi: off, minimal, low, medium, high, xhigh, or max.
+effort: medium  # Reasoning/thinking effort level. pi: off, minimal, low, medium, high, xhigh, or max.
 
 # --- Container ---
 network: agentnet  # Docker network: agentnet-isolated (LiteLLM only, no internet), agentnet (LiteLLM + internet), bridge (full internet — needed by claude-code and codex). Default depends on harness.

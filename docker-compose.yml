@@ -21,6 +21,7 @@ services:
       - ./prompts:/opt/agentbox/prompts:ro
       - /data/dagster:/data/dagster
       - /data/workspaces:/data/workspaces
+      - /data/outputs:/data/outputs:ro                            # read-only: the run op snapshots output_dir for asset metadata
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "${DAGSTER_HOST_PORT:-3000}:3000"
@@ -40,6 +41,7 @@ services:
       - ./prompts:/opt/agentbox/prompts:ro
       - /data/dagster:/data/dagster
       - /data/workspaces:/data/workspaces
+      - /data/outputs:/data/outputs:ro                            # read-only: the run op snapshots output_dir for asset metadata
       - /var/run/docker.sock:/var/run/docker.sock
     command: ["dagster-daemon", "run"]
     networks: [agentnet]

@@ -55,6 +55,64 @@ def test_golden_file_matches_emitter(settings, harness):
     assert st.emit_yaml(GOLDEN[harness]) == expected
 
 
+# ── Produces block (US3, contract schema-and-yaml §3/§7) ─
+def test_produces_block_commented_when_no_asset(settings):
+    text = st.emit_yaml(GOLDEN["api"])
+    assert "# --- Produces ---" in text
+    assert "#produces:" in text
+    assert "#  asset:  #" in text
+    assert "#  partition: none  #" in text
+    # commented block never yields a real produces mapping
+    assert yaml.safe_load(text).get("produces") is None
+
+
+def test_produces_block_emitted_when_asset_set(settings):
+    cfg = dict(GOLDEN["api"], asset="repo-review/agentbox", partition="daily")
+    text = st.emit_yaml(cfg)
+    loaded = yaml.safe_load(text)
+    assert loaded["produces"] == {"asset": "repo-review/agentbox", "partition": "daily"}
+    # one help-text comment per field (asset, partition) plus the block header
+    assert "produces:  #" in text
+    assert "  asset: repo-review/agentbox  #" in text
+    assert "  partition: daily  #" in text
+
+
+def test_produces_block_sits_in_the_runs_section(settings):
+    cfg = dict(GOLDEN["api"], asset="repo-review/agentbox", partition="daily")
+    text = st.emit_yaml(cfg)
+    lines = text.splitlines()
+    prod = lines.index("# --- Produces ---")
+    limits = lines.index("# --- Limits ---")
+    prompt = lines.index("# --- Prompt ---")
+    assert limits < prod < prompt  # Produces is a Runs card, after Limits, before Prompt
+
+
+def test_produces_block_round_trips_byte_stable(settings):
+    cfg = dict(GOLDEN["api"], asset="repo-review/agentbox", partition="daily")
+    once = st.emit_yaml(cfg)
+    st.write_agent("nightly-digest", cfg)
+    info = st.read_agent("nightly-digest")
+    agent = info["agent"]
+    assert agent["asset"] == "repo-review/agentbox"
+    assert agent["partition"] == "daily"
+    # asset/partition are managed, never routed to unmanaged
+    assert "produces" not in (agent.get("unmanaged") or {})
+    assert st.emit_yaml(agent) == once
+
+
+def test_asset_less_produces_read_as_empty_declaration(settings):
+    # A hand-written asset-less produces: surfaces as a present-but-empty asset so the
+    # form/validate can flag it, and is not dropped into unmanaged.
+    import os, config
+    path = os.path.join(config.AGENTS_DIR, "handwritten.yaml")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("# agentbox-schema: 2\nname: handwritten\nharness: api\n"
+                "output_dir: /o\nprompt_file: p.md\nproduces:\n  partition: daily\n")
+    agent = st.read_agent("handwritten")["agent"]
+    assert agent["asset"] == ""
+    assert "produces" not in (agent.get("unmanaged") or {})
+
+
 @pytest.mark.parametrize("harness", list(GOLDEN))
 def test_emitted_section_headers_follow_schema_order(settings, harness):
     """The `# --- <label> ---` headers appear in schema.SECTIONS label order, and

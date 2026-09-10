@@ -69,6 +69,20 @@ def test_api_schema_shape(client):
     assert "cheap" in data["litellm_aliases"]
 
 
+def test_api_schema_carries_produces(client):
+    # FR-013: /api/schema drives the form; the Produces card is a runs-group section
+    # with the asset/partition fields, and the version is 2.
+    data = client.get("/api/schema").json()
+    assert data["schema_version"] == 2
+    assert {"id": "produces", "label": "Produces", "group": "runs"} in data["sections"]
+    by_id = {f["id"]: f for f in data["fields"]}
+    assert by_id["asset"]["section"] == "produces"
+    assert by_id["partition"]["choices"] == ["none", "daily"]
+    # every harness renders both fields (so the card shows for each)
+    for h in data["harnesses"]:
+        assert "asset" in h["fields"] and "partition" in h["fields"]
+
+
 # ── Dagster (stubbed) ───────────────────────────────────
 def test_dagster_reload_uses_stub(client, dagster_stub):
     dagster_stub.reload_result = {"ok": True, "message": "Workspace reloaded"}

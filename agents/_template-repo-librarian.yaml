@@ -33,6 +33,12 @@ allowed_tools:                  # tool allowlist — omit for no restriction
 
 # --- Scheduling ---
 schedule: ""                    # cron expression, e.g. "0 7 * * *", or "" for manual-only runs
+
+# --- Produces (optional) ---
+#produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)
+#  asset: repo-review/agentbox   # asset key: kebab segments joined by / for grouping
+#  partition: none               # none | daily — daily exposes a per-day partition (a tracking label only)
+
 # --- Container resources ---
 network: bridge                 # bridge — needs internet to reach Anthropic API (required)
                                 # agentnet — if proxying through LiteLLM (not typical)

@@ -1,9 +1,48 @@
 """Turns an agent YAML dict into a Dagster job that docker-runs the agent."""
 import os, re, json, uuid, shutil, datetime, subprocess
-from dagster import job, op, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive
+from dagster import (
+    job, op, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive,
+    AssetKey, AssetsDefinition, DailyPartitionsDefinition, MetadataValue,
+)
 
 HOST_REPO = os.environ.get("AGENTBOX_HOST_REPO", "/home/vortex/GitHub/agentbox")
 CONTAINER_REPO = "/opt/agentbox"
+
+# One or more kebab segments joined by "/" — the asset key an agent may declare in its
+# `produces` block. Deliberately duplicated in ui/schema.py (research R6): the two run in
+# separate containers with no shared import, and a shared-fixture test pins them in agreement.
+ASSET_KEY_RE = r"^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$"
+
+
+class RejectAgent(Exception):
+    """One agent file was rejected at load; carries the offending file name so the
+    caller can log a message that names it and skip only that file (FR-012/FR-019)."""
+
+    def __init__(self, file: str, message: str):
+        self.file = file
+        self.message = message
+        super().__init__(f"{file}: {message}")
+
+
+def validate_asset_key(cfg: dict, file: str) -> str:
+    """Validate an agent's `produces` block; return the asset key or raise RejectAgent.
+
+    ``file`` is the name used in the rejection message (contract §4). A block with no
+    asset, an asset not matching ASSET_KEY_RE, or a partition outside {none, daily} is
+    rejected. An omitted partition is treated as ``none``.
+    """
+    produces = cfg.get("produces") or {}
+    if not isinstance(produces, dict):
+        raise RejectAgent(file, "produces must be a mapping with an asset")
+    asset = produces.get("asset")
+    if not asset:
+        raise RejectAgent(file, "an asset declaration must name an asset")
+    if not re.match(ASSET_KEY_RE, str(asset)):
+        raise RejectAgent(file, f'invalid produces.asset "{asset}" — must match {ASSET_KEY_RE}')
+    partition = produces.get("partition", "none")
+    if partition not in ("none", "daily"):
+        raise RejectAgent(file, f'invalid produces.partition "{partition}" — must be none or daily')
+    return str(asset)
 # full per-run transcripts: <root>/<agent>/<YYYY-MM-DD>/<run-id>.jsonl
 AGENT_LOG_ROOT = "/data/dagster/agent-logs"
 # harnesses that mount /workspace; `workspace` and `wipe_workspace` are ignored for the rest
@@ -21,6 +60,33 @@ def output_convention(stamp: str, session_id: str) -> str:
         " Never read, list, or edit files in /output — only write finished files there,"
         " each in a single write. Use /workspace for drafts, scratch, and temporary files."
     )
+
+# The feature epoch: fixed start for the daily partition set so it is bounded and
+# identical across reloads (research R5 / contract §3).
+PARTITION_START_DATE = "2026-09-09"
+
+
+def _snapshot_dir(path: str) -> dict:
+    """Map each file directly under ``path`` to ``(mtime, size)``; empty if absent.
+
+    Non-recursive: the output convention writes flat files. Used for the before/after
+    diff that tells the materialization which files a run produced (FR-008a / research R4).
+    """
+    snap: dict[str, tuple[float, int]] = {}
+    try:
+        for entry in os.scandir(path):
+            if entry.is_file(follow_symlinks=False):
+                st = entry.stat()
+                snap[entry.path] = (st.st_mtime, st.st_size)
+    except FileNotFoundError:
+        pass
+    return snap
+
+
+def _changed_files(before: dict, after: dict) -> list[str]:
+    """Paths present in ``after`` that are new or whose mtime/size changed vs ``before``."""
+    return sorted(p for p, meta in after.items() if before.get(p) != meta)
+
 
 def make_run_op(cfg: dict):
     @op(
@@ -173,6 +239,11 @@ def make_run_op(cfg: dict):
         else:
             raise ValueError(f"unknown harness: {cfg['harness']}")
 
+        # snapshot the output dir before launch so we can tell, after, which files this
+        # run produced (FR-008a). The partition key is NEVER used here: the launch is
+        # identical regardless of partition (FR-008b) — it is a metadata label only.
+        output_before = _snapshot_dir(cfg["output_dir"])
+
         context.log.info(f"launching: {' '.join(cmd[:12])} ...")
         result = subprocess.run(
             cmd, capture_output=True, text=True,
@@ -185,6 +256,25 @@ def make_run_op(cfg: dict):
         with open(log_path, "w") as f:
             f.write(result.stdout)
         context.log.info(f"transcript: {log_path}")
+
+        # After the container exits and the transcript is written, snapshot again and
+        # attach materialization metadata to the op's single output. Harmless in job-mode
+        # (nothing consumes the output); surfaced as materialization metadata in asset-mode
+        # once from_op binds this output to the asset key (FR-008/FR-008a/FR-008b/FR-009).
+        # The dict is deliberately open-ended so feature 005 can add token/cost fields here
+        # with no change to the produces schema.
+        output_files = _changed_files(output_before, _snapshot_dir(cfg["output_dir"]))
+        metadata = {
+            "output_files": MetadataValue.json(output_files),
+            "transcript": MetadataValue.path(log_path),
+            "run_stamp": stamp,
+            "session_id": session_id,
+            "harness": cfg["harness"],
+            "model": str(cfg.get("model") or ""),
+        }
+        if context.has_partition_key:
+            metadata["partition"] = context.partition_key
+        context.add_output_metadata(metadata)
 
         # surface just the final "result" event in the Dagster log
         final = None
@@ -257,6 +347,30 @@ def make_run_op(cfg: dict):
             context.log.error(result.stderr[-4000:])
             raise Exception(f"{name} exited {result.returncode}")
     return run_agent
+
+def build_asset(cfg: dict, file: str | None = None):
+    """Represent an agent that declares `produces` as a Dagster asset (contract §3).
+
+    Wraps the SAME op ``make_run_op(cfg)`` would build for a job via
+    ``AssetsDefinition.from_op`` — the container launch is not re-implemented and the
+    compute step stays named ``run_<name>`` (Null Action / FR-010 / research R1–R2).
+    ``partition: daily`` attaches a bounded ``DailyPartitionsDefinition``; ``none`` or
+    omitted attaches none. The partition is a label only — materializing any partition
+    (including a past date) launches the identical container (FR-008b).
+    """
+    validate_asset_key(cfg, file or cfg.get("name", "<agent>"))
+    key = AssetKey(cfg["produces"]["asset"].split("/"))
+    partition = (cfg["produces"] or {}).get("partition", "none")
+    partitions_def = (
+        DailyPartitionsDefinition(start_date=PARTITION_START_DATE) if partition == "daily" else None
+    )
+    the_op = make_run_op(cfg)  # the same op object job-mode would use
+    return AssetsDefinition.from_op(
+        the_op,
+        keys_by_output_name={"result": key},
+        partitions_def=partitions_def,
+    )
+
 
 def build_job_and_schedule(cfg: dict):
     the_op = make_run_op(cfg)

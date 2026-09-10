@@ -21,12 +21,21 @@ import config
 
 # Current schema version, stamped into every emitted file. Bump when a migration
 # is added below. Files without the stamp are read as version 0.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+
+def migrate_1_to_2(data: dict) -> dict:
+    """Schema 1 -> 2: the optional `produces` block was added. Schema-1 files have no
+    `produces`, so there is nothing to transform — this is the identity function, and
+    existing files load with zero migration noise (SC-005). They are re-stamped to 2
+    only when next saved from the UI."""
+    return data
+
 
 # Ordered, forward-only migrations. Each pair is (target_version, fn) where fn
 # transforms a definition dict from target_version - 1 to target_version. Pure
 # dict -> dict, applied on read (never mutating the file until the user saves).
-MIGRATIONS: list[tuple[int, Callable[[dict], dict]]] = []
+MIGRATIONS: list[tuple[int, Callable[[dict], dict]]] = [(2, migrate_1_to_2)]
 
 
 class SchemaTooNew(Exception):
@@ -53,6 +62,7 @@ SECTIONS: list[dict] = [
     {"id": "identity", "label": "Identity", "group": None},
     {"id": "schedule", "label": "Schedule", "group": "runs"},
     {"id": "limits", "label": "Limits", "group": "runs"},
+    {"id": "produces", "label": "Produces", "group": "runs"},
     {"id": "prompt", "label": "Prompt", "group": "job"},
     {"id": "directories", "label": "Directories", "group": "job"},
     {"id": "environment", "label": "Environment", "group": "job"},
@@ -62,6 +72,16 @@ SECTIONS: list[dict] = [
 ]
 
 _ALL = ["claude-code", "pi", "api", "codex"]
+
+
+# The asset key an agent may declare: one or more kebab segments joined by "/".
+# Deliberately duplicated in orchestrator/factory.py (research R6): the UI and the
+# orchestrator run in separate containers with no shared import, and a shared-fixture
+# test pins the two copies in agreement.
+ASSET_KEY_RE = r"^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$"
+
+# Comment on the `produces:` block header line in emitted YAML (real or commented-out).
+PRODUCES_BLOCK_HELP = "Declare an output asset so this agent is a tracked Dagster asset; leave commented to stay a plain job."
 
 
 @dataclass
@@ -79,6 +99,7 @@ class SchemaField:
     pattern: str | None = None
     min: float | None = None
     max: float | None = None
+    block: str | None = None  # nested YAML block this field belongs to, e.g. "produces"
 
 
 # --- Fields ---------------------------------------------------------------
@@ -113,6 +134,19 @@ FIELDS: list[SchemaField] = [
         "max_turns", "limits", "Max turns", "int",
         "Cap on agentic turns. 1 to 1000; default 10.",
         ["claude-code"], default=10, min=1, max=1000,
+    ),
+    # Produces (Runs) — the nested `produces` block; both fields apply to every harness.
+    SchemaField(
+        "asset", "produces", "Asset key", "string",
+        "Asset key this agent materializes, e.g. repo-review/agentbox. Kebab segments joined by / "
+        "for grouping. Leave empty to stay a plain job.",
+        _ALL, pattern=ASSET_KEY_RE, block="produces",
+    ),
+    SchemaField(
+        "partition", "produces", "Partition", "enum",
+        "Partition set for the asset: none (single) or daily. A tracking label only — it does not "
+        "change the run or output. Default none.",
+        _ALL, default="none", choices=["none", "daily"], block="produces",
     ),
     # Prompt (Job)
     SchemaField(
@@ -487,6 +521,12 @@ def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, 
     pf = agent.get("prompt_file")
     if pf and "prompt_file" not in errors and not prompt_exists(str(pf)):
         errors["prompt_file"] = f"no such prompt file in prompts/: {pf}"
+
+    # A produces block that names no asset is an empty declaration (contract §4/FR-011).
+    # The reader surfaces an asset-less `produces:` as a present-but-empty `asset`; the form
+    # omits `asset` entirely when blank, so this only fires on a genuine empty declaration.
+    if "asset" in agent and "asset" not in errors and _is_unset(FIELDS_BY_ID["asset"], agent.get("asset")):
+        errors["asset"] = "an asset declaration must name an asset"
 
     return errors
 

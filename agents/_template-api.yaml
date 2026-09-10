@@ -17,6 +17,11 @@ output_dir: /data/outputs/my-agent  # host path where timestamped .md outputs ar
 schedule: "0 7 * * *"           # cron expression, or "" for manual-only runs
                                 # examples: "*/30 * * * *" (every 30m), "0 9 * * 1-5" (weekday 9am)
 
+# --- Produces (optional) ---
+#produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)
+#  asset: repo-review/agentbox   # asset key: kebab segments joined by / for grouping
+#  partition: none               # none | daily — daily exposes a per-day partition (a tracking label only)
+
 # --- Environment ---
 env_file: ""                        # host path to env file passed via --env-file (secrets stay off Dagster)
                                     # e.g. /data/credentials/agent-secrets.env

@@ -32,6 +32,11 @@ env:
 # --- Scheduling ---
 schedule: ""                    # cron expression, or "" for manual-only runs
 
+# --- Produces (optional) ---
+#produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)
+#  asset: repo-review/agentbox   # asset key: kebab segments joined by / for grouping
+#  partition: none               # none | daily — daily exposes a per-day partition (a tracking label only)
+
 # --- Container resources ---
 network: agentnet               # agentnet — reaches LiteLLM and the internet
 memory: 1g

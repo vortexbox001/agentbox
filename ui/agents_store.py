@@ -138,6 +138,17 @@ def read_agent(stem: str) -> dict:
         result["raw"] = text
         return result
 
+    # Lift a nested `produces:` block into the flat asset/partition managed fields so the
+    # form shows them and they round-trip — never routed to "Unmanaged" (contract §3). An
+    # asset-less produces surfaces as a present-but-empty `asset` so validate flags the
+    # empty declaration; a produces that is not a mapping is treated the same way.
+    produces = loaded.pop("produces", _MISSING)
+    if produces is not _MISSING:
+        block = produces if isinstance(produces, dict) else {}
+        loaded["asset"] = block.get("asset", "")
+        if "partition" in block:
+            loaded["partition"] = block["partition"]
+
     # Separate schema-managed keys from unmanaged ones.
     managed: dict = {}
     unmanaged: dict = {}
@@ -251,22 +262,71 @@ def _field_lines(agent: dict, f, harness: str) -> list[str]:
     return [f"{f.id}: {_emit_scalar(raw)}  # {help_text}"]
 
 
+def _produces_block_lines(agent: dict, harness: str) -> list[str]:
+    """The `produces:` block lines: a real nested block when `asset` is set, else the
+    whole block commented-out (opt-in, matching the templates — contract §3/FR-016).
+
+    ``asset`` and ``partition`` are schema fields but children of a `produces` block, so
+    they are emitted here as a nested mapping rather than two flat top-level keys.
+    """
+    asset_help = schema.field_help("asset", harness)
+    part_help = schema.field_help("partition", harness)
+    part_default = FIELDS_BY_ID["partition"].default  # "none"
+    asset_val = agent.get("asset")
+    has_asset = not (asset_val is None or (isinstance(asset_val, str) and asset_val.strip() == ""))
+    header = schema.PRODUCES_BLOCK_HELP
+    if has_asset:
+        part_val = agent.get("partition")
+        if part_val is None or part_val == "":
+            part_val = part_default
+        return [
+            f"produces:  # {header}",
+            f"  asset: {_emit_scalar(asset_val)}  # {asset_help}",
+            f"  partition: {_emit_scalar(part_val)}  # {part_help}",
+        ]
+    return [
+        f"#produces:  # {header}",
+        f"#  asset:  # {asset_help}",
+        f"#  partition: {part_default}  # {part_help}",
+    ]
+
+
 def emit_yaml(agent: dict) -> str:
     """Render an agent definition to its full YAML file text (contract agent-yaml.md).
 
     ``agent`` is a flat mapping of schema fields plus an optional ``unmanaged``
     sub-mapping (or unmanaged keys left at the top level). Output is deterministic:
     the same definition always produces byte-identical text.
+
+    A caller may also pass a definition straight from a file, where ``produces`` is
+    still a nested block rather than the flat ``asset``/``partition`` fields the reader
+    lifts it into; emit lifts it the same way so the block is never dropped.
     """
     harness = agent.get("harness")
     if harness not in HARNESS_BY_ID:
         raise ValueError(f"unknown harness: {harness!r}")
+
+    produces = agent.get("produces", _MISSING)
+    if produces is not _MISSING:
+        agent = dict(agent)
+        block = agent.pop("produces") if isinstance(produces, dict) else {}
+        agent.setdefault("asset", block.get("asset", ""))
+        if "partition" in block:
+            agent.setdefault("partition", block["partition"])
 
     desc = HARNESS_BY_ID[harness]["description"]
     lines = [f"# {desc}", _HEADER_GENERATED, f"# agentbox-schema: {schema.SCHEMA_VERSION}"]
 
     applicable = set(schema.applicable_fields(harness))
     for section in SECTIONS:
+        # The Produces section is a nested block that is always emitted (commented-out when
+        # no asset is set): unlike other optional sections it stays visible so an author can
+        # opt in by uncommenting (contract §3/§7).
+        if section["id"] == "produces":
+            lines.append("")
+            lines.append(f"# --- {section['label']} ---")
+            lines.extend(_produces_block_lines(agent, harness))
+            continue
         sec_fields = [f for f in FIELDS if f.section == section["id"] and f.id in applicable]
         rendered: list[str] = []
         for f in sec_fields:
@@ -282,10 +342,11 @@ def emit_yaml(agent: dict) -> str:
             lines.append(f"# --- {section['label']} ---")
             lines.extend(rendered)
 
-    # Unmanaged keys, emitted verbatim so the UI never drops what it does not know.
+    # Unmanaged keys, emitted verbatim so the UI never drops what it does not know. A stray
+    # nested `produces` key is never unmanaged — its fields are emitted as the block above.
     unmanaged = dict(agent.get("unmanaged") or {})
     for k, v in agent.items():
-        if k not in FIELDS_BY_ID and k != "unmanaged":
+        if k not in FIELDS_BY_ID and k not in ("unmanaged", "produces"):
             unmanaged[k] = v
     if unmanaged:
         lines.append("")

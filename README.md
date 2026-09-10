@@ -192,6 +192,8 @@ This table is descriptive. The authoritative per-key wording, valid values, defa
 | `max_turns` | `10` | *claude-code*: cap on agentic turns. *pi* has no equivalent; `timeout_seconds` is its only cap. |
 | `mcp_config` | none | *claude-code*: path to an MCP config JSON inside the container. |
 | `append_system_prompt` | none | *claude-code*, *pi*: extra text appended to the system prompt. *codex*: appended to the prompt message instead, since `codex exec` has no system-prompt flag. |
+| `produces.asset` | none | Asset key this agent materializes, e.g. `repo-review/agentbox`. Kebab segments joined by `/` for grouping. Leave empty to stay a plain job. Declaring it makes the agent a Dagster **asset** (with a materialization history) instead of a job named `agent_<name>`. |
+| `produces.partition` | `none` | Partition set for the asset: `none` (single) or `daily`. A tracking label only — it does not change the run or output. Default `none`. |
 
 ### Output files
 
