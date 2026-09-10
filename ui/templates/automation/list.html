@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block actions %}
+  <button class="ax-btn ax-btn--primary" id="ax-automation-save" type="button" disabled>
+    <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#refresh"></use></svg>
+    <span>Save &amp; reload</span>
+  </button>
+{% endblock %}
+
+{% block content %}
+<div class="ax-banner" id="ax-automation-banner" hidden></div>
+
+<div class="ax-card">
+  <p class="ax-muted" style="margin-top:0">
+    When an agent runs is set here, not in the agent file. Choose <strong>on demand</strong>
+    (no automatic trigger) or a five-field <strong>cron</strong> (runs in the box's
+    <span class="ax-mono">TZ</span>, not UTC). A new trigger starts paused — turn it on from
+    Dagster. Saving writes <span class="ax-mono">automation/</span> and reloads.
+  </p>
+  <table class="ax-table">
+    <thead>
+      <tr>
+        <th scope="col">Agent</th>
+        <th scope="col">Mode</th>
+        <th scope="col">Trigger</th>
+        <th scope="col">Cron</th>
+      </tr>
+    </thead>
+    <tbody id="ax-automation-rows">
+      <tr><td colspan="4"><span class="ax-muted">Loading…</span></td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script type="module" src="/static/automation.js"></script>
+{% endblock %}

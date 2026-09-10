@@ -19,12 +19,14 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import agents_store
+import automation_store
 import config
 import dagster
 import prompts_store
 import schema
 import secret_scan
 from agents_store import StorageError
+from automation_store import AutomationError
 from prompts_store import PromptValidationError
 
 _UI_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -502,6 +504,48 @@ async def _api_create_prompt(request: Request):
         return JSONResponse({"error": "validation", "message": str(e)}, status_code=400)
     logger.info("event=prompt_created file=%s", created)
     return JSONResponse({"filename": created}, status_code=201)
+
+
+@app.get("/automation")
+async def _automation_page(request: Request):
+    # The Automation view (spec 005): every non-template agent with its trigger, editable.
+    # Rows are fetched client-side from GET /api/automation so a reload reflects the files.
+    return templates.TemplateResponse(
+        request,
+        "automation/list.html",
+        _shell_context(request, title="Automation"),
+    )
+
+
+@app.get("/api/automation")
+async def _api_automation():
+    try:
+        return JSONResponse({"agents": automation_store.per_agent_view()})
+    except AutomationError as e:
+        # A malformed automation file on disk: surface it so the operator can fix it.
+        return JSONResponse({"error": "automation", "message": e.message}, status_code=422)
+
+
+@app.put("/api/automation")
+async def _api_put_automation(request: Request):
+    body = await request.json()
+    triggers = (body or {}).get("triggers", {})
+    if not isinstance(triggers, dict):
+        return JSONResponse(
+            {"error": "validation", "fields": {"triggers": "must be a map of agent name -> trigger"}},
+            status_code=400,
+        )
+    try:
+        automation_store.validate(triggers)
+    except AutomationError as e:
+        return JSONResponse(
+            {"error": "validation", "fields": {e.field or "triggers": e.message}}, status_code=400,
+        )
+    automation_store.write(triggers)
+    logger.info("event=automation_written agents=%d", len(triggers))
+    outcome = await dagster.reload()
+    logger.info("event=dagster_reloaded ok=%s", outcome.get("ok"))
+    return JSONResponse({"ok": outcome.get("ok", False), "message": outcome.get("message", ""), "reload": outcome})
 
 
 @app.get("/api/schema")

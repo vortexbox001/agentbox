@@ -1,3 +1,4 @@
+# agentbox-schema: 3
 # pi-harness twin of the claude-code repo-librarian agent, for comparing harnesses model by model.
 
 name: repo-librarian-pi-opus       # pi-harness twin of the claude-code librarian; only harness-specific keys differ
@@ -23,7 +24,6 @@ wipe_workspace: true                  # empty the workspace before every run (fr
 #mcp_config: ""                  # path to MCP server config JSON inside the container (omit if unused)
 
 # --- Scheduling ---
-schedule: ""                    # manual-only
 
 # --- Container resources ---
 network: agentnet               # agentnet — reaches LiteLLM and the internet

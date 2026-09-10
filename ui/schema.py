@@ -21,7 +21,7 @@ import config
 
 # Current schema version, stamped into every emitted file. Bump when a migration
 # is added below. Files without the stamp are read as version 0.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def migrate_1_to_2(data: dict) -> dict:
@@ -32,10 +32,19 @@ def migrate_1_to_2(data: dict) -> dict:
     return data
 
 
+def migrate_2_to_3(data: dict) -> dict:
+    """Schema 2 -> 3: `schedule` left the agent schema (spec 005) — triggering moved to
+    automation/. Drop any lingering `schedule` key on read; the dropped value is NOT turned
+    into a trigger (FR-002). The reader (agents_store) logs a warning naming the file when it
+    strips one. Schema-2 files without `schedule` load with zero noise."""
+    data.pop("schedule", None)
+    return data
+
+
 # Ordered, forward-only migrations. Each pair is (target_version, fn) where fn
 # transforms a definition dict from target_version - 1 to target_version. Pure
 # dict -> dict, applied on read (never mutating the file until the user saves).
-MIGRATIONS: list[tuple[int, Callable[[dict], dict]]] = [(2, migrate_1_to_2)]
+MIGRATIONS: list[tuple[int, Callable[[dict], dict]]] = [(2, migrate_1_to_2), (3, migrate_2_to_3)]
 
 
 class SchemaTooNew(Exception):
@@ -60,7 +69,7 @@ GROUPS: list[dict] = [
 
 SECTIONS: list[dict] = [
     {"id": "identity", "label": "Identity", "group": None},
-    {"id": "schedule", "label": "Schedule", "group": "runs"},
+    {"id": "status", "label": "Enabled", "group": "runs"},
     {"id": "limits", "label": "Limits", "group": "runs"},
     {"id": "produces", "label": "Produces", "group": "runs"},
     {"id": "prompt", "label": "Prompt", "group": "job"},
@@ -113,16 +122,13 @@ FIELDS: list[SchemaField] = [
         "Unique kebab-case identifier. Becomes the Dagster job agent_<name> (hyphens become underscores).",
         _ALL, required=True, pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$",
     ),
-    # Schedule (Runs)
+    # Enabled (Runs) — triggering (cron/on_demand) lives in automation/, not here (spec 005).
     SchemaField(
-        "enabled", "schedule", "Enabled", "bool",
-        "Disabled agents are skipped when Dagster loads the workspace. true or false; default true.",
+        "enabled", "status", "Enabled", "bool",
+        "Whether Dagster registers this agent at all (as a job/asset). Disabled agents are "
+        "skipped at load. This does NOT control scheduling — set when it runs in the Automation "
+        "view. true or false; default true.",
         _ALL, required=True, default=True, choices=[True, False],
-    ),
-    SchemaField(
-        "schedule", "schedule", "Schedule (cron)", "cron",
-        "Cron expression for automatic runs; leave empty for manual-only. Five fields, e.g. 0 7 * * *.",
-        _ALL, default="",
     ),
     # Limits (Runs)
     SchemaField(
@@ -257,7 +263,7 @@ FIELDS_BY_ID: dict[str, SchemaField] = {f.id: f for f in FIELDS}
 
 # The always-written set (contract agent-yaml.md §4): these are emitted even when
 # unset so the file documents the essentials.
-ALWAYS_WRITTEN = {"name", "enabled", "harness", "prompt_file", "output_dir", "network", "schedule"}
+ALWAYS_WRITTEN = {"name", "enabled", "harness", "prompt_file", "output_dir", "network"}
 
 
 # --- Harnesses ------------------------------------------------------------
@@ -346,8 +352,9 @@ def applicable_fields(harness: str) -> list[str]:
 def _is_unset(f: SchemaField, value) -> bool:
     """Whether a value counts as "unset" for emission/validation (contract §4).
 
-    null, empty list, and empty map are unset. An empty string is a real value
-    only for ``schedule`` (manual-only) and is otherwise unset.
+    null, empty list, empty map, and empty string are all unset. (Before spec 005,
+    ``schedule`` treated an empty string as a real value for manual-only runs; with
+    ``schedule`` gone, an empty string is unset for every field.)
     """
     if value is None:
         return True
@@ -356,7 +363,7 @@ def _is_unset(f: SchemaField, value) -> bool:
     if f.type == "map" and value == {}:
         return True
     if isinstance(value, str) and value == "":
-        return f.id != "schedule"
+        return True
     return False
 
 
@@ -418,20 +425,6 @@ def _validate_model(agent: dict, harness: str, errors: dict) -> None:
         errors["model"] = f"invalid model for the {harness} harness: must be one of {', '.join(choices)}"
 
 
-def _validate_schedule(value, errors: dict) -> None:
-    from croniter import croniter
-
-    if value is None or value == "":
-        return
-    s = str(value).strip()
-    if s.startswith("@"):
-        errors["schedule"] = "cron macros like @daily are not supported; use a 5-field expression"
-    elif len(s.split()) != 5:
-        errors["schedule"] = "cron must have exactly five fields (minute hour day month weekday)"
-    elif not croniter.is_valid(s):
-        errors["schedule"] = "not a valid cron expression"
-
-
 def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, str]:
     """Validate an agent definition; return a map of field id -> error message.
 
@@ -469,8 +462,6 @@ def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, 
         if fid in errors:
             continue
         if f.id == "model":
-            continue  # handled below
-        if f.id == "schedule":
             continue  # handled below
         if f.id == "effort":
             choices = HARNESS_BY_ID[harness]["effort_choices"] if harness else []
@@ -515,8 +506,6 @@ def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, 
 
     if harness:
         _validate_model(agent, harness, errors)
-    if "schedule" in agent:
-        _validate_schedule(agent.get("schedule"), errors)
 
     pf = agent.get("prompt_file")
     if pf and "prompt_file" not in errors and not prompt_exists(str(pf)):

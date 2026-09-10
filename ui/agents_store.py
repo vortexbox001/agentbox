@@ -9,6 +9,7 @@ back into exactly the mapping the orchestrator expects.
 from __future__ import annotations
 
 import glob
+import logging
 import os
 import re
 import tempfile
@@ -18,6 +19,8 @@ import yaml
 import config
 import schema
 from schema import FIELDS, FIELDS_BY_ID, SECTIONS, HARNESS_BY_ID, ALWAYS_WRITTEN, SchemaTooNew
+
+_log = logging.getLogger("agentbox.ui.agents_store")
 
 
 class StorageError(Exception):
@@ -124,6 +127,14 @@ def read_agent(stem: str) -> dict:
         result["raw"] = text
         return result
 
+    if "schedule" in loaded:
+        # spec 005: `schedule` left the agent schema; the migration drops it. Name the file so
+        # the operator knows a stray trigger key was ignored (FR-002). Triggering is in automation/.
+        _log.warning(
+            "agents/%s.yaml carries a `schedule` key — dropped on read (triggering now lives in "
+            "automation/); it is removed from the file on the next save from the UI", stem,
+        )
+
     try:
         loaded = schema.apply_migrations(loaded, file_version)
     except SchemaTooNew as e:
@@ -194,7 +205,6 @@ def list_agents() -> dict:
             "enabled": agent.get("enabled") if info["agent"] else None,
             "harness": agent.get("harness") if info["agent"] else None,
             "model": agent.get("model") if info["agent"] else None,
-            "schedule": agent.get("schedule") if info["agent"] else None,
             "dagster_job": info["dagster_job"],
             "dagster_url": info["dagster_url"],
             "parse_error": info["parse_error"],
@@ -226,8 +236,6 @@ def _value_for(agent: dict, fid: str, harness: str):
     """The value to emit for a field, filling always-written defaults when missing."""
     if fid in agent:
         return agent[fid]
-    if fid == "schedule":
-        return ""
     if fid == "network":
         return HARNESS_BY_ID[harness]["default_network"]
     if fid == "enabled":
@@ -246,7 +254,7 @@ def _field_lines(agent: dict, f, harness: str) -> list[str]:
 
     if unset and f.id in ALWAYS_WRITTEN:
         # substitute a concrete default so the line is real
-        raw = {"schedule": "", "network": HARNESS_BY_ID[harness]["default_network"],
+        raw = {"network": HARNESS_BY_ID[harness]["default_network"],
                "enabled": True}.get(f.id, "")
 
     if f.type == "list":

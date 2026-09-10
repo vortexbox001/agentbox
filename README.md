@@ -115,12 +115,49 @@ configured network for the duration of its run.
    docker compose up -d
    ```
    Open the Dagster UI at `http://<host>:3000`. Each enabled agent appears as a job named
-   `agent_<name>`, plus a schedule `sched_<name>` if its YAML sets one. Turn schedules on from the UI
-   or run a job by hand.
+   `agent_<name>`, plus a schedule `sched_<name>` if it has a `cron` entry under `automation/`
+   (see [Automation](#automation)). New schedules start paused — turn them on from the UI, or run a
+   job by hand.
 
 Rebuild the orchestrator image (`docker compose build`) only when `orchestrator/Dockerfile`
 changes. The `orchestrator/`, `agents/`, and `prompts/` directories are bind-mounted, so code and
 config edits need at most a restart.
+
+## Automation
+
+*When* an agent runs is a separate concern from *what* it is, so it lives outside the agent file.
+An agent definition describes only the agent; triggering is declared under `automation/`.
+
+`automation/` holds one or more YAML files, each a **map keyed by agent name**. Every entry gives
+its agent exactly one trigger:
+
+```yaml
+# automation/migrated.yaml
+repo-librarian-agentbox:
+  cron: "30 2 * * *"     # five-field cron (no @-macros); runs automatically
+some-other-agent:
+  on_demand: true        # no automatic trigger (the default if an agent has no entry)
+```
+
+- **`cron`** — a five-field expression. For a job-mode agent it becomes a Dagster schedule
+  `sched_<name>`; for an asset-mode agent (one that declares `produces`) it becomes a cron-based
+  automation condition on the asset, toggled by a `autocond_<name>` sensor.
+- **`on_demand: true`** — no automatic trigger. An agent named in no `automation/` file is on-demand
+  too; the key is just the explicit spelling.
+
+Crons run in the box's timezone — the `TZ` set in `.env` (e.g. `America/New_York`), falling back to
+UTC if unset — so `7 17 * * *` fires at 17:07 local, the way ordinary cron does. Set `TZ=UTC` to
+schedule in UTC. This applies to both job schedules and asset automation conditions.
+
+New triggers start **paused** — turn them on from the Dagster UI, exactly as schedules behaved
+before. An agent appears at most once across all `automation/` files. An entry naming an agent that
+does not exist fails the reload with a message naming it.
+
+Edit triggers from the management UI's **Automation** view (it lists every agent with its current
+trigger and writes `automation/migrated.yaml`, then reloads Dagster), or by hand. If you are
+upgrading from a version where agents carried a `schedule` key, run the one-off
+`python3 scripts/migrate-schedules.py` once: it moves every agent's schedule into
+`automation/migrated.yaml` and strips the key from the agent files (idempotent).
 
 ## Adding an agent
 
@@ -171,7 +208,6 @@ This table is descriptive. The authoritative per-key wording, valid values, defa
 | `name` | required | Kebab-case id. Becomes job `agent_<name>` (hyphens become underscores). |
 | `enabled` | `true` | `false` skips the file entirely. |
 | `harness` | required | `api`, `claude-code`, `pi`, or `codex`. |
-| `schedule` | none | Cron expression. Omit or leave empty for manual-only runs. |
 | `prompt_file` | required | File in `prompts/`. |
 | `output_dir` | required | Host path mounted at `/output`. |
 | `timeout_seconds` | `900` | The run is killed after this long. |

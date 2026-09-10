@@ -89,7 +89,7 @@ function isEmptyValue(f, v) {
   if (v === null || v === undefined) return true;
   if (f.type === "list") return !Array.isArray(v) || v.length === 0;
   if (f.type === "map") return !v || Object.keys(v).length === 0;
-  if (typeof v === "string" && v === "") return f.id !== "schedule";
+  if (typeof v === "string" && v === "") return true;
   return false;
 }
 
@@ -112,7 +112,6 @@ function collect() {
     if (!ids.has(f.id) || f.id === "harness") continue;
     let v = getValue(f.id);
     if (f.type === "bool") { agent[f.id] = !!v; continue; }
-    if (f.id === "schedule") { agent[f.id] = v == null ? "" : String(v); continue; }
     if (isEmptyValue(f, v)) continue;   // omit unset optionals; server treats as unset
     agent[f.id] = coerce(f, v);
   }

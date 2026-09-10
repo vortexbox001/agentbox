@@ -1,3 +1,4 @@
+# agentbox-schema: 3
 # Template: claude-code harness
 # Runs the Claude Code CLI in a container with a workspace and tool access.
 
@@ -39,7 +40,6 @@ env:                                # individual env vars passed to the containe
   # GITHUB_TOKEN: ${GITHUB_TOKEN}   #   passthrough from Dagster's environment
 
 # --- Scheduling ---
-schedule: "30 2 * * *"          # cron expression, or "" for manual-only runs
 
 # --- Produces (optional) ---
 #produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)

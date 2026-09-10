@@ -1,3 +1,4 @@
+# agentbox-schema: 3
 # Template: api harness (LiteLLM)
 # Lightweight agent that sends a prompt to LiteLLM and writes the response.
 
@@ -14,7 +15,7 @@ prompt_file: my-agent.md        # file in prompts/ mounted read-only into the co
 output_dir: /data/outputs/my-agent  # host path where timestamped .md outputs are written
 
 # --- Scheduling ---
-schedule: "0 7 * * *"           # cron expression, or "" for manual-only runs
+
                                 # examples: "*/30 * * * *" (every 30m), "0 9 * * 1-5" (weekday 9am)
 
 # --- Produces (optional) ---

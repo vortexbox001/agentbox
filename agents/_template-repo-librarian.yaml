@@ -1,3 +1,4 @@
+# agentbox-schema: 3
 # Template: repo-librarian (claude-code harness)
 # Clones a GitHub repo into a fresh workspace, reviews its documentation, and writes a report to /output.
 # Copy this file, replace the <PLACEHOLDERS>, and set enabled: true.
@@ -32,7 +33,6 @@ allowed_tools:                  # tool allowlist — omit for no restriction
 #mcp_config: ""                  # path to MCP server config JSON inside the container (omit if unused)
 
 # --- Scheduling ---
-schedule: ""                    # cron expression, e.g. "0 7 * * *", or "" for manual-only runs
 
 # --- Produces (optional) ---
 #produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)
