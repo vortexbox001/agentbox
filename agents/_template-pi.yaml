@@ -1,3 +1,4 @@
+# agentbox-schema: 3
 # Template: pi harness
 # Runs pi (https://github.com/earendil-works/pi), a minimal coding agent with read/write/edit/bash/grep/find/ls tools and a
 # full tool loop, in print mode. Talks to the LiteLLM proxy, so it bills the API key and can use any
@@ -30,7 +31,6 @@ env:
   # GITHUB_TOKEN: ${GITHUB_TOKEN}   # passthrough from Dagster's environment
 
 # --- Scheduling ---
-schedule: ""                    # cron expression, or "" for manual-only runs
 
 # --- Produces (optional) ---
 #produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)

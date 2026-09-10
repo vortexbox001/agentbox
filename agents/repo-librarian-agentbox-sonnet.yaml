@@ -1,3 +1,4 @@
+# agentbox-schema: 3
 # Sonnet copy of repo-librarian-agentbox: same prompt and tools, Sonnet instead of Opus.
 # The api harness cannot do this job (no shell, no git, no tools), so this stays on claude-code.
 
@@ -31,7 +32,6 @@ allowed_tools:                  # tool allowlist — omit for no restriction
 #mcp_config: ""                  # path to MCP server config JSON inside the container (omit if unused)
 
 # --- Scheduling ---
-schedule: ""                    # manual-only; run from the Dagster UI to compare against the Opus agent
 
 # --- Container resources ---
 network: bridge                 # bridge — needs internet to reach Anthropic API (required)

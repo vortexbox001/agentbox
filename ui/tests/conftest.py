@@ -40,6 +40,14 @@ def tmp_prompts(tmp_path):
 
 
 @pytest.fixture
+def tmp_automation(tmp_path):
+    """A writable, initially-empty automation/ dir in a temp directory (spec 005)."""
+    dest = tmp_path / "automation"
+    dest.mkdir()
+    return dest
+
+
+@pytest.fixture
 def litellm_cfg(tmp_path):
     """A copy of the repo litellm/config.yaml in a temp directory."""
     dest = tmp_path / "config.yaml"
@@ -50,13 +58,14 @@ def litellm_cfg(tmp_path):
 
 
 @pytest.fixture
-def settings(monkeypatch, tmp_agents, tmp_prompts, litellm_cfg):
+def settings(monkeypatch, tmp_agents, tmp_prompts, litellm_cfg, tmp_automation):
     """Point ui/config.py at the temp stores for the duration of a test."""
     import config
 
     monkeypatch.setattr(config, "AGENTS_DIR", str(tmp_agents))
     monkeypatch.setattr(config, "PROMPTS_DIR", str(tmp_prompts))
     monkeypatch.setattr(config, "LITELLM_CONFIG", str(litellm_cfg))
+    monkeypatch.setattr(config, "AUTOMATION_DIR", str(tmp_automation))
     return config
 
 

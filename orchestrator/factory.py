@@ -3,6 +3,8 @@ import os, re, json, uuid, shutil, datetime, subprocess
 from dagster import (
     job, op, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive,
     AssetKey, AssetsDefinition, DailyPartitionsDefinition, MetadataValue,
+    AutomationCondition, AutomationConditionSensorDefinition, AssetSelection,
+    DefaultSensorStatus,
 )
 
 HOST_REPO = os.environ.get("AGENTBOX_HOST_REPO", "/home/vortex/GitHub/agentbox")
@@ -12,6 +14,32 @@ CONTAINER_REPO = "/opt/agentbox"
 # `produces` block. Deliberately duplicated in ui/schema.py (research R6): the two run in
 # separate containers with no shared import, and a shared-fixture test pins them in agreement.
 ASSET_KEY_RE = r"^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$"
+
+
+def cron_timezone() -> str:
+    """The timezone agent crons run in — the box's `TZ` (already the clock for run stamps),
+    falling back to UTC. Applied to both job schedules and asset `on_cron` conditions so a cron
+    fires at the operator's local wall-clock time, the way ordinary cron does — not silently in
+    UTC. Set `TZ=UTC` in `.env` to keep UTC. Read at build time so a reload picks up a change.
+    """
+    return os.environ.get("TZ") or "UTC"
+
+
+def is_valid_cron(value) -> bool:
+    """The five-field / no-macro cron rule the removed `schedule` field enforced (FR-009).
+
+    Deliberately duplicated in the UI's ``automation_store.py`` (research R6 / plan Complexity):
+    the orchestrator and UI run in separate containers with no shared import, and a
+    shared-fixture test pins the two copies in agreement. This orchestrator copy is a
+    structural backstop (no ``croniter`` in the orchestrator image); the UI copy additionally
+    runs ``croniter.is_valid`` as the stricter authoring guard.
+    """
+    if not isinstance(value, str):
+        return False
+    s = value.strip()
+    if not s or s.startswith("@"):
+        return False
+    return len(s.split()) == 5
 
 
 class RejectAgent(Exception):
@@ -348,7 +376,7 @@ def make_run_op(cfg: dict):
             raise Exception(f"{name} exited {result.returncode}")
     return run_agent
 
-def build_asset(cfg: dict, file: str | None = None):
+def build_asset(cfg: dict, file: str | None = None, cron: str | None = None):
     """Represent an agent that declares `produces` as a Dagster asset (contract §3).
 
     Wraps the SAME op ``make_run_op(cfg)`` would build for a job via
@@ -357,6 +385,12 @@ def build_asset(cfg: dict, file: str | None = None):
     ``partition: daily`` attaches a bounded ``DailyPartitionsDefinition``; ``none`` or
     omitted attaches none. The partition is a label only — materializing any partition
     (including a past date) launches the identical container (FR-008b).
+
+    When ``cron`` is given (this agent has a cron automation entry), an
+    ``AutomationCondition.on_cron`` is attached to the asset (FR-008). On a daily-partitioned
+    root asset ``on_cron`` targets the latest (current-day) partition per tick (research R5);
+    the operator-facing on/off toggle is the per-asset sensor from
+    ``build_asset_automation_sensor`` (FR-021).
     """
     validate_asset_key(cfg, file or cfg.get("name", "<agent>"))
     key = AssetKey(cfg["produces"]["asset"].split("/"))
@@ -365,25 +399,59 @@ def build_asset(cfg: dict, file: str | None = None):
         DailyPartitionsDefinition(start_date=PARTITION_START_DATE) if partition == "daily" else None
     )
     the_op = make_run_op(cfg)  # the same op object job-mode would use
+    automation_conditions = (
+        {"result": AutomationCondition.on_cron(cron, cron_timezone=cron_timezone())} if cron else None
+    )
     return AssetsDefinition.from_op(
         the_op,
         keys_by_output_name={"result": key},
         partitions_def=partitions_def,
+        automation_conditions_by_output_name=automation_conditions,
     )
 
 
-def build_job_and_schedule(cfg: dict):
+def build_asset_automation_sensor(cfg: dict, asset_def: AssetsDefinition):
+    """A per-asset automation-condition sensor for an asset-mode agent with a cron (FR-021).
+
+    Named ``autocond_<name>`` and STOPPED by default, so an asset's cron is operator-toggleable
+    and paused-by-default — the asset-mode parallel to a job schedule's per-schedule toggle
+    (research R4). One sensor per automation asset means Dagster does not also attach its global
+    default automation sensor to it.
+    """
+    return AutomationConditionSensorDefinition(
+        name=f"autocond_{cfg['name'].replace('-', '_')}",
+        target=AssetSelection.assets(asset_def),
+        default_status=DefaultSensorStatus.STOPPED,
+    )
+
+
+def build_job(cfg: dict):
+    """The agent's Dagster job — named ``agent_<name>`` — launching the container op.
+
+    Triggering is no longer read here (spec 005): a cron, if any, comes from ``automation/``
+    and is wired by ``build_schedule`` against the job object this returns.
+    """
     the_op = make_run_op(cfg)
 
     @job(name=f"agent_{cfg['name'].replace('-', '_')}")
     def agent_job():
         the_op()
 
-    sched = None
-    if cfg.get("schedule"):
-        sched = ScheduleDefinition(
-            job=agent_job,
-            cron_schedule=cfg["schedule"],
-            name=f"sched_{cfg['name'].replace('-', '_')}",
-        )
-    return agent_job, sched
+    return agent_job
+
+
+def build_schedule(job_def, cron: str):
+    """A ``ScheduleDefinition`` on ``cron`` for an already-built job (FR-007).
+
+    Takes the SAME job object registered in the ``jobs`` list so exactly one ``agent_<name>``
+    job exists per agent (a second job of that name would make Dagster reject the
+    ``Definitions``). The name stays ``sched_<name>`` — identical to before spec 005 — so
+    Dagster preserves a migrated schedule's prior on/off state (FR-014); no ``default_status``
+    is set, so a new schedule starts paused (FR-021).
+    """
+    return ScheduleDefinition(
+        job=job_def,
+        cron_schedule=cron,
+        name=f"sched_{job_def.name.removeprefix('agent_')}",
+        execution_timezone=cron_timezone(),
+    )

@@ -1,3 +1,4 @@
+# agentbox-schema: 3
 # Template: codex harness
 # Runs OpenAI's Codex CLI (`codex exec`) non-interactively in /workspace with its default tools.
 # Authenticates with a ChatGPT login stored under /data/credentials/codex (see README "Codex
@@ -25,7 +26,6 @@ env:
   # GITHUB_TOKEN: ${GITHUB_TOKEN}   # passthrough from Dagster's environment
 
 # --- Scheduling ---
-schedule: ""                    # cron expression, or "" for manual-only runs
 
 # --- Produces (optional) ---
 #produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)

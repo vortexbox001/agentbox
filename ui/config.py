@@ -13,6 +13,10 @@ AGENTS_DIR = os.environ.get("AGENTS_DIR", "/opt/agentbox/agents")
 # Directory of prompt markdown files the UI lists and creates.
 PROMPTS_DIR = os.environ.get("PROMPTS_DIR", "/opt/agentbox/prompts")
 
+# Directory of automation YAML files (spec 005): agent triggers (cron/on_demand). The
+# Automation view reads all files here and writes the canonical automation/migrated.yaml.
+AUTOMATION_DIR = os.environ.get("AUTOMATION_DIR", "/opt/agentbox/automation")
+
 # LiteLLM proxy config, read (never written) to discover the model aliases pi/api agents may use.
 LITELLM_CONFIG = os.environ.get("LITELLM_CONFIG", "/opt/agentbox/litellm/config.yaml")
 

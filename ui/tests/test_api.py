@@ -6,6 +6,7 @@ import os
 import re
 
 import pytest
+import yaml
 
 
 UI_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -71,9 +72,9 @@ def test_api_schema_shape(client):
 
 def test_api_schema_carries_produces(client):
     # FR-013: /api/schema drives the form; the Produces card is a runs-group section
-    # with the asset/partition fields, and the version is 2.
+    # with the asset/partition fields, and the version is 3 (spec 005 bumped it).
     data = client.get("/api/schema").json()
-    assert data["schema_version"] == 2
+    assert data["schema_version"] == 3
     assert {"id": "produces", "label": "Produces", "group": "runs"} in data["sections"]
     by_id = {f["id"]: f for f in data["fields"]}
     assert by_id["asset"]["section"] == "produces"
@@ -159,7 +160,7 @@ def test_api_agents_lists_non_template_files(client):
     # Templates (leading underscore) never appear as agents.
     assert not any(a["file"].startswith("_") for a in data["agents"])
 
-    required = {"name", "file", "enabled", "harness", "model", "schedule",
+    required = {"name", "file", "enabled", "harness", "model",
                 "dagster_job", "dagster_url", "parse_error", "name_mismatch"}
     for a in data["agents"]:
         assert required <= set(a)
@@ -186,7 +187,7 @@ def test_api_agents_reports_broken_file(client, tmp_agents):
     data = client.get("/api/agents").json()
     row = next(a for a in data["agents"] if a["file"] == "broken.yaml")
     assert row["parse_error"] is not None
-    for field in ("enabled", "harness", "model", "schedule"):
+    for field in ("enabled", "harness", "model"):
         assert row[field] is None
 
 
@@ -298,8 +299,8 @@ def test_create_agent_400_for_bad_fields(client, dagster_stub):
     assert resp.json()["error"] == "validation"
     assert "name" in resp.json()["fields"]
 
-    resp = client.post("/api/agents", json={"agent": _valid_pi(schedule="not a cron")})
-    assert resp.status_code == 400 and "schedule" in resp.json()["fields"]
+    resp = client.post("/api/agents", json={"agent": _valid_pi(timeout_seconds=0)})
+    assert resp.status_code == 400 and "timeout_seconds" in resp.json()["fields"]
 
     resp = client.post("/api/agents", json={"agent": _valid_pi(model="nonsense-no-slash")})
     assert resp.status_code == 400 and "model" in resp.json()["fields"]
@@ -916,3 +917,55 @@ def test_edit_agent_page_has_lead_strip_and_group_grid(client, tmp_agents):
             < html.index('id="ax-form-sections"'))
     # Edit mode has no template picker in the lead strip.
     assert 'id="ax-template-select"' not in html
+
+
+# ── Automation view (spec 005: US3, US6) ────────────────
+def _write_job_agent(tmp_agents, name="auto-agent"):
+    _write(tmp_agents, f"{name}.yaml",
+           f"name: {name}\nenabled: true\nharness: api\nmodel: cheap\n"
+           f"prompt_file: repo-librarian.md\noutput_dir: /data/outputs/{name}\n")
+    return name
+
+
+def test_automation_page_renders(client):
+    html = client.get("/automation").text
+    assert "Automation" in html and 'id="ax-automation-rows"' in html
+
+
+def test_api_automation_lists_agents_with_triggers(client, tmp_agents):
+    name = _write_job_agent(tmp_agents)
+    data = client.get("/api/automation").json()
+    row = next(r for r in data["agents"] if r["name"] == name)
+    assert row["trigger"] == {"on_demand": True} and row["mode"] == "job"
+
+
+def test_api_put_automation_writes_and_reloads(client, dagster_stub, tmp_agents, tmp_automation):
+    name = _write_job_agent(tmp_agents)
+    resp = client.put("/api/automation", json={"triggers": {name: {"cron": "30 2 * * *"}}})
+    assert resp.status_code == 200 and resp.json()["ok"] is True
+    entries = yaml.safe_load((tmp_automation / "migrated.yaml").read_text())
+    assert entries == {name: {"cron": "30 2 * * *"}}
+
+
+def test_api_put_automation_rejects_unknown_agent(client, dagster_stub, tmp_agents, tmp_automation):
+    resp = client.put("/api/automation", json={"triggers": {"ghost-agent": {"cron": "30 2 * * *"}}})
+    assert resp.status_code == 400 and resp.json()["error"] == "validation"
+    assert "ghost-agent" in resp.json()["fields"]
+    assert not (tmp_automation / "migrated.yaml").exists()  # nothing written
+
+
+def test_api_put_automation_rejects_invalid_cron(client, dagster_stub, tmp_agents, tmp_automation):
+    name = _write_job_agent(tmp_agents)
+    resp = client.put("/api/automation", json={"triggers": {name: {"cron": "@daily"}}})
+    assert resp.status_code == 400 and name in resp.json()["fields"]
+    assert not (tmp_automation / "migrated.yaml").exists()
+
+
+def test_agent_form_has_no_schedule_card(client):
+    # spec 005 FR-017: the Schedule card is gone; Enabled + Limits remain under Runs.
+    schema_payload = client.get("/api/schema").json()
+    assert not any(f["id"] == "schedule" for f in schema_payload["fields"])
+    assert not any(s["id"] == "schedule" for s in schema_payload["sections"])
+    enabled = next(f for f in schema_payload["fields"] if f["id"] == "enabled")
+    section = next(s for s in schema_payload["sections"] if s["id"] == enabled["section"])
+    assert section["group"] == "runs"

@@ -24,8 +24,11 @@ def agents_dir(tmp_path):
     return d
 
 
-def _discover(agents_dir):
-    return definitions.discover(str(agents_dir / "*.yaml"))
+def _discover(agents_dir, automation_dir=None):
+    # Default to a non-existent automation glob so existing tests see zero triggers
+    # deterministically (never the host's real /opt/agentbox/automation).
+    auto = automation_dir if automation_dir is not None else (agents_dir / "__no_automation__")
+    return definitions.discover(str(agents_dir / "*.yaml"), str(auto / "*.yaml"))
 
 
 JOB_AGENT = """\
@@ -88,7 +91,7 @@ def _reversible_cfg(**over):
 def test_job_and_asset_share_the_same_op_name():
     # SC-004: the only observable difference between modes is job-vs-asset; the op
     # (and thus the launch) is the same run_<name> in both.
-    job, _ = factory.build_job_and_schedule(_reversible_cfg())
+    job = factory.build_job(_reversible_cfg())
     asset = factory.build_asset(_reversible_cfg(produces={"asset": "repo-review/agentbox"}))
     assert job.name == "agent_repo_review_agentbox"
     assert job.graph.node_defs[0].name == "run_repo_review_agentbox"
@@ -110,7 +113,7 @@ def test_removing_produces_reverts_to_job(agents_dir):
 def test_job_mode_still_launches_unchanged(stub_launch, monkeypatch):
     # T012: the op's new nominal output + add_output_metadata are harmless in job-mode.
     monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
-    job, _ = factory.build_job_and_schedule(_reversible_cfg())
+    job = factory.build_job(_reversible_cfg())
     result = job.execute_in_process()
     assert result.success
     assert f"{_reversible_cfg()['output_dir']}:/output" in stub_launch.cmd

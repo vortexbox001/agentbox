@@ -1,3 +1,4 @@
+# agentbox-schema: 3
 # codex-harness librarian, for comparing harnesses and models on the documentation-audit prompt.
 name: repo-librarian-codex      # becomes Dagster job "agent_repo_librarian_codex"
 enabled: true
@@ -22,7 +23,6 @@ env:
   GITHUB_REPONAME: agentbox
 
 # --- Scheduling ---
-schedule: ""                    # manual-only
 
 # --- Container resources ---
 network: bridge                 # reaches OpenAI directly

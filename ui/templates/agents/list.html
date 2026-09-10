@@ -16,7 +16,6 @@
           <th scope="col">Name</th>
           <th scope="col">Harness</th>
           <th scope="col">Model</th>
-          <th scope="col">Schedule</th>
           <th scope="col">Status</th>
           <th scope="col">Dagster</th>
         </tr>
@@ -32,20 +31,13 @@
             {% endif %}
           </td>
           {% if a.parse_error %}
-          <td colspan="3">
+          <td colspan="2">
             <span class="ax-badge ax-badge--error">error</span>
             <span class="ax-muted">{{ a.parse_error }}</span>
           </td>
           {% else %}
           <td>{% if a.harness %}<span class="ax-badge ax-badge--harness">{{ a.harness }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
           <td>{% if a.model %}<span class="ax-mono">{{ a.model }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
-          <td>
-            {% if a.schedule %}
-              <span class="ax-badge ax-badge--scheduled">{{ a.schedule }}</span>
-            {% else %}
-              <span class="ax-muted">manual</span>
-            {% endif %}
-          </td>
           {% endif %}
           <td>
             {% if a.parse_error %}

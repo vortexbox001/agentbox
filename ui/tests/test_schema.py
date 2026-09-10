@@ -29,7 +29,7 @@ def _base(harness, **over):
     a = {
         "name": "an-agent", "enabled": True, "harness": harness,
         "prompt_file": "p.md", "output_dir": "/data/outputs/an-agent",
-        "network": schema.HARNESS_BY_ID[harness]["default_network"], "schedule": "",
+        "network": schema.HARNESS_BY_ID[harness]["default_network"],
     }
     if harness == "api":
         a["model"] = "cheap"
@@ -101,19 +101,9 @@ def test_model_rule(settings, harness, model, ok):
     assert ("model" not in errors) == ok, errors
 
 
-# ── Cron table (research R6) ────────────────────────────
-@pytest.mark.parametrize("expr,ok", [
-    ("0 7 * * *", True),
-    ("*/30 * * * *", True),
-    ("", True),                # manual-only
-    ("@daily", False),         # macros rejected
-    ("0 0 7 * * *", False),    # 6 fields rejected
-    ("nonsense here now ok", False),
-])
-def test_cron(settings, expr, ok):
-    agent = _base("api", schedule=expr)
-    errors = schema.validate(agent, prompt_exists=ALWAYS_TRUE)
-    assert ("schedule" not in errors) == ok, errors
+# Cron validation moved out of the agent schema (spec 005): the `schedule` field is gone and
+# triggering lives in automation/. The five-field cron rule is now exercised by the automation
+# tests (test_automation_store.py / orchestrator test_automation.py), not here.
 
 
 # ── Other validation ────────────────────────────────────
@@ -176,7 +166,7 @@ def test_partition_field_shape():
 
 def test_public_payload_exposes_produces():
     pub = schema.to_public()
-    assert pub["schema_version"] == 2
+    assert pub["schema_version"] == 3
     assert {"id": "produces", "label": "Produces", "group": "runs"} in pub["sections"]
     by_id = {f["id"]: f for f in pub["fields"]}
     assert by_id["asset"]["pattern"] == schema.ASSET_KEY_RE
@@ -218,8 +208,17 @@ def test_validate_no_asset_key_is_not_an_error():
 
 
 # ── Migrations ──────────────────────────────────────────
-def test_schema_version_is_two():
-    assert schema.SCHEMA_VERSION == 2
+def test_schema_version_is_three():
+    assert schema.SCHEMA_VERSION == 3
+
+
+def test_migrate_2_to_3_drops_schedule(settings):
+    # spec 005 FR-002: `schedule` left the schema; the 2->3 migration drops any lingering key
+    # and does NOT turn it into a trigger. A schema-2 file without `schedule` is unchanged.
+    assert schema.apply_migrations({"name": "x", "harness": "api", "schedule": "0 7 * * *"}, 2) \
+        == {"name": "x", "harness": "api"}
+    assert schema.apply_migrations({"name": "x", "harness": "api"}, 2) \
+        == {"name": "x", "harness": "api"}
 
 
 def test_migrations_noop_at_current_version():
@@ -284,8 +283,7 @@ def test_to_public_shape(settings):
 # "Field re-homing"). Every managed field appears exactly once.
 _FIELD_SECTION = {
     "name": "identity",
-    "enabled": "schedule",
-    "schedule": "schedule",
+    "enabled": "status",
     "timeout_seconds": "limits",
     "max_turns": "limits",
     "asset": "produces",
