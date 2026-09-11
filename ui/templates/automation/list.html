@@ -8,31 +8,22 @@
 {% endblock %}
 
 {% block content %}
-<div class="ax-banner" id="ax-automation-banner" hidden></div>
-
 <div class="ax-card">
   <p class="ax-muted" style="margin-top:0">
-    When an agent runs is set here, not in the agent file. Choose <strong>on demand</strong>
-    (no automatic trigger) or a five-field <strong>cron</strong> (runs in the box's
-    <span class="ax-mono">TZ</span>, not UTC). A new trigger starts paused — turn it on from
-    Dagster. Saving writes <span class="ax-mono">automation/</span> and reloads.
+    When an agent runs is set here, on the agent itself. Each agent shows a row per kind it is —
+    an <strong>asset</strong> schedule, a <strong>job</strong> schedule, or both. Choose
+    <strong>on demand</strong> (no automatic trigger) or a five-field <strong>cron</strong> (runs
+    in the box's <span class="ax-mono">TZ</span>, not UTC). A new trigger starts paused — turn it
+    on from Dagster. Saving writes each agent's <span class="ax-mono">triggers:</span> block and
+    reloads.
   </p>
-  <table class="ax-table">
-    <thead>
-      <tr>
-        <th scope="col">Agent</th>
-        <th scope="col">Mode</th>
-        <th scope="col">Trigger</th>
-        <th scope="col">Cron</th>
-      </tr>
-    </thead>
-    <tbody id="ax-automation-rows">
-      <tr><td colspan="4"><span class="ax-muted">Loading…</span></td></tr>
-    </tbody>
-  </table>
+  <div id="ax-automation-rows">
+    <p class="ax-muted">Loading…</p>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+  <link rel="modulepreload" href="/static/dropdown.js">
   <script type="module" src="/static/automation.js"></script>
 {% endblock %}

@@ -106,6 +106,33 @@ def test_materialization_records_expected_metadata(tmp_path, stub_launch, monkey
     assert md["partition"].value == "2026-09-09"
 
 
+# --- build_materializing_job: the both-kind agent_<name> (US1, FR-006) ------
+
+def test_materializing_job_selects_the_asset(tmp_path):
+    cfg = _api_cfg(tmp_path)
+    asset = factory.build_asset(cfg)
+    mjob = factory.build_materializing_job(cfg, asset)
+    assert mjob.name == "agent_repo_review_agentbox"
+    # it is an asset-selection job over the agent's asset (not a plain op job)
+    sel = str(mjob.selection)
+    assert "repo-review" in sel or "agentbox" in sel
+
+
+def test_build_schedule_works_on_materializing_job(tmp_path):
+    cfg = _api_cfg(tmp_path)
+    mjob = factory.build_materializing_job(cfg, factory.build_asset(cfg))
+    sched = factory.build_schedule(mjob, "30 2 * * *")
+    assert sched.name == "sched_repo_review_agentbox"
+    assert sched.cron_schedule == "30 2 * * *"
+
+
+def test_partition_on_cron_supported_default_and_forced(monkeypatch):
+    monkeypatch.delenv("AGENTBOX_PARTITION_FALLBACK", raising=False)
+    assert factory.partition_on_cron_supported() is True
+    monkeypatch.setenv("AGENTBOX_PARTITION_FALLBACK", "1")
+    assert factory.partition_on_cron_supported() is False
+
+
 # --- Before/after output snapshot (FR-008a / research R4) --------------------
 
 def test_snapshot_missing_dir_is_empty(tmp_path):

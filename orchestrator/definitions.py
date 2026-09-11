@@ -1,118 +1,80 @@
 """
-Dagster entry point — auto-discovers agent YAML files and registers each as a
-Dagster job or, when the file declares a `produces` block, a Dagster asset.
+Dagster entry point — auto-discovers agent YAML files and registers each as the
+Dagster definitions its explicitly-declared nature calls for (spec 006).
 
-Each YAML in /opt/agentbox/agents/ becomes either a job that launches an ephemeral
-Docker container via factory.build_job() (spec 005), or — when it carries `produces` —
-an asset built by factory.build_asset() that materializes via the SAME container launch.
+An agent's nature is now EXPLICIT, not inferred (spec 006 replaces spec 004's
+produces-presence inference). Each enabled agent carries two independent flags:
 
-*When* an agent runs is a separate concern (spec 005): triggering is read from
-/opt/agentbox/automation/*.yaml — maps keyed by agent name, each value a `cron` or
-`on_demand` trigger. A job-mode agent's cron becomes a ScheduleDefinition; an asset-mode
-agent's cron becomes an AutomationCondition.on_cron on the asset plus a per-asset
-automation sensor. An agent with no entry is on-demand.
+  * **asset** — a valid ``produces`` block ⇒ a tracked Dagster asset.
+  * **job**   — ``job: true`` ⇒ a Dagster job ``agent_<name>``.
 
-Files with enabled: false are skipped (useful for templates and disabled agents).
-A file with an invalid or conflicting `produces` block is rejected by name and skipped;
-every other agent still loads (FR-012/FR-019). An automation entry naming an agent that
-does not exist, or a duplicate/invalid trigger, FAILS the reload with a naming message
-(FR-009/FR-010/FR-011).
+At least one must be set. The three kinds route as:
+
+  * asset-only ⇒ ``build_asset`` (materialize by hand / on its schedule); no job.
+  * job-only   ⇒ ``build_job`` (a plain op job ``agent_<name>``); no asset.
+  * both       ⇒ ``build_asset`` PLUS ``build_materializing_job`` — ``agent_<name>``
+                 becomes the asset's materializing job, so every run records against
+                 the one asset (FR-006).
+
+*When* an agent runs lives on the agent too, in a ``triggers:`` block:
+
+  * ``asset_schedule`` (asset kind) ⇒ ``AutomationCondition.on_cron`` on the asset
+    plus a paused per-asset sensor ``autocond_<name>``.
+  * ``job_schedule`` (job kind) ⇒ a ``ScheduleDefinition`` ``sched_<name>`` on the
+    agent's job (plain or materializing). A new schedule starts paused; the unchanged
+    ``sched_<name>`` / ``autocond_<name>`` names let Dagster preserve each trigger's
+    prior on/off state across a reload (FR-012/FR-014).
+
+Spec 005's standalone trigger directory, its on-demand keyword, and its
+``migrate-schedules.py`` are retired: there is NO separate trigger store to load here.
+
+Files with ``enabled: false`` are skipped. A file with an invalid/conflicting
+``produces`` block, or one that is neither an asset nor a job, is rejected by name and
+skipped; every other agent still loads (FR-010).
 """
 
 import glob, os, logging, yaml
 from dagster import Definitions
 from factory import (
-    build_job, build_schedule, build_asset, build_asset_automation_sensor,
-    validate_asset_key, is_valid_cron, RejectAgent,
+    build_job, build_schedule, build_asset, build_materializing_job,
+    build_asset_automation_sensor, validate_asset_key, partition_on_cron_supported,
+    RejectAgent,
 )
 
 log = logging.getLogger("agentbox.definitions")
 
 AGENTS_GLOB = "/opt/agentbox/agents/*.yaml"
-AUTOMATION_GLOB = "/opt/agentbox/automation/*.yaml"
 
 
-class RejectAutomation(Exception):
-    """An automation file/entry is invalid; the message names the offending entry and file.
+def _triggers(cfg: dict) -> tuple[str | None, str | None]:
+    """Read ``(asset_schedule, job_schedule)`` off an agent's ``triggers`` block.
 
-    Unlike a bad `produces` block (which skips one agent, FR-012), a bad automation entry
-    FAILS the whole reload (FR-009/FR-010/FR-011) — the management UI already refuses to
-    write one, so its only source is a hand-edit the operator should hear about loudly.
+    An absent block, a non-mapping block, or a blank value yields ``None`` for that
+    schedule (no trigger of that kind). Triggering is read ONLY from here (FR-009).
     """
+    block = cfg.get("triggers")
+    if not isinstance(block, dict):
+        return None, None
+    asset_schedule = block.get("asset_schedule") or None
+    job_schedule = block.get("job_schedule") or None
+    return (
+        asset_schedule if isinstance(asset_schedule, str) and asset_schedule.strip() else None,
+        job_schedule if isinstance(job_schedule, str) and job_schedule.strip() else None,
+    )
 
 
-def load_automation(glob_pattern: str = AUTOMATION_GLOB):
-    """Read and merge automation/*.yaml into a normalized trigger map.
-
-    Returns ``(triggers, sources)`` where ``triggers`` maps an agent name to
-    ``{"cron": str}`` or ``{"on_demand": True}`` and ``sources`` maps an agent name to the
-    file its entry came from (for naming messages). Applies SYNTACTIC validation (contract
-    automation-format §3): duplicate key across files (FR-011), both/invalid triggers
-    (FR-005/FR-009). An entry with neither trigger degrades to on-demand. The semantic
-    unknown-agent check (FR-010) happens in ``discover`` where agent names are known.
-    """
-    triggers: dict[str, dict] = {}
-    sources: dict[str, str] = {}
-
-    for path in sorted(glob.glob(glob_pattern)):
-        file = "automation/" + os.path.basename(path)
-        with open(path) as f:
-            data = yaml.safe_load(f)
-        if not data:
-            continue
-        if not isinstance(data, dict):
-            raise RejectAutomation(f"{file}: top level must be a map keyed by agent name")
-        for name, value in data.items():
-            if name in sources:
-                raise RejectAutomation(
-                    f'automation entry "{name}" is declared by both {sources[name]} and {file} '
-                    f"(FR-011) — an agent may have at most one trigger"
-                )
-            trigger = _normalize_trigger(name, value, file)
-            if trigger is not None:  # None == on-demand; only cron entries are stored
-                triggers[name] = trigger
-            sources[name] = file
-    return triggers, sources
-
-
-def _normalize_trigger(name: str, value, file: str):
-    """One entry's value → ``{"cron": str}`` (stored) or ``None`` (on-demand). Raises on invalid."""
-    if value is None:
-        return None  # `agent:` with no value == on-demand
-    if not isinstance(value, dict):
-        raise RejectAutomation(f'{file}: automation entry "{name}" must be a map with one trigger')
-    has_cron = "cron" in value and value.get("cron") not in (None, "")
-    has_on_demand = bool(value.get("on_demand"))
-    if has_cron and has_on_demand:
-        raise RejectAutomation(
-            f'{file}: automation entry "{name}" declares both cron and on_demand — pick one (FR-005)'
-        )
-    if has_cron:
-        cron = value["cron"]
-        if not is_valid_cron(cron):
-            raise RejectAutomation(
-                f'{file}: automation entry "{name}" has invalid cron "{cron}" — '
-                f"five fields, no @-macros (FR-009)"
-            )
-        return {"cron": str(cron)}
-    return None  # on_demand: true, or neither key → on-demand
-
-
-def discover(agents_glob: str = AGENTS_GLOB, automation_glob: str = AUTOMATION_GLOB) -> dict:
-    """Load every enabled agent, read triggers from automation/, and wire them.
+def discover(agents_glob: str = AGENTS_GLOB) -> dict:
+    """Load every enabled agent, classify its nature, and wire it and its triggers.
 
     Returns ``{"jobs": [...], "schedules": [...], "assets": [...], "sensors": [...]}``. Each
-    agent file is built inside a try/except so one bad `produces` block costs only itself
-    (FR-012). Automation errors (dup/invalid/unknown entry) fail the whole reload by design.
+    agent file is built inside a try/except so one bad file (invalid ``produces``, or neither
+    asset nor job) costs only itself and is logged by name (FR-010); every other agent loads.
     """
     jobs, schedules, assets, sensors = [], [], [], []
-    # (file, name, asset_def, cron) — assets are collected first so duplicate keys can be
-    # rejected before their sensors are added (FR-019).
-    pending_assets: list[tuple[str, str, object, str | None]] = []
+    # (file, name, cfg, asset_def, asset_schedule, job_schedule) — assets are collected first so
+    # duplicate keys can be rejected before their sensors / materializing jobs are added.
+    pending_assets: list[tuple] = []
     files_by_key: dict[str, list[str]] = {}
-    known_names: set[str] = set()
-
-    triggers, sources = load_automation(automation_glob)
 
     for path in sorted(glob.glob(agents_glob)):
         with open(path) as f:
@@ -120,48 +82,75 @@ def discover(agents_glob: str = AGENTS_GLOB, automation_glob: str = AUTOMATION_G
         if not cfg:
             continue
         name = cfg.get("name")
-        if name:
-            known_names.add(name)  # every agent file, incl. disabled/templates (FR-010, contract §3)
         if not cfg.get("enabled", True):
             continue
         file = "agents/" + os.path.basename(path)
-        if "schedule" in cfg:  # stray key after the migration; ignore it, warn by name (FR-002/R7)
-            log.warning("%s still carries a `schedule` key — ignored; triggering comes from automation/", file)
-        cron = triggers.get(name, {}).get("cron")
+        asset_schedule, job_schedule = _triggers(cfg)
         try:
-            if "produces" in cfg:
+            is_asset = "produces" in cfg
+            is_job = cfg.get("job") is True
+            if not is_asset and not is_job:
+                raise RejectAgent(
+                    file,
+                    "agent is neither an asset nor a job — declare a `produces` block, set "
+                    "`job: true`, or both (FR-005)",
+                )
+            if is_asset:
                 asset_key = validate_asset_key(cfg, file)  # raises RejectAgent, naming the file
-                asset_def = build_asset(cfg, file, cron=cron)
-                pending_assets.append((file, name, asset_def, cron))
+                asset_def = build_asset(cfg, file, cron=asset_schedule)
+                pending_assets.append((file, name, cfg, asset_def, asset_schedule, job_schedule, is_job))
                 files_by_key.setdefault(asset_key, []).append(file)
             else:
+                # Job-only: a plain op job, optionally scheduled by its own job_schedule.
                 job_def = build_job(cfg)
                 jobs.append(job_def)
-                if cron:
-                    schedules.append(build_schedule(job_def, cron))
+                if job_schedule:
+                    schedules.append(build_schedule(job_def, job_schedule))
         except RejectAgent as e:
             log.warning("skipping %s", e)
             continue
 
-    # Every automation entry must name a known agent (FR-010) — fail the reload if not.
-    for entry_name, entry_file in sources.items():
-        if entry_name not in known_names:
-            raise RejectAutomation(
-                f'{entry_file}: automation entry "{entry_name}" names no agent — '
-                f"no agents/*.yaml declares that name (FR-010)"
-            )
-
-    # Reject every file that shares an asset key with another (FR-019); load everything else.
+    # Reject every file that shares an asset key with another (FR-010); load everything else.
     dup_keys = {key: files for key, files in files_by_key.items() if len(files) > 1}
     rejected_files = {f for files in dup_keys.values() for f in files}
     for key, files in dup_keys.items():
         log.warning('asset key "%s" declared by %s — all rejected', key, ", ".join(files))
-    for file, name, asset_def, cron in pending_assets:
+
+    for file, name, cfg, asset_def, asset_schedule, job_schedule, is_job in pending_assets:
         if file in rejected_files:
             continue
         assets.append(asset_def)
-        if cron:  # an asset-mode agent with a cron gets a paused per-asset automation sensor (FR-021)
+        partition = (cfg.get("produces") or {}).get("partition", "none")
+
+        # Partition Null-Action fallback (FR-015): when `on_cron` cannot target the correct
+        # partition on the installed Dagster, drive the schedule from a partition-filling job
+        # on the asset's materializing job instead of the on_cron sensor.
+        fallback = (
+            bool(asset_schedule) and partition == "daily" and not partition_on_cron_supported()
+        )
+
+        if asset_schedule and not fallback:
+            # Primary path: the asset's on_cron condition, toggled by a paused per-asset sensor.
             sensors.append(build_asset_automation_sensor({"name": name}, asset_def))
+
+        # A both-kind agent has agent_<name> as its materializing job; the fallback also needs
+        # such a job (defining one for an asset-only agent) to carry the partition-filling schedule.
+        materializing_job = None
+        if is_job or fallback:
+            materializing_job = build_materializing_job(cfg, asset_def)
+            jobs.append(materializing_job)
+
+        if is_job and job_schedule:
+            schedules.append(build_schedule(materializing_job, job_schedule))
+
+        if fallback:
+            log.warning(
+                "%s: on_cron cannot target the daily partition of asset %s on this Dagster — "
+                "falling back to a partition-filling schedule sched_%s on its materializing job "
+                "(FR-015)",
+                file, cfg["produces"]["asset"], name.replace("-", "_"),
+            )
+            schedules.append(build_schedule(materializing_job, asset_schedule))
 
     return {"jobs": jobs, "schedules": schedules, "assets": assets, "sensors": sensors}
 

@@ -60,6 +60,15 @@ def dagster_job_path(job: str) -> str:
     return f"/locations/{config.DAGSTER_LOCATION}/jobs/{job}"
 
 
+def dagster_asset_path(key: str) -> str:
+    """Path of an asset's catalog page under the Dagster webserver, relative to its base URL.
+
+    ``key`` is the agent's `produces.asset` value; its ``/``-joined segments map
+    directly onto the webserver's ``/assets/<segment>/...`` route.
+    """
+    return f"/assets/{key}"
+
+
 def _dagster(name: str) -> tuple[str, str]:
     job = "agent_" + str(name).replace("-", "_")
     return job, config.DAGSTER_URL + dagster_job_path(job)
@@ -76,7 +85,11 @@ def read_agent(stem: str) -> dict:
     The returned dict always has: ``stem``, ``file``, ``agent`` (the definition,
     or None on parse error), ``parse_error``, ``raw`` (file text when unparsable),
     ``name_mismatch``, ``editable``, ``is_template``, ``schema_version``,
-    ``dagster_job``, ``dagster_url``, and ``name`` (best-effort identity).
+    ``dagster_job``, ``dagster_kind``, ``dagster_path``, ``dagster_url``, and
+    ``name`` (best-effort identity). ``dagster_kind``/``dagster_path``/``dagster_url``
+    point at the agent's asset page when it declares an asset (asset wins for a
+    both-kind agent), and at the job ``agent_<stem>`` otherwise — including when
+    the file cannot be parsed and the nature is unknown.
     """
     if not _safe_stem(stem):
         # Traversal or a separator in the stem: no such addressable agent (404).
@@ -96,6 +109,8 @@ def read_agent(stem: str) -> dict:
         "schema_version": None,
     }
     result["dagster_job"], result["dagster_url"] = _dagster(stem)
+    result["dagster_kind"] = "job"
+    result["dagster_path"] = dagster_job_path(result["dagster_job"])
 
     try:
         with open(path, encoding="utf-8") as f:
@@ -128,11 +143,13 @@ def read_agent(stem: str) -> dict:
         return result
 
     if "schedule" in loaded:
-        # spec 005: `schedule` left the agent schema; the migration drops it. Name the file so
-        # the operator knows a stray trigger key was ignored (FR-002). Triggering is in automation/.
+        # A stray legacy `schedule` key left the agent schema (spec 005) and the migration drops
+        # it; name the file so the operator knows it was ignored. Triggering now lives in the
+        # agent's own `triggers:` block (spec 006).
         _log.warning(
             "agents/%s.yaml carries a `schedule` key — dropped on read (triggering now lives in "
-            "automation/); it is removed from the file on the next save from the UI", stem,
+            "the agent's `triggers:` block); it is removed from the file on the next save from the UI",
+            stem,
         )
 
     try:
@@ -160,6 +177,17 @@ def read_agent(stem: str) -> dict:
         if "partition" in block:
             loaded["partition"] = block["partition"]
 
+    # Lift the nested `triggers:` block into flat asset_schedule/job_schedule managed fields the
+    # same way `produces` is lifted — never routed to "Unmanaged" (contract agent-model §2). An
+    # absent block, or one that is not a mapping, yields both fields unset.
+    triggers = loaded.pop("triggers", _MISSING)
+    if triggers is not _MISSING:
+        block = triggers if isinstance(triggers, dict) else {}
+        if "asset_schedule" in block:
+            loaded["asset_schedule"] = block["asset_schedule"]
+        if "job_schedule" in block:
+            loaded["job_schedule"] = block["job_schedule"]
+
     # Separate schema-managed keys from unmanaged ones.
     managed: dict = {}
     unmanaged: dict = {}
@@ -175,6 +203,14 @@ def read_agent(stem: str) -> dict:
     result["name"] = stored_name if stored_name is not None else stem
     result["name_mismatch"] = stored_name != stem
     result["agent"] = managed
+
+    # An agent that declares an asset lives on Dagster's asset page, not the job page
+    # (asset wins for a both-kind agent — its job exists only to materialize the asset).
+    asset = managed.get("asset")
+    if isinstance(asset, str) and asset.strip():
+        result["dagster_kind"] = "asset"
+        result["dagster_path"] = dagster_asset_path(asset.strip())
+        result["dagster_url"] = config.DAGSTER_URL + result["dagster_path"]
     return result
 
 
@@ -206,6 +242,7 @@ def list_agents() -> dict:
             "harness": agent.get("harness") if info["agent"] else None,
             "model": agent.get("model") if info["agent"] else None,
             "dagster_job": info["dagster_job"],
+            "dagster_path": info["dagster_path"],
             "dagster_url": info["dagster_url"],
             "parse_error": info["parse_error"],
             "name_mismatch": info["name_mismatch"],
@@ -299,6 +336,58 @@ def _produces_block_lines(agent: dict, harness: str) -> list[str]:
     ]
 
 
+def _has_value(agent: dict, fid: str) -> bool:
+    """Whether ``agent[fid]`` is a real (non-unset) value."""
+    v = agent.get(fid)
+    return not (v is None or (isinstance(v, str) and v.strip() == ""))
+
+
+def _triggers_block_lines(agent: dict, harness: str) -> list[str]:
+    """The `triggers:` block lines (contract agent-model §2/§5).
+
+    Re-nests the flat ``asset_schedule``/``job_schedule`` fields into a ``triggers:`` block.
+    A schedule whose kind is off (``asset_schedule`` on a non-asset agent, ``job_schedule`` on
+    an agent with no job) is omitted entirely. When at least one applicable schedule is set the
+    block is real (an applicable-but-unset schedule appears as a commented child); when none is
+    set the whole block is emitted commented-out so an author can opt in by uncommenting —
+    mirroring ``_produces_block_lines``.
+    """
+    header = schema.TRIGGERS_BLOCK_HELP
+    is_asset = _has_value(agent, "asset")
+    is_job = agent.get("job") is True
+    applicable = []
+    if is_asset:
+        applicable.append("asset_schedule")
+    if is_job:
+        applicable.append("job_schedule")
+    if not applicable:  # neither kind (an invalid agent the emitter still renders defensively)
+        applicable = ["asset_schedule", "job_schedule"]
+
+    any_set = any(_has_value(agent, fid) for fid in applicable)
+    if any_set:
+        lines = [f"triggers:  # {header}"]
+        for fid in applicable:
+            help_text = schema.field_help(fid, harness)
+            if _has_value(agent, fid):
+                lines.append(f"  {fid}: {_emit_scalar(agent[fid])}  # {help_text}")
+            else:
+                lines.append(f"#  {fid}:  # {help_text}")
+        return lines
+    return [f"#triggers:  # {header}"] + [
+        f"#  {fid}:  # {schema.field_help(fid, harness)}" for fid in applicable
+    ]
+
+
+def _job_line(agent: dict, harness: str) -> list[str]:
+    """The `job:` flag line: real when the agent has a job, commented placeholder otherwise
+    (contract agent-model §1/§5) — the Job group's opt-in flag, kept visible like the
+    produces/triggers blocks so an author can enable it by uncommenting."""
+    help_text = schema.field_help("job", harness)
+    if agent.get("job") is True:
+        return [f"job: true  # {help_text}"]
+    return [f"#job:  # {help_text}"]
+
+
 def emit_yaml(agent: dict) -> str:
     """Render an agent definition to its full YAML file text (contract agent-yaml.md).
 
@@ -314,13 +403,24 @@ def emit_yaml(agent: dict) -> str:
     if harness not in HARNESS_BY_ID:
         raise ValueError(f"unknown harness: {harness!r}")
 
+    # A caller may pass a definition straight from a file, where `produces`/`triggers` are still
+    # nested blocks rather than the flat fields the reader lifts them into; lift them the same
+    # way here so a block is never dropped.
+    if agent.get("produces", _MISSING) is not _MISSING or agent.get("triggers", _MISSING) is not _MISSING:
+        agent = dict(agent)
     produces = agent.get("produces", _MISSING)
     if produces is not _MISSING:
-        agent = dict(agent)
         block = agent.pop("produces") if isinstance(produces, dict) else {}
         agent.setdefault("asset", block.get("asset", ""))
         if "partition" in block:
             agent.setdefault("partition", block["partition"])
+    triggers = agent.get("triggers", _MISSING)
+    if triggers is not _MISSING:
+        block = agent.pop("triggers") if isinstance(triggers, dict) else {}
+        if "asset_schedule" in block:
+            agent.setdefault("asset_schedule", block["asset_schedule"])
+        if "job_schedule" in block:
+            agent.setdefault("job_schedule", block["job_schedule"])
 
     desc = HARNESS_BY_ID[harness]["description"]
     lines = [f"# {desc}", _HEADER_GENERATED, f"# agentbox-schema: {schema.SCHEMA_VERSION}"]
@@ -334,6 +434,18 @@ def emit_yaml(agent: dict) -> str:
             lines.append("")
             lines.append(f"# --- {section['label']} ---")
             lines.extend(_produces_block_lines(agent, harness))
+            continue
+        # The Triggers block and the Job flag are nested/opt-in sections kept always-visible
+        # (like Produces) so an author can enable them by uncommenting (contract §2/§5).
+        if section["id"] == "triggers":
+            lines.append("")
+            lines.append(f"# --- {section['label']} ---")
+            lines.extend(_triggers_block_lines(agent, harness))
+            continue
+        if section["id"] == "run_as_job":
+            lines.append("")
+            lines.append(f"# --- {section['label']} ---")
+            lines.extend(_job_line(agent, harness))
             continue
         sec_fields = [f for f in FIELDS if f.section == section["id"] and f.id in applicable]
         rendered: list[str] = []
@@ -354,7 +466,7 @@ def emit_yaml(agent: dict) -> str:
     # nested `produces` key is never unmanaged — its fields are emitted as the block above.
     unmanaged = dict(agent.get("unmanaged") or {})
     for k, v in agent.items():
-        if k not in FIELDS_BY_ID and k not in ("unmanaged", "produces"):
+        if k not in FIELDS_BY_ID and k not in ("unmanaged", "produces", "triggers"):
             unmanaged[k] = v
     if unmanaged:
         lines.append("")

@@ -1,13 +1,17 @@
-"""Unit tests for orchestrator/definitions.py agent routing (US1/US2/US4).
+"""Unit tests for orchestrator/definitions.py — explicit asset/job nature + per-agent
+triggers (spec 006, US1/US2).
 
-``discover(glob)`` is driven against a temp directory of agent YAML files so the
-job-vs-asset routing, reversibility, and invalid/duplicate rejection can be tested
-without the container path or a live Dagster.
+``discover(agents_glob)`` is driven against a temp directory of agent YAML files so kind
+routing (asset / job / both / neither) and trigger routing (asset_schedule → on_cron + sensor,
+job_schedule → schedule) can be tested without the container path or a live Dagster. There is
+no ``automation/`` store any more — triggering is read only from each agent's ``triggers:``
+block.
 """
 import logging
 import textwrap
 
 import pytest
+from dagster import DefaultScheduleStatus, DefaultSensorStatus
 
 import definitions
 import factory
@@ -24,11 +28,8 @@ def agents_dir(tmp_path):
     return d
 
 
-def _discover(agents_dir, automation_dir=None):
-    # Default to a non-existent automation glob so existing tests see zero triggers
-    # deterministically (never the host's real /opt/agentbox/automation).
-    auto = automation_dir if automation_dir is not None else (agents_dir / "__no_automation__")
-    return definitions.discover(str(agents_dir / "*.yaml"), str(auto / "*.yaml"))
+def _discover(agents_dir):
+    return definitions.discover(str(agents_dir / "*.yaml"))
 
 
 JOB_AGENT = """\
@@ -37,6 +38,7 @@ JOB_AGENT = """\
     model: cheap
     prompt_file: x.md
     output_dir: /data/outputs/plain-job
+    job: true
 """
 
 ASSET_AGENT = """\
@@ -50,76 +52,184 @@ ASSET_AGENT = """\
       partition: daily
 """
 
+BOTH_AGENT = """\
+    name: both-agent
+    harness: api
+    model: cheap
+    prompt_file: x.md
+    output_dir: /data/outputs/both-agent
+    job: true
+    produces:
+      asset: repo-review/both
+      partition: none
+"""
 
-def test_produces_agent_becomes_asset_not_job(agents_dir):
+NEITHER_AGENT = """\
+    name: neither-agent
+    harness: api
+    model: cheap
+    prompt_file: x.md
+    output_dir: /data/outputs/neither-agent
+"""
+
+
+# --- US1: three kinds route correctly ---------------------------------------
+
+def test_asset_only_builds_asset_and_no_job(agents_dir):
     _write(agents_dir, "repo-review-agentbox", ASSET_AGENT)
     out = _discover(agents_dir)
     assert [k.path for a in out["assets"] for k in a.keys] == [["repo-review", "agentbox"]]
-    # no bare job for the asset agent
-    assert [j.name for j in out["jobs"]] == []
+    assert [j.name for j in out["jobs"]] == []  # no agent_<name> job for an asset-only agent
 
 
-def test_plain_agent_stays_job(agents_dir):
+def test_job_only_builds_plain_job_and_no_asset(agents_dir):
     _write(agents_dir, "plain-job", JOB_AGENT)
     out = _discover(agents_dir)
     assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
     assert out["assets"] == []
+
+
+def test_both_builds_asset_and_materializing_job(agents_dir):
+    _write(agents_dir, "both-agent", BOTH_AGENT)
+    out = _discover(agents_dir)
+    assert [k.path for a in out["assets"] for k in a.keys] == [["repo-review", "both"]]
+    assert [j.name for j in out["jobs"]] == ["agent_both_agent"]
+    # the job materializes the asset (an asset-selection job, not a plain op job)
+    job = out["jobs"][0]
+    assert "repo-review" in str(job.selection) or "both" in str(job.selection)
+
+
+def test_neither_flag_agent_rejected_by_name(agents_dir, caplog):
+    _write(agents_dir, "neither-agent", NEITHER_AGENT)
+    _write(agents_dir, "plain-job", JOB_AGENT)
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    # the neither-agent is skipped by name; the good agent still loads
+    assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
+    assert out["assets"] == []
+    assert "agents/neither-agent.yaml" in caplog.text
 
 
 def test_mixed_set_routes_each_correctly(agents_dir):
     _write(agents_dir, "plain-job", JOB_AGENT)
     _write(agents_dir, "repo-review-agentbox", ASSET_AGENT)
+    _write(agents_dir, "both-agent", BOTH_AGENT)
     out = _discover(agents_dir)
-    assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
-    assert [k.path for a in out["assets"] for k in a.keys] == [["repo-review", "agentbox"]]
-
-
-# --- US2: reversibility and job-mode is untouched ---------------------------
-
-def _reversible_cfg(**over):
-    cfg = {
-        "name": "repo-review-agentbox",
-        "harness": "api",
-        "model": "cheap",
-        "prompt_file": "x.md",
-        "output_dir": "/data/outputs/repo-review/agentbox",
+    assert {j.name for j in out["jobs"]} == {"agent_plain_job", "agent_both_agent"}
+    assert {tuple(k.path) for a in out["assets"] for k in a.keys} == {
+        ("repo-review", "agentbox"), ("repo-review", "both"),
     }
-    cfg.update(over)
-    return cfg
 
+
+def test_disabled_agent_skipped(agents_dir):
+    _write(agents_dir, "plain-job", JOB_AGENT + "    enabled: false\n")
+    out = _discover(agents_dir)
+    assert out["jobs"] == [] and out["assets"] == []
+
+
+# --- US1: shared op name across kinds (SC / FR-008) -------------------------
 
 def test_job_and_asset_share_the_same_op_name():
-    # SC-004: the only observable difference between modes is job-vs-asset; the op
-    # (and thus the launch) is the same run_<name> in both.
-    job = factory.build_job(_reversible_cfg())
-    asset = factory.build_asset(_reversible_cfg(produces={"asset": "repo-review/agentbox"}))
+    cfg = {"name": "repo-review-agentbox", "harness": "api", "model": "cheap",
+           "prompt_file": "x.md", "output_dir": "/o"}
+    job = factory.build_job(cfg)
+    asset = factory.build_asset(dict(cfg, produces={"asset": "repo-review/agentbox"}))
     assert job.name == "agent_repo_review_agentbox"
     assert job.graph.node_defs[0].name == "run_repo_review_agentbox"
     assert asset.op.name == "run_repo_review_agentbox"
 
 
-def test_removing_produces_reverts_to_job(agents_dir):
-    # produces present -> asset, no job
-    _write(agents_dir, "repo-review-agentbox", ASSET_AGENT)
-    out = _discover(agents_dir)
-    assert out["assets"] and not out["jobs"]
-    # produces removed (same file) -> job agent_<name>, no asset, nothing else changed
-    _write(agents_dir, "repo-review-agentbox", ASSET_AGENT.split("produces:")[0])
-    out = _discover(agents_dir)
-    assert out["assets"] == []
-    assert [j.name for j in out["jobs"]] == ["agent_repo_review_agentbox"]
-
-
-def test_job_mode_still_launches_unchanged(stub_launch, monkeypatch):
-    # T012: the op's new nominal output + add_output_metadata are harmless in job-mode.
+def test_job_only_still_launches_unchanged(stub_launch, monkeypatch):
     monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
-    job = factory.build_job(_reversible_cfg())
+    cfg = {"name": "plain-job", "harness": "api", "model": "cheap",
+           "prompt_file": "x.md", "output_dir": "/data/outputs/plain-job"}
+    job = factory.build_job(cfg)
     result = job.execute_in_process()
     assert result.success
-    assert f"{_reversible_cfg()['output_dir']}:/output" in stub_launch.cmd
+    assert f"{cfg['output_dir']}:/output" in stub_launch.cmd
 
 
-# --- US4: invalid and conflicting declarations rejected by name -------------
+# --- US2: trigger routing (read only from the agent's triggers block) --------
+
+def test_job_schedule_becomes_paused_schedule_on_the_job(agents_dir):
+    _write(agents_dir, "plain-job", JOB_AGENT + '    triggers:\n      job_schedule: "30 2 * * *"\n')
+    out = _discover(agents_dir)
+    assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
+    assert len(out["schedules"]) == 1
+    sched = out["schedules"][0]
+    assert sched.name == "sched_plain_job"
+    assert sched.cron_schedule == "30 2 * * *"
+    assert sched.default_status == DefaultScheduleStatus.STOPPED  # new triggers paused
+
+
+def test_asset_schedule_becomes_condition_and_paused_sensor(agents_dir):
+    _write(agents_dir, "repo-review-agentbox",
+           ASSET_AGENT + '    triggers:\n      asset_schedule: "20 17 * * *"\n')
+    out = _discover(agents_dir)
+    assert len(out["assets"]) == 1 and out["schedules"] == []  # asset, not a ScheduleDefinition
+    conds = out["assets"][0].automation_conditions_by_key
+    assert conds and "on_cron(20 17 * * *" in str(next(iter(conds.values())))
+    assert [s.name for s in out["sensors"]] == ["autocond_repo_review_agentbox"]
+    assert out["sensors"][0].default_status == DefaultSensorStatus.STOPPED
+
+
+def test_both_agent_asset_and_job_schedules_independent(agents_dir):
+    body = BOTH_AGENT + '    triggers:\n      asset_schedule: "20 17 * * *"\n      job_schedule: "30 2 * * *"\n'
+    _write(agents_dir, "both-agent", body)
+    out = _discover(agents_dir)
+    # asset gets the on_cron condition + a paused sensor; the materializing job gets sched_<name>
+    conds = out["assets"][0].automation_conditions_by_key
+    assert conds and "on_cron(20 17 * * *" in str(next(iter(conds.values())))
+    assert [s.name for s in out["sensors"]] == ["autocond_both_agent"]
+    assert [s.name for s in out["schedules"]] == ["sched_both_agent"]
+    assert out["schedules"][0].cron_schedule == "30 2 * * *"
+
+
+def test_no_triggers_means_no_schedule_or_sensor(agents_dir):
+    _write(agents_dir, "plain-job", JOB_AGENT)
+    _write(agents_dir, "repo-review-agentbox", ASSET_AGENT)
+    out = _discover(agents_dir)
+    assert out["schedules"] == [] and out["sensors"] == []
+
+
+def test_absent_triggers_block_leaves_agent_runnable(agents_dir):
+    # An agent with no triggers is still built (runnable by hand), just not triggered.
+    _write(agents_dir, "plain-job", JOB_AGENT)
+    out = _discover(agents_dir)
+    assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
+
+
+# --- crons honor TZ, not UTC (both surfaces, FR-016) ------------------------
+
+def test_cron_uses_tz_not_utc(agents_dir, monkeypatch):
+    monkeypatch.setenv("TZ", "America/New_York")
+    _write(agents_dir, "plain-job", JOB_AGENT + '    triggers:\n      job_schedule: "7 17 * * *"\n')
+    _write(agents_dir, "repo-review-agentbox",
+           ASSET_AGENT + '    triggers:\n      asset_schedule: "7 17 * * *"\n')
+    out = _discover(agents_dir)
+    assert out["schedules"][0].execution_timezone == "America/New_York"
+    cond = next(iter(out["assets"][0].automation_conditions_by_key.values()))
+    assert "America/New_York" in str(cond)
+
+
+def test_cron_falls_back_to_utc(agents_dir, monkeypatch):
+    monkeypatch.delenv("TZ", raising=False)
+    _write(agents_dir, "plain-job", JOB_AGENT + '    triggers:\n      job_schedule: "7 17 * * *"\n')
+    assert _discover(agents_dir)["schedules"][0].execution_timezone == "UTC"
+
+
+# --- state-preservation guard: names are unchanged from spec 005 -------------
+
+def test_instigator_names_unchanged(agents_dir):
+    _write(agents_dir, "plain-job", JOB_AGENT + '    triggers:\n      job_schedule: "30 2 * * *"\n')
+    _write(agents_dir, "repo-review-agentbox",
+           ASSET_AGENT + '    triggers:\n      asset_schedule: "20 17 * * *"\n')
+    out = _discover(agents_dir)
+    assert {s.name for s in out["schedules"]} == {"sched_plain_job"}
+    assert {s.name for s in out["sensors"]} == {"autocond_repo_review_agentbox"}
+
+
+# --- US4-ish: invalid / duplicate produces still rejected by name ------------
 
 BAD_KEY_AGENT = """\
     name: bad-key
@@ -141,15 +251,7 @@ DUP_A = """\
       asset: shared/key
 """
 
-DUP_B = """\
-    name: dup-b
-    harness: api
-    model: cheap
-    prompt_file: x.md
-    output_dir: /data/outputs/dup-b
-    produces:
-      asset: shared/key
-"""
+DUP_B = DUP_A.replace("dup-a", "dup-b")
 
 
 def test_invalid_asset_rejects_only_that_file(agents_dir, caplog):
@@ -157,11 +259,9 @@ def test_invalid_asset_rejects_only_that_file(agents_dir, caplog):
     _write(agents_dir, "plain-job", JOB_AGENT)
     with caplog.at_level(logging.WARNING):
         out = _discover(agents_dir)
-    # the bad file is dropped (no asset, no job); the good agent still loads
     assert out["assets"] == []
     assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
-    assert "agents/bad-key.yaml" in caplog.text
-    assert "Bad Key" in caplog.text
+    assert "agents/bad-key.yaml" in caplog.text and "Bad Key" in caplog.text
 
 
 def test_duplicate_asset_keys_reject_all_by_name(agents_dir, caplog):
@@ -170,14 +270,44 @@ def test_duplicate_asset_keys_reject_all_by_name(agents_dir, caplog):
     _write(agents_dir, "plain-job", JOB_AGENT)
     with caplog.at_level(logging.WARNING):
         out = _discover(agents_dir)
-    # both conflicting files rejected; the unrelated job still loads
     assert out["assets"] == []
     assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
     assert 'asset key "shared/key"' in caplog.text
     assert "agents/dup-a.yaml" in caplog.text and "agents/dup-b.yaml" in caplog.text
 
 
-def test_unique_asset_key_still_loads(agents_dir):
-    _write(agents_dir, "dup-a", DUP_A)  # only one file uses shared/key here
+# --- legacy automation path is gone (FR-010 / SC-008) -----------------------
+
+def test_no_automation_reader_or_on_demand_remains():
+    # The spec-005 automation machinery must be fully removed from the module.
+    assert not hasattr(definitions, "load_automation")
+    assert not hasattr(definitions, "AUTOMATION_GLOB")
+    assert not hasattr(definitions, "RejectAutomation")
+    src = open(definitions.__file__).read()
+    assert "on_demand" not in src
+
+
+# --- FR-015: partition Null-Action fallback (forced via env) -----------------
+
+def test_partition_fallback_adds_filling_schedule_and_warns(agents_dir, monkeypatch, caplog):
+    monkeypatch.setenv("AGENTBOX_PARTITION_FALLBACK", "1")
+    _write(agents_dir, "repo-review-agentbox",
+           ASSET_AGENT + '    triggers:\n      asset_schedule: "20 17 * * *"\n')
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    # fallback: a materializing job is defined for the asset-only agent + a partition-filling
+    # schedule on it; the on_cron sensor is NOT registered.
+    assert [j.name for j in out["jobs"]] == ["agent_repo_review_agentbox"]
+    assert [s.name for s in out["schedules"]] == ["sched_repo_review_agentbox"]
+    assert out["sensors"] == []
+    assert "FR-015" in caplog.text or "fall" in caplog.text.lower()
+
+
+def test_primary_path_is_default(agents_dir, monkeypatch):
+    monkeypatch.delenv("AGENTBOX_PARTITION_FALLBACK", raising=False)
+    _write(agents_dir, "repo-review-agentbox",
+           ASSET_AGENT + '    triggers:\n      asset_schedule: "20 17 * * *"\n')
     out = _discover(agents_dir)
-    assert [k.path for a in out["assets"] for k in a.keys] == [["shared", "key"]]
+    # primary: on_cron sensor, no job, no schedule
+    assert out["jobs"] == [] and out["schedules"] == []
+    assert [s.name for s in out["sensors"]] == ["autocond_repo_review_agentbox"]

@@ -1,4 +1,4 @@
-# agentbox-schema: 3
+# agentbox-schema: 4
 # Template: claude-code harness
 # Runs the Claude Code CLI in a container with a workspace and tool access.
 
@@ -39,7 +39,13 @@ env:                                # individual env vars passed to the containe
   # SOME_VAR: plain-value           #   inlined in docker command
   # GITHUB_TOKEN: ${GITHUB_TOKEN}   #   passthrough from Dagster's environment
 
-# --- Scheduling ---
+# --- Job ---
+job: true                       # this agent has a launchable/schedulable job agent_<name>; declare an asset via produces below, or both. An agent must be an asset, a job, or both.
+
+# --- Triggers (optional) ---
+#triggers:                       # when this agent runs on its own (omit for manual/on-demand only)
+#  job_schedule: "0 7 * * *"     # cron (5 fields, no @-macros) — launches the job on a schedule
+#  asset_schedule: "0 7 * * *"   # cron — materializes the asset on a schedule (only when produces is set)
 
 # --- Produces (optional) ---
 #produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)

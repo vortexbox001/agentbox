@@ -4,7 +4,7 @@ from dagster import (
     job, op, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive,
     AssetKey, AssetsDefinition, DailyPartitionsDefinition, MetadataValue,
     AutomationCondition, AutomationConditionSensorDefinition, AssetSelection,
-    DefaultSensorStatus,
+    DefaultSensorStatus, define_asset_job,
 )
 
 HOST_REPO = os.environ.get("AGENTBOX_HOST_REPO", "/home/vortex/GitHub/agentbox")
@@ -386,7 +386,7 @@ def build_asset(cfg: dict, file: str | None = None, cron: str | None = None):
     omitted attaches none. The partition is a label only — materializing any partition
     (including a past date) launches the identical container (FR-008b).
 
-    When ``cron`` is given (this agent has a cron automation entry), an
+    When ``cron`` is given (the agent's ``triggers.asset_schedule``), an
     ``AutomationCondition.on_cron`` is attached to the asset (FR-008). On a daily-partitioned
     root asset ``on_cron`` targets the latest (current-day) partition per tick (research R5);
     the operator-facing on/off toggle is the per-asset sensor from
@@ -426,10 +426,11 @@ def build_asset_automation_sensor(cfg: dict, asset_def: AssetsDefinition):
 
 
 def build_job(cfg: dict):
-    """The agent's Dagster job — named ``agent_<name>`` — launching the container op.
+    """The agent's plain-op Dagster job — named ``agent_<name>`` — launching the container op.
 
-    Triggering is no longer read here (spec 005): a cron, if any, comes from ``automation/``
-    and is wired by ``build_schedule`` against the job object this returns.
+    Used for a job-only agent (spec 006): its runs record no asset materialization. Triggering
+    is read from the agent's own ``triggers.job_schedule`` and wired by ``build_schedule``
+    against the job object this returns.
     """
     the_op = make_run_op(cfg)
 
@@ -438,6 +439,35 @@ def build_job(cfg: dict):
         the_op()
 
     return agent_job
+
+
+def build_materializing_job(cfg: dict, asset_def: AssetsDefinition):
+    """The both-kind agent's job ``agent_<name>``: a job whose runs MATERIALIZE the asset (FR-006).
+
+    ``define_asset_job`` selects the asset that already wraps ``make_run_op(cfg)`` via
+    ``AssetsDefinition.from_op`` — the launch op is NOT re-implemented (FR-008), so a manual
+    materialize, the asset's ``on_cron`` auto-condition, and this job's schedule all feed the
+    one asset-materialization history. Also used as the carrier for the partition Null-Action
+    fallback schedule (FR-015).
+    """
+    return define_asset_job(
+        name=f"agent_{cfg['name'].replace('-', '_')}",
+        selection=AssetSelection.assets(asset_def),
+    )
+
+
+def partition_on_cron_supported() -> bool:
+    """Whether ``AutomationCondition.on_cron`` can target the correct partition on the installed
+    Dagster (research R5 / FR-015). True on the pinned 1.13.21 — the primary path, where
+    ``on_cron`` on a ``DailyPartitionsDefinition`` targets the latest (current-day) partition.
+
+    The quickstart §8 build-time check gates which path ships; the primary path is the default.
+    Setting ``AGENTBOX_PARTITION_FALLBACK=1`` forces the documented fallback (a partition-filling
+    job schedule) — for an older Dagster where ``on_cron`` cannot target the right partition, or
+    to exercise the fallback in tests. Duplicated in the UI's ``automation_store`` so the
+    Automation page's ``fallback`` marker agrees with what the orchestrator wired (research R6).
+    """
+    return os.environ.get("AGENTBOX_PARTITION_FALLBACK", "").lower() not in ("1", "true", "yes")
 
 
 def build_schedule(job_def, cron: str):

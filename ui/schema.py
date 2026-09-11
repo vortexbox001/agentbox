@@ -21,7 +21,7 @@ import config
 
 # Current schema version, stamped into every emitted file. Bump when a migration
 # is added below. Files without the stamp are read as version 0.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def migrate_1_to_2(data: dict) -> dict:
@@ -33,18 +33,33 @@ def migrate_1_to_2(data: dict) -> dict:
 
 
 def migrate_2_to_3(data: dict) -> dict:
-    """Schema 2 -> 3: `schedule` left the agent schema (spec 005) — triggering moved to
-    automation/. Drop any lingering `schedule` key on read; the dropped value is NOT turned
-    into a trigger (FR-002). The reader (agents_store) logs a warning naming the file when it
-    strips one. Schema-2 files without `schedule` load with zero noise."""
+    """Schema 2 -> 3: the `schedule` field left the agent schema (spec 005). Drop any lingering
+    `schedule` key on read; the dropped value is NOT turned into a trigger (FR-002). The reader
+    (agents_store) logs a warning naming the file when it strips one. Schema-2 files without
+    `schedule` load with zero noise. (Spec 006's `triggers:` block is the current home.)"""
     data.pop("schedule", None)
+    return data
+
+
+def migrate_3_to_4(data: dict) -> dict:
+    """Schema 3 -> 4: an agent's nature became explicit (spec 006, contract agent-model §4).
+
+    Under schema 3 an agent's nature was inferred: a `produces` block meant asset, its absence
+    meant job. Schema 4 makes both explicit. So on read: a file with NO `produces` was a job
+    under the old model — set ``job: true``. A file WITH `produces` was asset-only — leave
+    ``job`` unset. A read-migration never fabricates a ``triggers`` block (schedules move onto
+    the agent via the one-off carry-over script, not on read)."""
+    if "produces" not in data:
+        data["job"] = True
     return data
 
 
 # Ordered, forward-only migrations. Each pair is (target_version, fn) where fn
 # transforms a definition dict from target_version - 1 to target_version. Pure
 # dict -> dict, applied on read (never mutating the file until the user saves).
-MIGRATIONS: list[tuple[int, Callable[[dict], dict]]] = [(2, migrate_1_to_2), (3, migrate_2_to_3)]
+MIGRATIONS: list[tuple[int, Callable[[dict], dict]]] = [
+    (2, migrate_1_to_2), (3, migrate_2_to_3), (4, migrate_3_to_4),
+]
 
 
 class SchemaTooNew(Exception):
@@ -72,6 +87,8 @@ SECTIONS: list[dict] = [
     {"id": "status", "label": "Enabled", "group": "runs"},
     {"id": "limits", "label": "Limits", "group": "runs"},
     {"id": "produces", "label": "Produces", "group": "runs"},
+    {"id": "triggers", "label": "Triggers", "group": "runs"},
+    {"id": "run_as_job", "label": "Job", "group": "job"},
     {"id": "prompt", "label": "Prompt", "group": "job"},
     {"id": "directories", "label": "Directories", "group": "job"},
     {"id": "environment", "label": "Environment", "group": "job"},
@@ -91,6 +108,9 @@ ASSET_KEY_RE = r"^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$"
 
 # Comment on the `produces:` block header line in emitted YAML (real or commented-out).
 PRODUCES_BLOCK_HELP = "Declare an output asset so this agent is a tracked Dagster asset; leave commented to stay a plain job."
+
+# Comment on the `triggers:` block header line in emitted YAML (real or commented-out).
+TRIGGERS_BLOCK_HELP = "When this agent runs on its own. Optional per-kind cron(s); leave commented for manual/on-demand only."
 
 
 @dataclass
@@ -122,7 +142,7 @@ FIELDS: list[SchemaField] = [
         "Unique kebab-case identifier. Becomes the Dagster job agent_<name> (hyphens become underscores).",
         _ALL, required=True, pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$",
     ),
-    # Enabled (Runs) — triggering (cron/on_demand) lives in automation/, not here (spec 005).
+    # Enabled (Runs) — when the agent runs lives in its own `triggers:` block (spec 006), not here.
     SchemaField(
         "enabled", "status", "Enabled", "bool",
         "Whether Dagster registers this agent at all (as a job/asset). Disabled agents are "
@@ -153,6 +173,26 @@ FIELDS: list[SchemaField] = [
         "Partition set for the asset: none (single) or daily. A tracking label only — it does not "
         "change the run or output. Default none.",
         _ALL, default="none", choices=["none", "daily"], block="produces",
+    ),
+    # Triggers (Runs) — the nested `triggers` block; each cron applies only to its kind.
+    SchemaField(
+        "asset_schedule", "triggers", "Asset schedule", "cron",
+        "Cron that materializes the asset on a schedule (drives an on-cron auto-condition). "
+        "Five fields, no @-macros. Applies only when the agent is an asset; blank = no schedule.",
+        _ALL, block="triggers",
+    ),
+    SchemaField(
+        "job_schedule", "triggers", "Job schedule", "cron",
+        "Cron that launches the agent's job on a schedule. Five fields, no @-macros. Applies only "
+        "when the agent has a job; blank = manual/launchable only.",
+        _ALL, block="triggers",
+    ),
+    # Job (Job group) — the explicit job flag; a job creates agent_<name>.
+    SchemaField(
+        "job", "run_as_job", "Create agent job", "bool",
+        "Whether this agent has a Dagster job agent_<name> you can launch or schedule. true or "
+        "false; default false. An agent must be an asset, a job, or both.",
+        _ALL, default=False, choices=[True, False],
     ),
     # Prompt (Job)
     SchemaField(
@@ -316,6 +356,24 @@ _CLAUDE_ID_RE = re.compile(r"^claude-[a-z0-9.-]+(\[1m\])?$")
 _ENV_KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _MEMORY_RE = re.compile(r"^\d+[kmg]$")
+
+
+def is_valid_cron(value) -> bool:
+    """Five fields, no @-macros — the trigger cron rule (contract agent-model §3).
+
+    Twin of ``orchestrator/factory.py:is_valid_cron`` (separate containers, no shared import);
+    this UI copy additionally runs ``croniter.is_valid`` as the stricter authoring guard. The
+    same rule the retired ``automation_store`` cron guard used.
+    """
+    if not isinstance(value, str):
+        return False
+    s = value.strip()
+    if not s or s.startswith("@"):
+        return False
+    if len(s.split()) != 5:
+        return False
+    from croniter import croniter
+    return croniter.is_valid(s)
 
 
 def litellm_aliases() -> list[str]:
@@ -511,11 +569,30 @@ def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, 
     if pf and "prompt_file" not in errors and not prompt_exists(str(pf)):
         errors["prompt_file"] = f"no such prompt file in prompts/: {pf}"
 
-    # A produces block that names no asset is an empty declaration (contract §4/FR-011).
-    # The reader surfaces an asset-less `produces:` as a present-but-empty `asset`; the form
-    # omits `asset` entirely when blank, so this only fires on a genuine empty declaration.
+    # A produces block that names no asset is an empty declaration (contract §3 rule 2 / FR-002).
+    # The asset card sends `asset` (possibly empty) when it is on; a genuinely empty declaration
+    # is flagged so it cannot be saved.
     if "asset" in agent and "asset" not in errors and _is_unset(FIELDS_BY_ID["asset"], agent.get("asset")):
         errors["asset"] = "an asset declaration must name an asset"
+
+    # An agent's nature is explicit and at-least-one (contract §3 rule 1 / FR-005).
+    is_asset = not _is_unset(FIELDS_BY_ID["asset"], agent.get("asset"))
+    is_job = agent.get("job") is True
+    if not is_asset and not is_job and "job" not in errors:
+        errors["job"] = "the agent must be an asset, a job, or both."
+
+    # Trigger crons: five-field shape, and each applies only to its kind (contract §3 rules 3/4).
+    for sid, kind_on, kind_msg in (
+        ("asset_schedule", is_asset, "asset_schedule applies only when the agent is an asset"),
+        ("job_schedule", is_job, "job_schedule applies only when the agent has a job"),
+    ):
+        f = FIELDS_BY_ID[sid]
+        if sid not in agent or _is_unset(f, agent.get(sid)) or sid in errors:
+            continue
+        if not kind_on:
+            errors[sid] = kind_msg
+        elif not is_valid_cron(agent[sid]):
+            errors[sid] = "cron must have exactly five fields and no @-macros"
 
     return errors
 
@@ -565,6 +642,8 @@ def _field_public(f: SchemaField) -> dict:
     }
     if f.choice_source:
         out["choice_source"] = f.choice_source
+    if f.block:
+        out["block"] = f.block
     if f.pattern:
         out["pattern"] = f.pattern
     if f.min is not None:

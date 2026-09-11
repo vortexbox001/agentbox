@@ -36,7 +36,6 @@ _DESIGN_DOC = "Archon Design System.dc.html"
 
 app = FastAPI(title="Agentbox")
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
-templates.env.globals["dagster_job_path"] = agents_store.dagster_job_path
 
 # Operational logging (T050): one INFO line per mutating action so an operator can
 # trace what the UI wrote. Env values are never logged — only stems and outcomes.
@@ -138,7 +137,8 @@ async def _root_redirect():
 async def _agents_page(request: Request):
     # The list reflects the filesystem exactly: every non-template agent, templates
     # excluded. Row Dagster links are built in the template from the browser-facing
-    # base URL (dagster_url in the shell context) plus each row's dagster_job.
+    # base URL (dagster_url in the shell context) plus each row's dagster_path
+    # (asset page for an asset agent, job page otherwise).
     listing = agents_store.list_agents()
     return templates.TemplateResponse(
         request,
@@ -207,7 +207,8 @@ async def _agents_edit_page(request: Request, name: str):
             parse_error=info["parse_error"],
             raw=info["raw"],
             name_mismatch=info["name_mismatch"],
-            dagster_job=info["dagster_job"],
+            dagster_path=info["dagster_path"],
+            dagster_kind=info["dagster_kind"],
         ),
     )
 
@@ -508,8 +509,9 @@ async def _api_create_prompt(request: Request):
 
 @app.get("/automation")
 async def _automation_page(request: Request):
-    # The Automation view (spec 005): every non-template agent with its trigger, editable.
-    # Rows are fetched client-side from GET /api/automation so a reload reflects the files.
+    # The Automation view (spec 006): every non-template agent with its per-kind schedule
+    # rows (asset / job / both, grouped), editable. Rows are fetched client-side from
+    # GET /api/automation so a reload reflects the agent files.
     return templates.TemplateResponse(
         request,
         "automation/list.html",
@@ -528,6 +530,8 @@ async def _api_automation():
 
 @app.put("/api/automation")
 async def _api_put_automation(request: Request):
+    # Body: {"triggers": {"<name>": {"asset_schedule"?, "job_schedule"?}}}. Each edit is written
+    # onto the agent's own `triggers:` block via agents_store (spec 006), then Dagster reloads.
     body = await request.json()
     triggers = (body or {}).get("triggers", {})
     if not isinstance(triggers, dict):

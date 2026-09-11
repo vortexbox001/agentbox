@@ -15,10 +15,12 @@ The interfaces this feature exposes are UI components, not HTTP endpoints. Each 
     svg chevron                   (aria-hidden)
   ul.ax-dropdown-panel[role=listbox]   (hidden unless open)
     li.ax-dropdown-option[role=option][aria-selected]  (one per <option>)
+  .ax-dropdown-sizer              (aria-hidden; one invisible line per option; gives the wrapper its intrinsic width)
   <select ...>                    (hidden; value store; still dispatches change)
 ```
 
 **Styling contract** (from the reference "Custom Dropdown (open)"):
+- Width (superseded by bug model-dropdown-consistency, 2026-09-11): the default is intrinsic — the wrapper is `width: max-content; max-width: 100%`, sized by the sizer to the widest option, so the control neither stretches to its container nor jumps when the selection changes. The panel spans the wrapper (`left: 0; right: 0`) and so matches.
 - Trigger: `bg-input`, `border-input`, `radius-md`, body text; open state border `--ax-cyan-border`; error state (backing `aria-invalid="true"`) border `--ax-error`.
 - Panel: `bg-card`, `border-strong`, `radius-lg`, `shadow-lg`, `z-index: var(--ax-z-dropdown)`, small inner padding; max-height with `overflow-y:auto` for long lists.
 - Option: `radius-sm`, body text; selected option `--ax-cyan-bg` background with `--ax-cyan` text; unselected `--ax-text-mid`; hover/active `--ax-bg-card-hover`.
