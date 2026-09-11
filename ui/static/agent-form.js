@@ -32,8 +32,12 @@ let creatingPrompt = false;   // "Create new prompt…" is selected in the promp
 const newPrompt = { filename: "", content: "" };   // the inline prompt being authored
 let rebuildPromptOptions = null;  // repopulate the current prompt select after a refresh
 let userChangedNetwork = false;   // the user touched the network control on this page
+let assetCardOn = false;          // "make agent an asset" checkbox state (spec 006)
 const modelMemory = {};           // harness id -> the model chosen while on that harness
 const effortMemory = {};          // harness id -> the effort chosen while on that harness
+
+// Sections the form renders as the two nature cards (Asset / Job), not generic cards.
+const CARD_SECTIONS = new Set(["produces", "triggers", "run_as_job"]);
 
 // Full claude model id, optional [1m] context suffix (mirrors schema._CLAUDE_ID_RE).
 const CLAUDE_ID_RE = /^claude-[a-z0-9.-]+(\[1m\])?$/;
@@ -115,6 +119,18 @@ function collect() {
     if (isEmptyValue(f, v)) continue;   // omit unset optionals; server treats as unset
     agent[f.id] = coerce(f, v);
   }
+  // Nature gating (spec 006): when the Asset card is off, no produces block or asset schedule
+  // is written; when the Job is off, no job schedule. The `job` bool is always sent (it is the
+  // Job card's own state); the Asset card sends `asset` (possibly empty) so the server can flag
+  // an empty declaration.
+  if (assetCardOn) {
+    if (!("asset" in agent)) agent.asset = "";
+  } else {
+    delete agent.asset;
+    delete agent.partition;
+    delete agent.asset_schedule;
+  }
+  if (agent.job !== true) delete agent.job_schedule;
   // Carry the file's unmanaged keys through edit saves and the preview untouched.
   if (mode === "edit" && unmanaged && Object.keys(unmanaged).length) {
     agent.unmanaged = unmanaged;
@@ -414,36 +430,15 @@ async function refreshPrompts(selectFilename) {
 //   claude-code → alias select + "Custom model id…" revealing a claude-…[1m]? text input
 //   pi          → LiteLLM alias select + "provider/model…" revealing a text input
 //   api         → strict alias select, no custom entry
-//   codex       → free text with a <datalist> of suggestions
+//   codex       → suggestion select + "Custom model id…" revealing a free text input
 function renderModel(id, f) {
   const h = harnessById(currentHarness);
   const rule = h.model_rule || {};
   const custom = rule.custom || "none";
-  if (custom === "any") return renderModelText(id, f, h.model_suggestions || []);
   if (custom === "none") return renderEnumSelect(id, f, rule.choices || [], !!rule.blank_ok);
+  // custom === "any" (codex): the suggestions are the choices; the custom entry takes any id.
+  if (custom === "any") return renderModelSelectWithCustom(id, f, { ...rule, choices: h.model_suggestions || [] });
   return renderModelSelectWithCustom(id, f, rule);
-}
-
-// Free-text model id with optional suggestions (codex).
-function renderModelText(id, f, suggestions) {
-  const box = document.createElement("div");
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "ax-input";
-  input.id = id;
-  input.value = getValue(f.id) || "";
-  input.placeholder = "model id (blank = harness default)";
-  if (suggestions.length) {
-    const listId = `${id}-list`;
-    const dl = document.createElement("datalist");
-    dl.id = listId;
-    for (const c of suggestions) { const o = document.createElement("option"); o.value = String(c); dl.appendChild(o); }
-    input.setAttribute("list", listId);
-    box.appendChild(dl);
-  }
-  input.addEventListener("input", () => setControlValue(f.id, input.value));
-  box.appendChild(input);
-  return box;
 }
 
 // Alias select with a trailing custom option that reveals a validated text input.
@@ -451,6 +446,7 @@ function renderModelSelectWithCustom(id, f, rule) {
   const CUSTOM = "__ax_custom_model__";
   const choices = rule.choices || [];
   const providerModel = rule.custom === "provider-model";
+  const anyModel = rule.custom === "any";
   const box = document.createElement("div");
 
   const sel = document.createElement("select");
@@ -461,7 +457,8 @@ function renderModelSelectWithCustom(id, f, rule) {
   input.type = "text";
   input.className = "ax-input ax-model-custom";
   input.hidden = true;
-  input.placeholder = providerModel ? "provider/model" : "claude-… (append [1m] for 1M context)";
+  input.placeholder = anyModel ? "model id"
+    : providerModel ? "provider/model" : "claude-… (append [1m] for 1M context)";
 
   if (rule.blank_ok) {
     const blank = document.createElement("option");
@@ -488,7 +485,7 @@ function renderModelSelectWithCustom(id, f, rule) {
   const validateCustom = () => {
     if (input.hidden) { setFieldError(f.id, null); return; }
     const v = input.value.trim();
-    if (!v) { setFieldError(f.id, null); return; }
+    if (!v || anyModel) { setFieldError(f.id, null); return; }   // codex: any id is fine
     if (!providerModel && !CLAUDE_ID_RE.test(v)) {
       setFieldError(f.id, "must be a claude-… id, optionally with [1m]");
     } else if (providerModel && !v.includes("/")) {
@@ -530,7 +527,7 @@ function modelNote(harness) {
     case "api":
       return "Only LiteLLM aliases are accepted; the API runner has no custom model id or provider/model form.";
     case "codex":
-      return "Any Codex model id; the list offers suggestions. LiteLLM aliases and claude-… ids do not apply to codex.";
+      return "Pick a suggested id, or “Custom model id…” for any Codex model id. LiteLLM aliases and claude-… ids do not apply to codex.";
     default:
       return "";
   }
@@ -727,6 +724,90 @@ function renderMap(id, f) {
   return box;
 }
 
+// ── Nature cards (Asset / Job) ──────────────────────────
+// Enable/disable every control inside a container and dim it when gated off.
+function setCardEnabled(container, enabled) {
+  container.classList.toggle("ax-gated-off", !enabled);
+  container.querySelectorAll("input, select, textarea").forEach((el) => { el.disabled = !enabled; });
+}
+
+// A field wrap for one schema field id, only if it applies to the current harness.
+function fieldWrapIfApplicable(fid) {
+  const ids = new Set(harnessFieldIds(currentHarness));
+  if (!ids.has(fid)) return null;
+  const f = fieldById(fid);
+  return f ? makeField(f) : null;
+}
+
+// The Asset card: a checkbox gating the produces fields (asset key, partition) plus the
+// asset-schedule cron. Off ⇒ no produces block is written (contract ui-automation §1).
+function buildAssetCard() {
+  const card = document.createElement("section");
+  card.className = "ax-card ax-form-section ax-nature-card";
+  card.id = "ax-asset-card";
+  const h = document.createElement("h2");
+  h.textContent = "Asset";
+
+  const toggle = document.createElement("label");
+  toggle.className = "ax-toggle";
+  toggle.setAttribute("for", "ax-asset-toggle");
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.id = "ax-asset-toggle";
+  cb.checked = assetCardOn;
+  const track = document.createElement("span");
+  track.className = "ax-toggle-track";
+  track.setAttribute("aria-hidden", "true");
+  const cbText = document.createElement("span");
+  cbText.textContent = "make agent an asset";
+  toggle.append(cb, track, cbText);
+
+  const grid = document.createElement("div");
+  grid.className = "ax-grid-form";
+  for (const fid of ["asset", "partition", "asset_schedule"]) {
+    const w = fieldWrapIfApplicable(fid);
+    if (w) grid.appendChild(w);
+  }
+
+  card.append(h, toggle, grid);
+  const gate = () => setCardEnabled(grid, assetCardOn);
+  cb.addEventListener("change", () => { assetCardOn = cb.checked; gate(); updateNatureHint(); });
+  gate();
+  return card;
+}
+
+// The Job card: the `job` toggle ("create agent job") gating the job-schedule cron. On ⇒
+// `job: true` is written; off ⇒ no job (contract ui-automation §1).
+function buildJobCard() {
+  const card = document.createElement("section");
+  card.className = "ax-card ax-form-section ax-nature-card";
+  card.id = "ax-job-card";
+  const h = document.createElement("h2");
+  h.textContent = "Job";
+
+  const jobWrap = makeField(fieldById("job"));   // bool → the "create agent job" toggle
+  const grid = document.createElement("div");
+  grid.className = "ax-grid-form";
+  const js = fieldWrapIfApplicable("job_schedule");
+  if (js) grid.appendChild(js);
+
+  card.append(h, jobWrap, grid);
+  const gate = () => setCardEnabled(grid, getValue("job") === true);
+  const jobInput = jobWrap.querySelector("input[type=checkbox]");
+  if (jobInput) jobInput.addEventListener("change", () => { gate(); updateNatureHint(); });
+  gate();
+  return card;
+}
+
+// A client-side hint when the agent is neither an asset nor a job (the server is the
+// authority — it rejects the save with the nature message; FR-005).
+function updateNatureHint() {
+  const hint = document.getElementById("ax-nature-hint");
+  if (!hint) return;
+  const neither = !assetCardOn && getValue("job") !== true;
+  hint.hidden = !neither;
+}
+
 // ── Form assembly ───────────────────────────────────────
 function renderForm(harness) {
   currentHarness = harness;
@@ -750,6 +831,9 @@ function renderForm(harness) {
   }
 
   for (const section of SCHEMA.sections) {
+    // The produces/triggers/run_as_job sections are rendered as the Asset and Job cards below,
+    // not as generic per-section cards (spec 006 US1).
+    if (CARD_SECTIONS.has(section.id)) continue;
     const fields = SCHEMA.fields.filter((f) => f.section === section.id && ids.has(f.id));
     if (!fields.length) continue;
     if (section.group == null) {
@@ -771,14 +855,32 @@ function renderForm(harness) {
     if (groupEl) groupEl.appendChild(card);
   }
 
+  // The two nature cards: Asset (Runs group) and Job (Job group). Each is gated by its own
+  // checkbox; the server enforces the at-least-one rule, the client just hints (contract §1).
+  const runsGroup = groupEls.get("runs");
+  if (runsGroup && ids.has("asset")) runsGroup.appendChild(buildAssetCard());
+  const jobGroup = groupEls.get("job");
+  if (jobGroup && ids.has("job")) jobGroup.insertBefore(buildJobCard(), jobGroup.children[1] || null);
+
   for (const g of SCHEMA.groups) sectionsMount.appendChild(groupEls.get(g.id));
 
   // Enhance every select on the whole form — the lead strip's controls included,
   // not only the group cards (spec 002 US1). enhanceSelect is idempotent and its
   // MutationObserver re-syncs the template picker when its options load later.
+  // A single at-least-one-of hint under the group cards (server remains the authority).
+  let hint = document.getElementById("ax-nature-hint");
+  if (!hint) {
+    hint = document.createElement("p");
+    hint.id = "ax-nature-hint";
+    hint.className = "ax-secret-warn ax-nature-hint";
+    hint.textContent = "An agent must be an asset, a job, or both — tick at least one card.";
+  }
+  sectionsMount.appendChild(hint);
+
   enhanceSelects(form);
   updateHarnessMeta();
   updateNetworkWarning();
+  updateNatureHint();
 }
 
 // Whether a model string is acceptable for a harness (mirrors schema._validate_model,
@@ -1163,6 +1265,7 @@ async function prefillFromTemplate(stem) {
   for (const [k, v] of Object.entries(src)) { if (k !== "unmanaged") values[k] = v; }
   values.name = "";          // a template pre-fill is a starting point, not a copy
   values.enabled = false;    // start disabled until the operator reviews it
+  assetCardOn = !!(values.asset && String(values.asset).trim());
   const harness = src.harness && harnessById(src.harness) ? src.harness : currentHarness;
   renderForm(harness);       // marks the form dirty vs. the blank snapshot
 }
@@ -1211,6 +1314,7 @@ async function loadForEdit() {
     if (k === "unmanaged") { unmanaged = v; continue; }
     values[k] = v;
   }
+  assetCardOn = !!(values.asset && String(values.asset).trim());
   const harness = src.harness && harnessById(src.harness) ? src.harness : currentHarness;
   renderForm(harness);
   lockName();

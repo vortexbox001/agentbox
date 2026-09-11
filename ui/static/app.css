@@ -8,10 +8,13 @@
 [hidden] { display: none !important; }
 
 /* ── App shell layout ─────────────────────────────────── */
+/* A fixed-height grid that fills the viewport and never grows the page: the sidebar and top
+   bar stay pinned while .ax-content is the sole scroller (spec 006 US4 / contract §3). */
 .ax-app {
   display: grid;
   grid-template-columns: var(--ax-sidebar-width) 1fr;
-  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .ax-sidebar {
@@ -21,12 +24,16 @@
   border-right: 1px solid var(--ax-border-subtle);
   padding: var(--ax-space-9) var(--ax-space-6);
   gap: var(--ax-space-9);
+  overflow-y: auto;      /* its own scroll, fixed by the fixed-height grid column */
+  min-height: 0;
 }
 
 .ax-main {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;         /* allow .ax-content to shrink and scroll instead of the page */
+  overflow: hidden;
 }
 
 /* ── Brand ────────────────────────────────────────────── */
@@ -99,6 +106,9 @@
   padding: var(--ax-space-5) var(--ax-space-11);
   border-bottom: 1px solid var(--ax-border-subtle);
   background: var(--ax-bg-root);
+  position: sticky;   /* pinned above the scrolling content region (contract §3) */
+  top: 0;
+  z-index: 5;
 }
 .ax-topbar-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--ax-space-3) var(--ax-space-8); min-width: 0; }
 .ax-page-title { margin: 0; font: var(--ax-type-display-md); color: var(--ax-text-primary); }
@@ -412,10 +422,13 @@
 
 /* ── Custom dropdown (enhanced <select>; spec 002 US1) ─── */
 /* Structure is built by /static/dropdown.js around the untouched backing select:
-   .ax-dropdown > button.ax-dropdown-trigger + ul.ax-dropdown-panel + select.
+   .ax-dropdown > button.ax-dropdown-trigger + ul.ax-dropdown-panel
+   + .ax-dropdown-sizer + select.
    Reference: "Custom Dropdown (open)" — bg-card · border-strong · shadow-lg ·
    cyan-bg active. */
-.ax-dropdown { position: relative; }
+/* Default width is intrinsic: the invisible sizer (one line per option) makes the
+   wrapper exactly as wide as the largest value, capped at the container. */
+.ax-dropdown { position: relative; width: max-content; max-width: 100%; }
 /* The backing select stays in the DOM (value store, form semantics, focus
    redirect from its <label>) but is visually hidden. */
 .ax-dropdown > .ax-dropdown-native {
@@ -446,6 +459,25 @@
 .ax-dropdown.is-disabled .ax-dropdown-trigger { opacity: .5; cursor: not-allowed; }
 .ax-dropdown-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ax-dropdown-value:empty::before { content: "\00a0"; }
+/* The sizer mirrors the trigger's horizontal box (border + padding + gap +
+   chevron) so its widest line yields the trigger width; it takes no height and
+   is never seen or hit. The extra space-8 keeps panel options on one line even
+   when a scrolling panel grows a classic (non-overlay) scrollbar. */
+.ax-dropdown-sizer {
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-inline: 1px solid transparent;
+  padding-left: var(--ax-space-6);
+  padding-right: calc(var(--ax-space-6) + var(--ax-space-5) + var(--ax-space-6) + var(--ax-space-8));
+  font: var(--ax-type-body-md);
+}
+.ax-dropdown-sizer > span { display: block; white-space: nowrap; }
+/* A control revealed by a dropdown choice (e.g. "Custom model id…") renders
+   directly below the trigger; give it the same gap the new-prompt panel has. */
+.ax-dropdown + .ax-input,
+.ax-dropdown + .ax-textarea { margin-top: var(--ax-space-4); }
 .ax-dropdown-chevron {
   width: var(--ax-space-6); height: var(--ax-space-6); flex: none;
   color: var(--ax-text-muted); stroke: currentColor; fill: none;
@@ -530,4 +562,93 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
     grid-template-areas: "runs job box";
   }
+}
+
+/* ── Nature cards (Asset / Job) — spec 006 US1 ────────── */
+/* Each card is gated by its own checkbox; the gated-off grid dims and its controls disable. */
+.ax-nature-card .ax-toggle { margin-bottom: var(--ax-space-6); }
+.ax-grid-form.ax-gated-off { opacity: 0.5; }
+.ax-nature-hint {
+  grid-column: 1 / -1;
+  margin: var(--ax-space-6) 0 0;
+}
+
+/* ── Automation view — grouped per-kind rows (spec 006 US3) ── */
+.ax-automation-agent {
+  padding: var(--ax-space-7) 0;
+  border-bottom: 1px solid var(--ax-border-subtle);
+}
+.ax-automation-agent:last-child { border-bottom: 0; }
+.ax-automation-agent.ax-row--disabled { opacity: 0.6; }
+.ax-automation-agent-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ax-space-5);
+  margin-bottom: var(--ax-space-5);
+}
+.ax-automation-agent-head a { color: var(--ax-text-high); font: var(--ax-type-body-lg); }
+/* Left-anchored fixed tracks: the controls keep their widths (no stretching to the card
+   edge) and line up vertically across rows. The kind label sits on its own grid row above
+   the controls, spanning both control tracks. The mode track is fixed (not max-content) so
+   the dropdown's width can't change with the selected value. */
+.ax-automation-schedule {
+  display: grid;
+  grid-template-columns: 10rem minmax(min(16rem, 100%), 18rem);
+  justify-content: start;
+  align-items: flex-start;
+  gap: var(--ax-space-3) var(--ax-space-6);
+  padding: var(--ax-space-3) 0 var(--ax-space-3) var(--ax-space-8);
+}
+.ax-automation-kind {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ax-space-4);
+  font: var(--ax-type-label);
+  letter-spacing: var(--ax-tracking-label);
+  text-transform: uppercase;
+  color: var(--ax-text-low);
+}
+/* .ax-automation-mode is the backing select before dropdown.js enhances it; .ax-dropdown is
+   the wrapper afterwards — both must land in the mode cell. */
+.ax-automation-schedule > .ax-automation-mode,
+.ax-automation-schedule > .ax-dropdown { grid-column: 1; grid-row: 2; }
+.ax-automation-cron-wrap { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; min-width: 0; }
+/* Reserve one line under the cron input so toggling the shape warning never shifts the row
+   (SC-007 / contract §5). */
+.ax-automation-cron-wrap .ax-field-error { min-height: 1.2em; margin-top: var(--ax-space-2); }
+.ax-automation-empty { margin: 0 0 0 var(--ax-space-8); }
+.ax-badge--fallback { background: var(--ax-yellow-bg, var(--ax-bg-elevated)); color: var(--ax-yellow, var(--ax-text-mid)); }
+
+/* ── Fixed shell at phone width (spec 006 US4 / contract §3) ── */
+/* Collapse to a single column with a non-overlapping sidebar strip on top and a still-sticky
+   top bar; nothing overlaps or hides content at ~400px (SC-006). */
+@media (max-width: 640px) {
+  .ax-app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    height: 100dvh;
+  }
+  .ax-sidebar {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--ax-space-5);
+    padding: var(--ax-space-5) var(--ax-space-6);
+    border-right: 0;
+    border-bottom: 1px solid var(--ax-border-subtle);
+    overflow-y: visible;
+  }
+  .ax-nav { flex-direction: row; flex: 1; gap: var(--ax-space-3); }
+  .ax-sidebar-foot { margin-top: 0; }
+  .ax-content { padding: var(--ax-space-7); }
+  /* Fixed tracks can't fit a phone viewport — stack each schedule row instead (SC-006).
+     The resets must match the desktop placement selectors' specificity to win. */
+  .ax-automation-schedule { grid-template-columns: 1fr; }
+  .ax-automation-schedule > .ax-automation-kind,
+  .ax-automation-schedule > .ax-automation-mode,
+  .ax-automation-schedule > .ax-dropdown,
+  .ax-automation-schedule > .ax-automation-cron-wrap { grid-area: auto; }
 }

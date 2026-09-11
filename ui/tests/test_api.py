@@ -72,13 +72,25 @@ def test_api_schema_shape(client):
 
 def test_api_schema_carries_produces(client):
     # FR-013: /api/schema drives the form; the Produces card is a runs-group section
-    # with the asset/partition fields, and the version is 3 (spec 005 bumped it).
+    # with the asset/partition fields, and the version is 4 (spec 006 bumped it).
     data = client.get("/api/schema").json()
-    assert data["schema_version"] == 3
+    assert data["schema_version"] == 4
     assert {"id": "produces", "label": "Produces", "group": "runs"} in data["sections"]
     by_id = {f["id"]: f for f in data["fields"]}
     assert by_id["asset"]["section"] == "produces"
     assert by_id["partition"]["choices"] == ["none", "daily"]
+
+
+def test_api_schema_carries_job_and_triggers(client):
+    # spec 006: the schema exposes the explicit `job` flag (Job card) and the two
+    # trigger cron fields (Triggers card) so the form can author an agent's nature.
+    data = client.get("/api/schema").json()
+    assert {"id": "triggers", "label": "Triggers", "group": "runs"} in data["sections"]
+    assert {"id": "run_as_job", "label": "Job", "group": "job"} in data["sections"]
+    by_id = {f["id"]: f for f in data["fields"]}
+    assert by_id["job"]["type"] == "bool"
+    assert by_id["asset_schedule"]["block"] == "triggers"
+    assert by_id["job_schedule"]["block"] == "triggers"
     # every harness renders both fields (so the card shows for each)
     for h in data["harnesses"]:
         assert "asset" in h["fields"] and "partition" in h["fields"]
@@ -161,16 +173,24 @@ def test_api_agents_lists_non_template_files(client):
     assert not any(a["file"].startswith("_") for a in data["agents"])
 
     required = {"name", "file", "enabled", "harness", "model",
-                "dagster_job", "dagster_url", "parse_error", "name_mismatch"}
+                "dagster_job", "dagster_path", "dagster_url", "parse_error", "name_mismatch"}
     for a in data["agents"]:
         assert required <= set(a)
 
+    # repo-librarian-agentbox declares `produces` (asset repo-review/agentbox), so its
+    # Dagster link is the asset page, not a job page.
     row = next(a for a in data["agents"] if a["name"] == "repo-librarian-agentbox")
     assert row["harness"] == "claude-code"
     assert row["dagster_job"] == "agent_repo_librarian_agentbox"
-    assert row["dagster_url"].endswith("/locations/definitions.py/jobs/agent_repo_librarian_agentbox")
+    assert row["dagster_path"] == "/assets/repo-review/agentbox"
+    assert row["dagster_url"].endswith("/assets/repo-review/agentbox")
     assert row["parse_error"] is None
     assert row["name_mismatch"] is False
+
+    # categorize-commits is job-only (`job: true`, no produces): job link as before.
+    row = next(a for a in data["agents"] if a["name"] == "categorize-commits")
+    assert row["dagster_path"] == "/locations/definitions.py/jobs/agent_categorize_commits"
+    assert row["dagster_url"].endswith("/locations/definitions.py/jobs/agent_categorize_commits")
 
 
 def test_api_agents_lists_templates_separately(client):
@@ -234,10 +254,20 @@ def test_agents_page_dagster_links_use_code_location_path(client):
     html = client.get("/agents").text
     # Dagster job URLs are <base>/locations/<location>/jobs/<job>; the bare
     # /jobs/<job> form 404s in the Dagster webserver.
-    assert "/locations/definitions.py/jobs/agent_repo_librarian_agentbox" in html
-    assert "/jobs/agent_repo_librarian_agentbox" not in html.replace(
-        "/locations/definitions.py/jobs/agent_repo_librarian_agentbox", ""
+    assert "/locations/definitions.py/jobs/agent_categorize_commits" in html
+    assert "/jobs/agent_categorize_commits" not in html.replace(
+        "/locations/definitions.py/jobs/agent_categorize_commits", ""
     )
+
+
+def test_agents_page_asset_agent_links_to_asset_page(client):
+    html = client.get("/agents").text
+    # An asset agent's row links to its Dagster asset page, not a (nonexistent
+    # for asset-only agents) job page.
+    assert "/assets/repo-review/agentbox" in html
+    # The closing quote pins the full href: agent_repo_librarian_agentbox_fable
+    # (job-only) legitimately keeps its job link.
+    assert '/jobs/agent_repo_librarian_agentbox"' not in html
 
 
 def test_agents_page_empty_state(client, tmp_agents):
@@ -259,6 +289,7 @@ def _valid_pi(**over):
         "prompt_file": "repo-librarian.md",
         "output_dir": "/data/outputs/new-pi-agent",
         "network": "agentnet",
+        "job": True,  # spec 006: an agent must be an asset, a job, or both
     }
     agent.update(over)
     return agent
@@ -472,7 +503,46 @@ def test_edit_page_renders_edit_form(client, tmp_agents):
     assert 'data-stem="edit-me"' in html
     assert "/static/agent-form.js" in html
     assert "edit-me" in html                       # title + breadcrumb carry the name
+    # edit-me has no `produces`, so its header link is the Dagster job page.
     assert "/locations/definitions.py/jobs/agent_edit_me" in html
+    assert "Dagster job" in html
+
+
+ASSET_FIXTURE = """\
+name: asset-me
+enabled: true
+harness: pi
+model: cheap
+prompt_file: repo-librarian.md
+produces:
+  asset: repo-review/asset-me
+"""
+
+
+def test_edit_page_asset_agent_links_to_dagster_asset(client, tmp_agents):
+    _write_agent_file(tmp_agents, "asset-me", ASSET_FIXTURE)
+    html = client.get("/agents/asset-me").text
+    assert "/assets/repo-review/asset-me" in html
+    assert "Dagster asset" in html
+    # An asset-only agent has no job agent_<name>; the old job link was dead.
+    assert "/jobs/agent_asset_me" not in html
+
+
+def test_edit_page_both_kind_agent_asset_wins(client, tmp_agents):
+    _write_agent_file(tmp_agents, "both-me", ASSET_FIXTURE.replace(
+        "asset-me", "both-me") + "job: true\n")
+    html = client.get("/agents/both-me").text
+    assert "/assets/repo-review/both-me" in html
+    assert "Dagster asset" in html
+    assert "/jobs/agent_both_me" not in html
+
+
+def test_edit_page_broken_file_falls_back_to_job_link(client, tmp_agents):
+    # Nature is unknown when the file cannot be parsed: keep the historical job link.
+    _write_agent_file(tmp_agents, "broken", "harness: [unclosed\n")
+    html = client.get("/agents/broken").text
+    assert "/locations/definitions.py/jobs/agent_broken" in html
+    assert "Dagster job" in html
 
 
 def test_edit_page_broken_file_shows_banner_and_raw(client, tmp_agents):
@@ -669,6 +739,7 @@ def _agent_for(harness, **over):
         "prompt_file": "repo-librarian.md",
         "output_dir": f"/data/outputs/us5-{harness}",
         "network": _US5_NETWORK[harness],
+        "job": True,  # spec 006: an agent must be an asset, a job, or both
     }
     agent.update(over)
     return agent
@@ -919,11 +990,19 @@ def test_edit_agent_page_has_lead_strip_and_group_grid(client, tmp_agents):
     assert 'id="ax-template-select"' not in html
 
 
-# ── Automation view (spec 005: US3, US6) ────────────────
+# ── Automation view (spec 006: US3) ─────────────────────
 def _write_job_agent(tmp_agents, name="auto-agent"):
     _write(tmp_agents, f"{name}.yaml",
            f"name: {name}\nenabled: true\nharness: api\nmodel: cheap\n"
-           f"prompt_file: repo-librarian.md\noutput_dir: /data/outputs/{name}\n")
+           f"prompt_file: repo-librarian.md\noutput_dir: /data/outputs/{name}\njob: true\n")
+    return name
+
+
+def _write_asset_agent(tmp_agents, name="auto-asset"):
+    _write(tmp_agents, f"{name}.yaml",
+           f"name: {name}\nenabled: true\nharness: api\nmodel: cheap\n"
+           f"prompt_file: repo-librarian.md\noutput_dir: /data/outputs/{name}\n"
+           f"produces:\n  asset: repo-review/{name}\n  partition: daily\n")
     return name
 
 
@@ -932,33 +1011,43 @@ def test_automation_page_renders(client):
     assert "Automation" in html and 'id="ax-automation-rows"' in html
 
 
-def test_api_automation_lists_agents_with_triggers(client, tmp_agents):
-    name = _write_job_agent(tmp_agents)
+def test_api_automation_lists_agents_with_per_kind_rows(client, tmp_agents):
+    job = _write_job_agent(tmp_agents)
+    asset = _write_asset_agent(tmp_agents)
     data = client.get("/api/automation").json()
-    row = next(r for r in data["agents"] if r["name"] == name)
-    assert row["trigger"] == {"on_demand": True} and row["mode"] == "job"
+    rows = {r["name"]: r for r in data["agents"]}
+    assert rows[job]["kinds"] == ["job"]
+    assert [s["kind"] for s in rows[job]["schedules"]] == ["job"]
+    assert rows[job]["schedules"][0]["cron"] is None  # on-demand by default
+    assert rows[asset]["kinds"] == ["asset"]
+    assert rows[asset]["schedules"][0]["fallback"] is False
 
 
-def test_api_put_automation_writes_and_reloads(client, dagster_stub, tmp_agents, tmp_automation):
+def test_api_put_automation_writes_onto_agent_file_and_reloads(client, dagster_stub, tmp_agents):
     name = _write_job_agent(tmp_agents)
-    resp = client.put("/api/automation", json={"triggers": {name: {"cron": "30 2 * * *"}}})
+    resp = client.put("/api/automation", json={"triggers": {name: {"job_schedule": "30 2 * * *"}}})
     assert resp.status_code == 200 and resp.json()["ok"] is True
-    entries = yaml.safe_load((tmp_automation / "migrated.yaml").read_text())
-    assert entries == {name: {"cron": "30 2 * * *"}}
+    # the cron is written onto the agent's own triggers block, not a separate store
+    text = (tmp_agents / f"{name}.yaml").read_text()
+    assert "triggers:" in text and "job_schedule: 30 2 * * *" in text
 
 
-def test_api_put_automation_rejects_unknown_agent(client, dagster_stub, tmp_agents, tmp_automation):
-    resp = client.put("/api/automation", json={"triggers": {"ghost-agent": {"cron": "30 2 * * *"}}})
+def test_api_put_automation_rejects_unknown_agent(client, dagster_stub, tmp_agents):
+    resp = client.put("/api/automation", json={"triggers": {"ghost-agent": {"job_schedule": "30 2 * * *"}}})
     assert resp.status_code == 400 and resp.json()["error"] == "validation"
     assert "ghost-agent" in resp.json()["fields"]
-    assert not (tmp_automation / "migrated.yaml").exists()  # nothing written
 
 
-def test_api_put_automation_rejects_invalid_cron(client, dagster_stub, tmp_agents, tmp_automation):
+def test_api_put_automation_rejects_invalid_cron(client, dagster_stub, tmp_agents):
     name = _write_job_agent(tmp_agents)
-    resp = client.put("/api/automation", json={"triggers": {name: {"cron": "@daily"}}})
+    resp = client.put("/api/automation", json={"triggers": {name: {"job_schedule": "@daily"}}})
     assert resp.status_code == 400 and name in resp.json()["fields"]
-    assert not (tmp_automation / "migrated.yaml").exists()
+
+
+def test_api_put_automation_rejects_off_kind_schedule(client, dagster_stub, tmp_agents):
+    name = _write_job_agent(tmp_agents)  # a job, not an asset
+    resp = client.put("/api/automation", json={"triggers": {name: {"asset_schedule": "30 2 * * *"}}})
+    assert resp.status_code == 400 and name in resp.json()["fields"]
 
 
 def test_agent_form_has_no_schedule_card(client):

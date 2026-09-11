@@ -101,9 +101,9 @@ def test_model_rule(settings, harness, model, ok):
     assert ("model" not in errors) == ok, errors
 
 
-# Cron validation moved out of the agent schema (spec 005): the `schedule` field is gone and
-# triggering lives in automation/. The five-field cron rule is now exercised by the automation
-# tests (test_automation_store.py / orchestrator test_automation.py), not here.
+# The old top-level `schedule` field is gone (spec 005). Spec 006 put per-kind cron fields
+# (asset_schedule / job_schedule) back on the agent, in its `triggers:` block; their five-field
+# rule is exercised by the trigger tests below and in test_automation_store.py.
 
 
 # ── Other validation ────────────────────────────────────
@@ -166,7 +166,7 @@ def test_partition_field_shape():
 
 def test_public_payload_exposes_produces():
     pub = schema.to_public()
-    assert pub["schema_version"] == 3
+    assert pub["schema_version"] == 4
     assert {"id": "produces", "label": "Produces", "group": "runs"} in pub["sections"]
     by_id = {f["id"]: f for f in pub["fields"]}
     assert by_id["asset"]["pattern"] == schema.ASSET_KEY_RE
@@ -202,37 +202,119 @@ def test_validate_rejects_bad_partition():
 
 
 def test_validate_no_asset_key_is_not_an_error():
-    # A plain agent (no asset field at all) stays a job with no produces error.
-    a = _base("api")
+    # A plain agent (job) has no produces error on the asset field.
+    a = _base("api", job=True)
     assert "asset" not in schema.validate(a, prompt_exists=ALWAYS_TRUE)
 
 
+# ── Job flag + triggers block (spec 006, contract agent-model §1/§2/§3) ──
+def test_job_field_shape():
+    f = schema.FIELDS_BY_ID["job"]
+    assert f.section == "run_as_job" and f.type == "bool"
+    assert f.default is False
+    assert "job" not in schema.ALWAYS_WRITTEN
+
+
+def test_trigger_fields_shape():
+    for sid in ("asset_schedule", "job_schedule"):
+        f = schema.FIELDS_BY_ID[sid]
+        assert f.section == "triggers" and f.block == "triggers" and f.type == "cron"
+    for h in ("claude-code", "pi", "api", "codex"):
+        fields = schema.applicable_fields(h)
+        assert "job" in fields and "asset_schedule" in fields and "job_schedule" in fields
+
+
+def test_triggers_section_is_a_runs_card_and_job_is_a_job_card():
+    triggers = next(s for s in schema.SECTIONS if s["id"] == "triggers")
+    job = next(s for s in schema.SECTIONS if s["id"] == "run_as_job")
+    assert triggers == {"id": "triggers", "label": "Triggers", "group": "runs"}
+    assert job == {"id": "run_as_job", "label": "Job", "group": "job"}
+
+
+def test_public_payload_exposes_job_and_triggers():
+    by_id = {f["id"]: f for f in schema.to_public()["fields"]}
+    assert by_id["job"]["type"] == "bool"
+    assert by_id["asset_schedule"]["type"] == "cron" and by_id["asset_schedule"]["block"] == "triggers"
+    assert by_id["job_schedule"]["type"] == "cron" and by_id["job_schedule"]["block"] == "triggers"
+
+
+# Rule 1 — nature invariant (FR-005)
+def test_nature_invariant_requires_asset_or_job():
+    neither = _base("api")  # no produces, no job
+    errors = schema.validate(neither, prompt_exists=ALWAYS_TRUE)
+    assert errors.get("job") == "the agent must be an asset, a job, or both."
+    # A job satisfies it; so does an asset; so does both.
+    assert "job" not in schema.validate(_base("api", job=True), prompt_exists=ALWAYS_TRUE)
+    assert "job" not in schema.validate(_base("api", asset="a/b"), prompt_exists=ALWAYS_TRUE)
+    assert "job" not in schema.validate(_base("api", asset="a/b", job=True), prompt_exists=ALWAYS_TRUE)
+
+
+# Rule 3 — cron shape on the trigger fields
+def test_trigger_cron_shape_validated():
+    bad = _base("api", job=True, job_schedule="@daily")
+    assert "job_schedule" in schema.validate(bad, prompt_exists=ALWAYS_TRUE)
+    ok = _base("api", job=True, job_schedule="30 2 * * *")
+    assert "job_schedule" not in schema.validate(ok, prompt_exists=ALWAYS_TRUE)
+    bad_asset = _base("api", asset="a/b", asset_schedule="1 2 3")
+    assert "asset_schedule" in schema.validate(bad_asset, prompt_exists=ALWAYS_TRUE)
+
+
+# Rule 4 — a schedule whose kind is off is rejected by name
+def test_asset_schedule_on_non_asset_is_rejected():
+    a = _base("api", job=True, asset_schedule="30 2 * * *")  # a job, not an asset
+    assert "asset_schedule" in schema.validate(a, prompt_exists=ALWAYS_TRUE)
+
+
+def test_job_schedule_on_non_job_is_rejected():
+    a = _base("api", asset="a/b", job_schedule="30 2 * * *")  # an asset, no job
+    assert "job_schedule" in schema.validate(a, prompt_exists=ALWAYS_TRUE)
+
+
 # ── Migrations ──────────────────────────────────────────
-def test_schema_version_is_three():
-    assert schema.SCHEMA_VERSION == 3
+def test_schema_version_is_four():
+    assert schema.SCHEMA_VERSION == 4
 
 
 def test_migrate_2_to_3_drops_schedule(settings):
     # spec 005 FR-002: `schedule` left the schema; the 2->3 migration drops any lingering key
-    # and does NOT turn it into a trigger. A schema-2 file without `schedule` is unchanged.
+    # and does NOT turn it into a trigger. The 3->4 migration then makes the (produces-less)
+    # agent an explicit job (spec 006). A schema-2 file without `schedule` is likewise made a job.
     assert schema.apply_migrations({"name": "x", "harness": "api", "schedule": "0 7 * * *"}, 2) \
-        == {"name": "x", "harness": "api"}
+        == {"name": "x", "harness": "api", "job": True}
     assert schema.apply_migrations({"name": "x", "harness": "api"}, 2) \
-        == {"name": "x", "harness": "api"}
+        == {"name": "x", "harness": "api", "job": True}
+
+
+def test_migrate_3_to_4_infers_job_when_no_produces(settings):
+    # No `produces` block -> the file was a job under the old model; make it explicit (FR).
+    assert schema.apply_migrations({"name": "x", "harness": "api"}, 3) \
+        == {"name": "x", "harness": "api", "job": True}
+
+
+def test_migrate_3_to_4_leaves_asset_as_asset_only(settings):
+    # A `produces` block -> asset-only under the old model; `job` is NOT set, and no `triggers`
+    # block is ever fabricated on read (the carry-over script fills schedules).
+    data = {"name": "x", "harness": "api", "produces": {"asset": "a/b"}}
+    migrated = schema.apply_migrations(dict(data), 3)
+    assert "job" not in migrated
+    assert "triggers" not in migrated
 
 
 def test_migrations_noop_at_current_version():
-    data = {"name": "x", "harness": "api"}
+    data = {"name": "x", "harness": "api", "job": True}
     assert schema.apply_migrations(dict(data), schema.SCHEMA_VERSION) == data
-    assert schema.apply_migrations(dict(data), 0) == data
+    # From version 0 the produces-less agent is made an explicit job by 3->4.
+    assert schema.apply_migrations({"name": "x", "harness": "api"}, 0) \
+        == {"name": "x", "harness": "api", "job": True}
 
 
 def test_migrate_1_to_2_is_identity(settings):
-    # SC-005: a schema-1 agent (no produces) migrates to 2 unchanged, no transform.
+    # SC-005: a schema-1 agent (no produces) migrates to 2 unchanged; the 3->4 step then makes
+    # it an explicit job. No produces/asset is fabricated.
     data = {"name": "x", "harness": "api", "model": "cheap",
             "prompt_file": "p.md", "output_dir": "/o"}
     migrated = schema.apply_migrations(dict(data), 1)
-    assert migrated == data
+    assert migrated == dict(data, job=True)
     assert "produces" not in migrated and "asset" not in migrated
 
 
@@ -288,6 +370,9 @@ _FIELD_SECTION = {
     "max_turns": "limits",
     "asset": "produces",
     "partition": "produces",
+    "asset_schedule": "triggers",
+    "job_schedule": "triggers",
+    "job": "run_as_job",
     "prompt_file": "prompt",
     "append_system_prompt": "prompt",
     "workspace": "directories",

@@ -78,6 +78,13 @@ export function enhanceSelect(select) {
   trigger.setAttribute("aria-controls", panel.id);
   trigger.append(valueEl, chevron());
 
+  // Invisible in-flow copy of every option label. It gives the wrapper its
+  // intrinsic width — as wide as the largest value — so the trigger neither
+  // stretches to the container nor jumps when the selection changes.
+  const sizer = document.createElement("div");
+  sizer.className = "ax-dropdown-sizer";
+  sizer.setAttribute("aria-hidden", "true");
+
   const label = labelFor(select);
   if (label) {
     if (!label.id) label.id = `${trigger.id}-label`;
@@ -87,7 +94,7 @@ export function enhanceSelect(select) {
   }
 
   select.parentNode.insertBefore(wrap, select);
-  wrap.append(trigger, panel, select);
+  wrap.append(trigger, panel, sizer, select);
   select.classList.add("ax-dropdown-native");
   select.tabIndex = -1;
   select.setAttribute("aria-hidden", "true");
@@ -135,6 +142,11 @@ export function enhanceSelect(select) {
   function sync() {
     syncQueued = false;
     const opts = options();
+    sizer.replaceChildren(...opts.map((opt) => {
+      const line = document.createElement("span");
+      line.textContent = opt.text;
+      return line;
+    }));
     panel.replaceChildren();
     opts.forEach((opt, i) => {
       const li = document.createElement("li");

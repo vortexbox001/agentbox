@@ -1,4 +1,4 @@
-# agentbox-schema: 3
+# agentbox-schema: 4
 # Template: api harness (LiteLLM)
 # Lightweight agent that sends a prompt to LiteLLM and writes the response.
 
@@ -14,9 +14,13 @@ max_tokens: 1024                # max response tokens (default: 1024)
 prompt_file: my-agent.md        # file in prompts/ mounted read-only into the container
 output_dir: /data/outputs/my-agent  # host path where timestamped .md outputs are written
 
-# --- Scheduling ---
+# --- Job ---
+job: true                       # this agent has a launchable/schedulable job agent_<name>; declare an asset via produces below, or both. An agent must be an asset, a job, or both.
 
-                                # examples: "*/30 * * * *" (every 30m), "0 9 * * 1-5" (weekday 9am)
+# --- Triggers (optional) ---
+#triggers:                       # when this agent runs on its own (omit for manual/on-demand only)
+#  job_schedule: "0 7 * * *"     # cron (5 fields, no @-macros) — launches the job on a schedule; examples: "*/30 * * * *", "0 9 * * 1-5"
+#  asset_schedule: "0 7 * * *"   # cron — materializes the asset on a schedule (only when produces is set)
 
 # --- Produces (optional) ---
 #produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)

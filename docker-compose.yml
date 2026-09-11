@@ -18,7 +18,6 @@ services:
     volumes:
       - ./orchestrator:/opt/agentbox/orchestrator:ro
       - ./agents:/opt/agentbox/agents:ro
-      - ./automation:/opt/agentbox/automation:ro                   # read-only: agent triggers (cron/on_demand), spec 005
       - ./prompts:/opt/agentbox/prompts:ro
       - /data/dagster:/data/dagster
       - /data/workspaces:/data/workspaces
@@ -39,7 +38,6 @@ services:
     volumes:
       - ./orchestrator:/opt/agentbox/orchestrator:ro
       - ./agents:/opt/agentbox/agents:ro
-      - ./automation:/opt/agentbox/automation:ro                   # read-only: agent triggers (cron/on_demand), spec 005
       - ./prompts:/opt/agentbox/prompts:ro
       - /data/dagster:/data/dagster
       - /data/workspaces:/data/workspaces
@@ -56,13 +54,11 @@ services:
     environment:
       DAGSTER_URL: http://dagster-webserver:3000
       AGENTS_DIR: /opt/agentbox/agents
-      AUTOMATION_DIR: /opt/agentbox/automation
       PROMPTS_DIR: /opt/agentbox/prompts
       LITELLM_CONFIG: /opt/agentbox/litellm/config.yaml
     volumes:
       - ./ui:/opt/agentbox/ui:ro
       - ./agents:/opt/agentbox/agents                              # writable: the UI edits these
-      - ./automation:/opt/agentbox/automation                      # writable: the UI's Automation view writes triggers (spec 005)
       - ./prompts:/opt/agentbox/prompts                            # writable: the UI creates prompt files
       - ./litellm/config.yaml:/opt/agentbox/litellm/config.yaml:ro # read-only: source of model aliases
     ports:

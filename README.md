@@ -114,50 +114,67 @@ configured network for the duration of its run.
    ```bash
    docker compose up -d
    ```
-   Open the Dagster UI at `http://<host>:3000`. Each enabled agent appears as a job named
-   `agent_<name>`, plus a schedule `sched_<name>` if it has a `cron` entry under `automation/`
-   (see [Automation](#automation)). New schedules start paused — turn them on from the UI, or run a
-   job by hand.
+   Open the Dagster UI at `http://<host>:3000`. Each enabled agent appears according to its
+   declared nature — an **asset**, a **job** `agent_<name>`, or both — plus a schedule
+   `sched_<name>` or an `autocond_<name>` sensor if its `triggers:` block carries a cron
+   (see [Automation](#automation)). New triggers start paused — turn them on from the UI, or run a
+   job / materialize an asset by hand.
 
 Rebuild the orchestrator image (`docker compose build`) only when `orchestrator/Dockerfile`
 changes. The `orchestrator/`, `agents/`, and `prompts/` directories are bind-mounted, so code and
 config edits need at most a restart.
 
+## Asset, job, or both
+
+An agent's **nature** is explicit and operator-chosen (there is no inference from the file's
+shape). Two independent flags on the agent decide what Dagster builds; at least one must be set:
+
+- **asset** — a `produces:` block ⇒ the agent is a tracked Dagster **asset** with a
+  materialization history. Materialize it by hand or on its `asset_schedule`.
+- **job** — `job: true` ⇒ the agent has a launchable Dagster **job** `agent_<name>`. Launch it by
+  hand or on its `job_schedule`.
+
+| Kind | `produces` | `job` | Dagster result |
+|---|:---:|:---:|---|
+| Asset-only | ✓ | ✗ | An asset; no `agent_<name>` job. |
+| Job-only | ✗ | ✓ | A plain op job `agent_<name>`; no asset. |
+| Both | ✓ | ✓ | An asset **plus** `agent_<name>` as its *materializing* job — every run (manual, auto-condition, or scheduled) records against the one asset. |
+
+Saving an agent that is neither is rejected: *"the agent must be an asset, a job, or both."*
+
 ## Automation
 
-*When* an agent runs is a separate concern from *what* it is, so it lives outside the agent file.
-An agent definition describes only the agent; triggering is declared under `automation/`.
-
-`automation/` holds one or more YAML files, each a **map keyed by agent name**. Every entry gives
-its agent exactly one trigger:
+*When* an agent runs lives **on the agent**, in its own `triggers:` block — two optional
+five-field crons, each applying to one kind:
 
 ```yaml
-# automation/migrated.yaml
-repo-librarian-agentbox:
-  cron: "30 2 * * *"     # five-field cron (no @-macros); runs automatically
-some-other-agent:
-  on_demand: true        # no automatic trigger (the default if an agent has no entry)
+# --- Triggers ---
+triggers:
+  asset_schedule: "20 17 * * *"   # materialize the asset on this cron (asset kind only)
+  job_schedule:   "30 2 * * *"    # launch agent_<name> on this cron (job kind only)
 ```
 
-- **`cron`** — a five-field expression. For a job-mode agent it becomes a Dagster schedule
-  `sched_<name>`; for an asset-mode agent (one that declares `produces`) it becomes a cron-based
-  automation condition on the asset, toggled by a `autocond_<name>` sensor.
-- **`on_demand: true`** — no automatic trigger. An agent named in no `automation/` file is on-demand
-  too; the key is just the explicit spelling.
+- **`asset_schedule`** becomes an `AutomationCondition.on_cron` on the asset, toggled by a paused
+  `autocond_<name>` sensor. On a `daily`-partitioned asset it targets the current-day partition.
+- **`job_schedule`** becomes a Dagster schedule `sched_<name>` on the agent's job (the plain job,
+  or the materializing job for a both-kind agent).
+- A blank/absent schedule means no trigger of that kind — the agent stays runnable by hand.
 
 Crons run in the box's timezone — the `TZ` set in `.env` (e.g. `America/New_York`), falling back to
 UTC if unset — so `7 17 * * *` fires at 17:07 local, the way ordinary cron does. Set `TZ=UTC` to
 schedule in UTC. This applies to both job schedules and asset automation conditions.
 
-New triggers start **paused** — turn them on from the Dagster UI, exactly as schedules behaved
-before. An agent appears at most once across all `automation/` files. An entry naming an agent that
-does not exist fails the reload with a message naming it.
+New triggers start **paused** — turn them on from the Dagster UI. The `sched_<name>` /
+`autocond_<name>` names are stable, so Dagster preserves each trigger's on/off state across a
+reload.
 
-Edit triggers from the management UI's **Automation** view (it lists every agent with its current
-trigger and writes `automation/migrated.yaml`, then reloads Dagster), or by hand. If you are
-upgrading from a version where agents carried a `schedule` key, run the one-off
-`python3 scripts/migrate-schedules.py` once: it moves every agent's schedule into
-`automation/migrated.yaml` and strips the key from the agent files (idempotent).
+Edit triggers from the management UI's **Automation** view — it shows each agent with a row per
+kind (asset, job, or both grouped together), each switchable on-demand ↔ cron, and writes the
+change onto the agent's own `triggers:` block, then reloads Dagster. If you are upgrading from a
+version that kept triggers in a standalone `automation/` directory, run the one-off
+`python3 scripts/migrate-automation-to-triggers.py` once: it folds each cron onto the right
+agent's `triggers:` block (setting `job: true` for job-mode agents) and removes the directory
+(idempotent).
 
 ## Adding an agent
 
@@ -228,8 +245,11 @@ This table is descriptive. The authoritative per-key wording, valid values, defa
 | `max_turns` | `10` | *claude-code*: cap on agentic turns. *pi* has no equivalent; `timeout_seconds` is its only cap. |
 | `mcp_config` | none | *claude-code*: path to an MCP config JSON inside the container. |
 | `append_system_prompt` | none | *claude-code*, *pi*: extra text appended to the system prompt. *codex*: appended to the prompt message instead, since `codex exec` has no system-prompt flag. |
-| `produces.asset` | none | Asset key this agent materializes, e.g. `repo-review/agentbox`. Kebab segments joined by `/` for grouping. Leave empty to stay a plain job. Declaring it makes the agent a Dagster **asset** (with a materialization history) instead of a job named `agent_<name>`. |
+| `produces.asset` | none | Asset key this agent materializes, e.g. `repo-review/agentbox`. Kebab segments joined by `/` for grouping. Declaring a `produces:` block makes the agent a Dagster **asset** (with a materialization history). Combine with `job: true` to also get a materializing `agent_<name>` job. |
 | `produces.partition` | `none` | Partition set for the asset: `none` (single) or `daily`. A tracking label only — it does not change the run or output. Default `none`. |
+| `job` | `false` | `true` makes the agent a launchable Dagster job `agent_<name>`. An agent must be an asset (`produces`), a job (`job: true`), or both. |
+| `triggers.asset_schedule` | none | Five-field cron (no `@`-macros) that materializes the asset on a schedule (an `on_cron` auto-condition). Applies only when the agent is an asset. |
+| `triggers.job_schedule` | none | Five-field cron (no `@`-macros) that launches `agent_<name>` on a schedule (`sched_<name>`). Applies only when the agent has a job. |
 
 ### Output files
 

@@ -16,22 +16,22 @@ GOLDEN = {
         "prompt_file": "repo-librarian2.md", "output_dir": "/data/outputs/repo-librarian/agentbox",
         "workspace": "/data/workspaces/repo-librarian/agentbox", "wipe_workspace": True,
         "max_turns": 50, "permission_mode": "default", "allowed_tools": ["Read", "Write", "Bash"],
-        "timeout_seconds": 1800, "network": "bridge", "memory": "1g", "cpus": 1.5,
+        "timeout_seconds": 1800, "network": "bridge", "memory": "1g", "cpus": 1.5, "job": True,
         "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "leeclemmer", "GITHUB_REPONAME": "agentbox"}},
     "pi": {"name": "repo-librarian-pi-kimi", "enabled": True, "harness": "pi", "model": "kimi", "effort": "max",
         "prompt_file": "repo-librarian.md", "output_dir": "/data/outputs/repo-librarian/pi-kimi",
         "workspace": "/data/workspaces/repo-librarian/pi-kimi", "wipe_workspace": True,
         "timeout_seconds": 1800, "allowed_tools": ["read", "write", "bash"],
-        "network": "agentnet", "memory": "1g", "cpus": 1.5,
+        "network": "agentnet", "memory": "1g", "cpus": 1.5, "job": True,
         "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "leeclemmer"}},
     "api": {"name": "nightly-digest", "enabled": True, "harness": "api", "model": "cheap", "max_tokens": 1024,
         "prompt_file": "repo-librarian.md", "output_dir": "/data/outputs/nightly-digest",
-        "timeout_seconds": 600, "network": "agentnet-isolated", "memory": "1g", "cpus": 1.5,
+        "timeout_seconds": 600, "network": "agentnet-isolated", "memory": "1g", "cpus": 1.5, "job": True,
         "env_file": "/data/credentials/agent-secrets.env", "env": {"GITHUB_USER": "leeclemmer"}},
     "codex": {"name": "repo-librarian-codex", "enabled": True, "harness": "codex", "model": "gpt-6-astra", "effort": "high",
         "prompt_file": "repo-librarian2.md", "output_dir": "/data/outputs/repo-librarian-codex",
         "workspace": "/data/workspaces/repo-librarian-codex", "wipe_workspace": True,
-        "timeout_seconds": 1800, "network": "bridge", "memory": "1g", "cpus": 1.5,
+        "timeout_seconds": 1800, "network": "bridge", "memory": "1g", "cpus": 1.5, "job": True,
         "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "leeclemmer", "GITHUB_REPONAME": "agentbox"}},
 }
 
@@ -111,6 +111,77 @@ def test_asset_less_produces_read_as_empty_declaration(settings):
     agent = st.read_agent("handwritten")["agent"]
     assert agent["asset"] == ""
     assert "produces" not in (agent.get("unmanaged") or {})
+
+
+# ── Job flag + triggers block (spec 006, contract agent-model §1/§2/§5) ─
+def test_job_line_real_when_job_and_commented_otherwise(settings):
+    job_text = st.emit_yaml(GOLDEN["api"])  # job: True
+    assert "\njob: true  #" in job_text
+    # An asset-only agent (no job): the job line is a commented placeholder.
+    asset_only = dict(GOLDEN["api"]); asset_only.pop("job"); asset_only["asset"] = "a/b"
+    txt = st.emit_yaml(asset_only)
+    assert "\n#job:  #" in txt
+    assert yaml.safe_load(txt).get("job") is None
+
+
+def test_triggers_block_commented_when_no_schedule(settings):
+    text = st.emit_yaml(GOLDEN["api"])  # job-only, no schedule
+    assert "# --- Triggers ---" in text
+    assert "#triggers:" in text
+    assert "#  job_schedule:" in text
+    assert "asset_schedule" not in text  # off-kind omitted for a job-only agent
+    assert yaml.safe_load(text).get("triggers") is None
+
+
+def test_triggers_block_real_when_schedule_set(settings):
+    cfg = dict(GOLDEN["api"], job_schedule="30 2 * * *")
+    text = st.emit_yaml(cfg)
+    loaded = yaml.safe_load(text)
+    assert loaded["triggers"] == {"job_schedule": "30 2 * * *"}
+    assert "triggers:  #" in text
+    assert "  job_schedule: 30 2 * * *  #" in text
+
+
+def test_triggers_block_omits_off_kind_schedule(settings):
+    # An asset-only agent shows only asset_schedule; job_schedule is omitted.
+    asset_only = dict(GOLDEN["api"]); asset_only.pop("job")
+    cfg = dict(asset_only, asset="repo-review/x", asset_schedule="20 17 * * *")
+    text = st.emit_yaml(cfg)
+    assert "  asset_schedule: 20 17 * * *  #" in text
+    assert "job_schedule" not in text
+    assert yaml.safe_load(text)["triggers"] == {"asset_schedule": "20 17 * * *"}
+
+
+def test_both_kind_agent_shows_both_schedules(settings):
+    cfg = dict(GOLDEN["api"], asset="repo-review/x", asset_schedule="20 17 * * *", job_schedule="30 2 * * *")
+    loaded = yaml.safe_load(st.emit_yaml(cfg))
+    assert loaded["triggers"] == {"asset_schedule": "20 17 * * *", "job_schedule": "30 2 * * *"}
+    assert loaded["job"] is True
+    assert loaded["produces"]["asset"] == "repo-review/x"
+
+
+def test_triggers_and_job_round_trip(settings):
+    cfg = dict(GOLDEN["api"], name="both-kind", asset="repo-review/x",
+               asset_schedule="20 17 * * *", job_schedule="30 2 * * *")
+    once = st.emit_yaml(cfg)
+    st.write_agent("both-kind", cfg)
+    agent = st.read_agent("both-kind")["agent"]
+    assert agent["asset_schedule"] == "20 17 * * *"
+    assert agent["job_schedule"] == "30 2 * * *"
+    assert agent["job"] is True
+    # schedules are managed, never routed to unmanaged
+    assert "triggers" not in (agent.get("unmanaged") or {})
+    assert st.emit_yaml(agent) == once
+
+
+def test_triggers_section_after_produces_before_job(settings):
+    text = st.emit_yaml(dict(GOLDEN["api"], asset="a/b", asset_schedule="20 17 * * *", job_schedule="30 2 * * *"))
+    lines = text.splitlines()
+    prod = lines.index("# --- Produces ---")
+    trig = lines.index("# --- Triggers ---")
+    job = lines.index("# --- Job ---")
+    prompt = lines.index("# --- Prompt ---")
+    assert prod < trig < job < prompt
 
 
 @pytest.mark.parametrize("harness", list(GOLDEN))
