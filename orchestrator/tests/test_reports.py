@@ -7,7 +7,8 @@ Pipes. These tests cover the Foundational isolation proof (T006) and US1's metad
 union (T014). Failure-path and streaming tests are added by US2/US3.
 """
 import factory
-from dagster import DagsterInstance, materialize
+from dagster import AssetKey, DagsterInstance, DailyPartitionsDefinition, materialize
+from dagster._core.storage.partition_status_cache import get_and_update_asset_status_cache_value
 
 
 def _api_cfg(tmp_path, **over):
@@ -148,22 +149,39 @@ def test_success_records_exactly_one_materialization(tmp_path, stub_launch, monk
 # --- US2: failed/timed-out asset runs are recorded, not thrown away (T017) ----
 
 def _materialize_expecting_failure(cfg, partition_key="2026-09-09"):
-    """Materialize an asset agent that will fail, returning (result, materializations).
+    """Materialize an asset agent that will fail, returning (result, observations, instance).
 
-    A failed step's materialization is NOT surfaced by ``ExecuteInProcessResult``
-    (``get_asset_materialization_events`` etc. return nothing once the step raises), so
-    we read it back from the instance event log — where the explicit ``log_event``
-    materialization is durably recorded (that persistence is exactly the point of SC-003).
+    On failure the op records an ``AssetObservation`` — NOT a materialization: a
+    materialization event is Dagster's positive signal that greens a partition, so emitting
+    one on failure rendered a failed partition MATERIALIZED (bug
+    failed-asset-shows-materialized). The observation attaches the report without marking the
+    partition materialized. A failed step's events are not surfaced by
+    ``ExecuteInProcessResult``, so read them back from the instance event log — where the
+    explicit ``log_event`` observation is durably recorded (the persistence is the point of
+    SC-003). The instance is returned so callers can assert the derived partition status.
     """
     instance = DagsterInstance.ephemeral()
     result = materialize([factory.build_asset(cfg)], partition_key=partition_key,
                          raise_on_error=False, instance=instance)
-    mats = [
-        r.dagster_event.step_materialization_data.materialization
+    obs = [
+        r.dagster_event.event_specific_data.asset_observation
         for r in instance.all_logs(result.run_id)
-        if r.dagster_event and r.dagster_event.event_type_value == "ASSET_MATERIALIZATION"
+        if r.dagster_event and r.dagster_event.event_type_value == "ASSET_OBSERVATION"
     ]
-    return result, mats
+    return result, obs, instance
+
+
+def _partition_status(instance, cfg, partition_key):
+    """The (materialized, failed) partition-key sets Dagster derives for the asset — exactly
+    what the UI partitions view colors green vs red. Regression guard for the bug: a failed
+    run must leave its partition in ``failed`` and out of ``materialized``.
+    """
+    key = AssetKey(cfg["produces"]["asset"].split("/"))
+    partitions_def = DailyPartitionsDefinition(start_date=factory.PARTITION_START_DATE)
+    val = get_and_update_asset_status_cache_value(instance, key, partitions_def)
+    materialized = set(val.deserialize_materialized_partition_subsets(partitions_def).get_partition_keys())
+    failed = set(val.deserialize_failed_partition_subsets(partitions_def).get_partition_keys())
+    return materialized, failed
 
 
 def _job_cfg(tmp_path, **over):
@@ -179,9 +197,10 @@ def _job_cfg(tmp_path, **over):
     return cfg
 
 
-def test_failed_asset_records_materialization_and_raises(tmp_path, stub_launch, monkeypatch):
-    """SC-003/FR-007: a non-ok asset run records an AssetMaterialization carrying
-    ``status: failed`` (so the partition shows red WITH the report) and the run fails."""
+def test_failed_asset_records_observation_and_partition_shows_red(tmp_path, stub_launch, monkeypatch):
+    """SC-003/FR-007 (bug failed-asset-shows-materialized): a non-ok asset run records an
+    AssetObservation carrying ``status: failed`` — NOT a materialization — and the run fails,
+    so the partition renders red (failed) WITH the report, never green (materialized)."""
     monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
     stub_launch.returncode = 1
     stub_launch.report = {
@@ -190,13 +209,23 @@ def test_failed_asset_records_materialization_and_raises(tmp_path, stub_launch, 
         "error": "the model hit its turn cap", "notes": None,
     }
     cfg = _api_cfg(tmp_path)
-    result, mats = _materialize_expecting_failure(cfg)
+    result, obs, instance = _materialize_expecting_failure(cfg)
     assert not result.success
-    assert len(mats) == 1  # exactly the failure materialization
-    md = mats[0].metadata
+    assert len(obs) == 1  # exactly the failure observation
+    md = obs[0].metadata
     assert md["status"].value == "failed"
     assert md["error"].value == "the model hit its turn cap"
     assert str(md["transcript"].value).endswith(".jsonl")
+    # no materialization was emitted — the failure must not green the partition
+    mat_events = [
+        r for r in instance.all_logs(result.run_id)
+        if r.dagster_event and r.dagster_event.event_type_value == "ASSET_MATERIALIZATION"
+    ]
+    assert not mat_events
+    # the derived partition status Dagster's UI colors: red (failed), not green (materialized)
+    materialized, failed = _partition_status(instance, cfg, "2026-09-09")
+    assert "2026-09-09" in failed
+    assert "2026-09-09" not in materialized
 
 
 def test_missing_report_authors_failed(tmp_path, stub_launch, monkeypatch):
@@ -204,22 +233,22 @@ def test_missing_report_authors_failed(tmp_path, stub_launch, monkeypatch):
     monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
     stub_launch.report = None  # nothing recovered from Pipes
     cfg = _api_cfg(tmp_path)
-    result, mats = _materialize_expecting_failure(cfg)
+    result, obs, _instance = _materialize_expecting_failure(cfg)
     assert not result.success
-    md = mats[0].metadata
+    md = obs[0].metadata
     assert md["status"].value == "failed"
     assert "missing or malformed" in md["error"].value
 
 
 def test_timeout_authors_timeout_with_null_numerics_and_kills(tmp_path, stub_launch, monkeypatch):
     """SC-004/FR-009: a timeout authors ``status: timeout`` with null numerics, kills
-    the named container, and records the failure as a materialization."""
+    the named container, and records the failure as an observation (not a materialization)."""
     monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
     stub_launch.timeout = True
     cfg = _api_cfg(tmp_path, timeout_seconds=1)
-    result, mats = _materialize_expecting_failure(cfg)
+    result, obs, _instance = _materialize_expecting_failure(cfg)
     assert not result.success
-    md = mats[0].metadata
+    md = obs[0].metadata
     assert md["status"].value == "timeout"
     # every numeric is the null placeholder, never coerced to 0
     for key in ("tokens_in", "tokens_out", "turns", "cost_usd"):

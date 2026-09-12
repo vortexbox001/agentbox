@@ -43,5 +43,8 @@ the run-context fields recorded today. Verified by `test_reports.py`
   field), `output_files` is the orchestrator's `/output` before/after diff — and MAY differ; neither
   is derived from the other.
 - **Same on success and failure.** For asset agents, the identical metadata union is attached
-  whether the materialization is recorded via the normal output path (`status == ok`) or the
-  explicit `AssetMaterialization` event on failure (`status != ok`).
+  whether it rides the normal output path's materialization (`status == ok`) or the explicit
+  `AssetObservation` event on failure (`status != ok`). (A failure records an observation, not a
+  materialization: a materialization event greens the partition, so emitting one on failure made a
+  failed partition render MATERIALIZED — bug `failed-asset-shows-materialized`. The observation
+  attaches the report while the failed run leaves the partition red.)

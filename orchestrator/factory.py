@@ -2,7 +2,8 @@
 import os, re, uuid, shutil, tempfile, threading, datetime, subprocess
 from dagster import (
     job, op, Output, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive,
-    AssetKey, AssetMaterialization, AssetsDefinition, DailyPartitionsDefinition, MetadataValue,
+    AssetKey, AssetMaterialization, AssetObservation, AssetsDefinition, DailyPartitionsDefinition,
+    MetadataValue,
     AutomationCondition, AutomationConditionSensorDefinition, AssetSelection,
     DefaultSensorStatus, define_asset_job,
     open_pipes_session, PipesEnvContextInjector, PipesFileMessageReader,
@@ -539,11 +540,15 @@ def make_run_op(cfg: dict):
                 if stderr:
                     context.log.error(stderr[-4000:])
                 if is_asset:
-                    # record the failed run AS a materialization so the partition shows red
-                    # WITH the report attached (SC-003), then raise to mark the run failed.
-                    # log_event emits the materialization immediately, so it survives the raise.
+                    # record the failed run as an OBSERVATION, not a materialization, then raise
+                    # to mark the run failed. A materialization event is Dagster's positive signal
+                    # that greens a partition, so emitting one here made a failed partition render
+                    # MATERIALIZED (bug failed-asset-shows-materialized). An AssetObservation
+                    # attaches the same report WITHOUT marking the partition materialized, so the
+                    # failed run leaves the partition red WITH the report (SC-003). log_event emits
+                    # it immediately, so it survives the raise.
                     context.log_event(
-                        AssetMaterialization(
+                        AssetObservation(
                             asset_key=AssetKey(cfg["produces"]["asset"].split("/")),
                             partition=context.partition_key if context.has_partition_key else None,
                             metadata=metadata,

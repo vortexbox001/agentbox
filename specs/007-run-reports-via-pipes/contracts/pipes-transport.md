@@ -51,8 +51,12 @@ runs' outputs (Constitution V).
      (§2.4) is read via `get_reported_results()` **only to recover the report fields** — the
      orchestrator does NOT re-emit it, so exactly one materialization is recorded on the happy path
      (asserted in `test_reports.py`, T014).
-   - **asset, `status != ok`** ⇒ `context.log_event(AssetMaterialization(asset_key, partition,
-     metadata=metadata))`, then `raise` — the partition shows red **with** the report (FR-007).
+   - **asset, `status != ok`** ⇒ `context.log_event(AssetObservation(asset_key, partition,
+     metadata=metadata))`, then `raise` — the partition shows red **with** the report (FR-007). It
+     must be an observation, not a materialization: a materialization event greens the partition,
+     so emitting one on failure rendered a failed partition MATERIALIZED (bug
+     `failed-asset-shows-materialized`). An observation attaches the report without materializing,
+     so the failed run leaves the partition red.
    - **job-only** ⇒ `context.add_output_metadata(metadata)`; `raise` on non-zero container exit
      (FR-008).
 
