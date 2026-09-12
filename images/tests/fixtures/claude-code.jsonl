@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"11111111-1111-1111-1111-111111111111","tools":["Read","Write"]}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Reviewing the orchestrator wiring."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"factory.py"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","content":"..."}]}}
+{"type":"result","subtype":"success","is_error":false,"num_turns":7,"duration_ms":41230,"usage":{"input_tokens":8800,"output_tokens":1500,"cache_read_input_tokens":2000},"result":"Reviewed the orchestrator; the from_op wiring is subtle."}

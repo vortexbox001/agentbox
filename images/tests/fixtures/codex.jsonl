@@ -1,0 +1,6 @@
+{"type":"turn.started"}
+{"type":"item.completed","item":{"type":"reasoning","text":"planning the refactor"}}
+{"type":"turn.completed","usage":{"input_tokens":1200,"output_tokens":300}}
+{"type":"item.completed","item":{"type":"agent_message","text":"Refactored the module; running checks."}}
+{"type":"turn.completed","usage":{"input_tokens":800,"output_tokens":150}}
+{"type":"item.completed","item":{"type":"agent_message","text":"Done; wrote the summary to /output."}}

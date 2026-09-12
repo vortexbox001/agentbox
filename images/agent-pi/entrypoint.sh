@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# pi harness entrypoint: register the LiteLLM proxy as a provider, then exec pi with the arguments
-# the orchestrator built (same division of labour as the claude-code image).
+# pi harness entrypoint: register the LiteLLM proxy as a provider, then hand the arguments
+# the orchestrator built to the report wrapper, which spawns `pi`, tees its native events to
+# stdout, and reports the run over Dagster Pipes (spec 007).
 set -euo pipefail
 # costs are USD per 1M tokens: Anthropic list prices; Moonshot from platform.kimi.ai/docs/pricing
 mkdir -p "$HOME/.pi/agent"
@@ -61,4 +62,4 @@ for a in "$@"; do
   fi
   args+=("$a")
 done
-exec pi "${args[@]}"
+exec python3 /app/wrapper.py "${args[@]}"

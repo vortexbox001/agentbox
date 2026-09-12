@@ -1,0 +1,1 @@
+{"id":"chatcmpl-abc123","object":"chat.completion","created":1757606400,"model":"cheap","choices":[{"index":0,"message":{"role":"assistant","content":"Documented the factory module; next time start from definitions.py."},"finish_reason":"stop"}],"usage":{"prompt_tokens":5231,"completion_tokens":812,"total_tokens":6043}}
