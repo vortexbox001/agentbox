@@ -165,8 +165,9 @@ is rejected with a message naming it, while every valid agent still loads.
 
 - **FR-001**: An asset agent's `produces:` block MUST accept an optional `checks:` list. Each entry
   has a required `name` (unique within the agent) and a required `command`; and optional `image`
-  (default: the agent's harness image), `blocking` (default true), `timeout_seconds`, and `network`
-  (default: no network; see FR-016).
+  (default: the agent's harness image), `blocking` (default true), `timeout_seconds` (default 300),
+  and `network` (default: no network; see FR-016). A check that omits `timeout_seconds` is bounded
+  at 300 seconds — a check is never unbounded, so a hung command cannot stall the pipeline (FR-008).
 - **FR-002**: After the producing container finishes and the asset is produced, the orchestrator
   MUST run each declared check as a command in a fresh container, and MUST treat exit code 0 as
   pass and any non-zero exit as fail. The `command` MUST be run as a shell command line (via
@@ -235,7 +236,11 @@ is rejected with a message naming it, while every valid agent still loads.
   successfully with that check shown as failed, and the failed non-blocking check does not stop the
   asset from counting as materialized nor block downstream automation.
 - **SC-003**: A blocking check that fails prevents downstream automation from firing on that
-  materialization, verifiable by observing that no downstream run is triggered.
+  materialization, verifiable by observing that no downstream run is triggered. *Within this feature,
+  verification is bounded to the gating mechanism — the run fails while the materialization is still
+  recorded, so the failed asset check is what a consumer sees. The end-to-end "no downstream run is
+  triggered" observation depends on spec 010 (downstream automation) consulting check state, and is
+  verified there.*
 - **SC-004**: A check with `timeout_seconds` short enough to trip is reported failed with a
   timeout recorded in its metadata, and no check container from that run remains afterward.
 - **SC-005**: A check that writes to `/output` fails with a read-only/permission error in its

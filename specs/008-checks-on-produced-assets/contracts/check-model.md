@@ -16,7 +16,7 @@ produces:
       command: <shell string>   # REQUIRED, run as: sh -c "<command>"
       image: <docker ref>       # OPTIONAL, default: the agent's harness image
       blocking: true | false    # OPTIONAL, default: true
-      timeout_seconds: <int>    # OPTIONAL, 1..86400
+      timeout_seconds: <int>    # OPTIONAL, 1..86400, default 300
       network: agentnet-isolated | agentnet | bridge   # OPTIONAL, default: no network
 ```
 
@@ -26,7 +26,8 @@ produces:
 2. `command` — required; non-empty string; interpreted as a shell command line.
 3. `image` — optional string; when omitted the producing agent's harness image is used.
 4. `blocking` — optional bool; **defaults to `true`** when the key is absent (FR-001, US2 scenario 3).
-5. `timeout_seconds` — optional integer in `1..86400`.
+5. `timeout_seconds` — optional integer in `1..86400`; **defaults to 300** when omitted (a check is
+   never unbounded — FR-008).
 6. `network` — optional; one of the three agent network choices; when omitted the check gets **no**
    network.
 

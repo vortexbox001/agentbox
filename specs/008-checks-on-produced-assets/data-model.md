@@ -15,7 +15,7 @@ A named, generic pass/fail command. agentbox attaches no meaning to what the com
 | `command` | string | **yes** | — | Shell command line, run as `sh -c "<command>"`. Non-empty. |
 | `image` | string | no | producing agent's harness image (R6) | Any resolvable Docker image ref. |
 | `blocking` | bool | no | `true` | `true` → `AssetCheckSpec(blocking=True)` + `ERROR` severity; `false` → `blocking=False` + `WARN`. |
-| `timeout_seconds` | int | no | (per check; suggested default 300) | `1..86400`. Independent per check (FR-017). |
+| `timeout_seconds` | int | no | 300 | `1..86400`. Independent per check (FR-017); omitted ⇒ 300 s (never unbounded, FR-008). |
 | `network` | enum | no | *none* (no network) | One of `agentnet-isolated`, `agentnet`, `bridge` (FR-016). Omitted ⇒ `--network none`. |
 
 **Placement rule (FR-010)**: `checks` may appear **only** under a `produces:` block that names a
