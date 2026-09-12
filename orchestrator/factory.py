@@ -1,10 +1,16 @@
 """Turns an agent YAML dict into a Dagster job that docker-runs the agent."""
-import os, re, json, uuid, shutil, datetime, subprocess
+import os, re, uuid, shutil, tempfile, threading, datetime, subprocess
 from dagster import (
-    job, op, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive,
-    AssetKey, AssetsDefinition, DailyPartitionsDefinition, MetadataValue,
+    job, op, Output, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive,
+    AssetKey, AssetMaterialization, AssetObservation, AssetsDefinition, DailyPartitionsDefinition,
+    MetadataValue,
     AutomationCondition, AutomationConditionSensorDefinition, AssetSelection,
     DefaultSensorStatus, define_asset_job,
+    open_pipes_session, PipesEnvContextInjector, PipesFileMessageReader,
+)
+from dagster_pipes import (
+    encode_env_var, decode_env_var,
+    DAGSTER_PIPES_CONTEXT_ENV_VAR, DAGSTER_PIPES_MESSAGES_ENV_VAR,
 )
 
 HOST_REPO = os.environ.get("AGENTBOX_HOST_REPO", "/home/vortex/GitHub/agentbox")
@@ -73,6 +79,12 @@ def validate_asset_key(cfg: dict, file: str) -> str:
     return str(asset)
 # full per-run transcripts: <root>/<agent>/<YYYY-MM-DD>/<run-id>.jsonl
 AGENT_LOG_ROOT = "/data/dagster/agent-logs"
+# per-run Dagster Pipes messages dirs. MUST live under a path bind-mounted identically
+# on the host and inside the orchestrator container: agent containers are launched
+# Docker-outside-of-Docker, so the host daemon resolves the `-v <pipes_dir>:/pipes`
+# source against the HOST filesystem. /tmp is container-private and does not cross that
+# boundary; /data/dagster is mounted host==container (like AGENT_LOG_ROOT).
+PIPES_ROOT = "/data/dagster/pipes"
 # harnesses that mount /workspace; `workspace` and `wipe_workspace` are ignored for the rest
 WORKSPACE_HARNESSES = {"claude-code", "pi", "codex"}
 # harnesses whose runner reads /config/prompt.md; the others get the prompt on the command line
@@ -116,6 +128,252 @@ def _changed_files(before: dict, after: dict) -> list[str]:
     return sorted(p for p, meta in after.items() if before.get(p) != meta)
 
 
+# --- Run report: read-back and metadata union (spec 007) --------------------
+#
+# The report the container hands back over Dagster Pipes has the fixed shape in
+# contracts/run-report.schema.json. The orchestrator holds ZERO per-harness parsing
+# (SC-002): every harness image translates its own native events into this shape.
+
+REPORT_NUMERIC_FIELDS = ("tokens_in", "tokens_out", "turns", "cost_usd")
+# rendered for a null numeric so it stays visually distinct from a real 0 (metadata.md).
+NULL_NUMERIC_PLACEHOLDER = "—"
+
+
+def _extract_report(session, is_asset: bool) -> dict | None:
+    """Recover the report *fields* the container reported over Pipes, or ``None``.
+
+    Used strictly as a data channel (contract §3): the reported result is read for
+    its fields only and is NOT re-emitted, so an asset's happy path records exactly
+    one materialization (the ``from_op`` output). Asset steps report via
+    ``report_asset_materialization`` (read from ``get_reported_results``); job steps
+    via ``report_custom_message({"report": ...})`` (read from ``get_custom_messages``).
+    """
+    if is_asset:
+        results = session.get_reported_results()
+        if results:
+            md = getattr(results[-1], "metadata", None) or {}
+            # metadata values arrive as typed MetadataValue objects; recover the raw value
+            return {k: (v.value if hasattr(v, "value") else v) for k, v in md.items()}
+        return None
+    for msg in reversed(list(session.get_custom_messages())):
+        if isinstance(msg, dict) and isinstance(msg.get("report"), dict):
+            return dict(msg["report"])
+    return None
+
+
+def _stream_output(stream, transcript_file, forward) -> None:
+    """Drain ``stream`` line by line (US3/R5): append each line to the transcript so
+    the byte stream is unchanged (FR-006) and forward it live via ``forward`` (e.g.
+    ``context.log.info``) so it appears in the Dagster run log while the run is still
+    in flight (FR-003), rather than in one dump after the container exits.
+    """
+    for line in stream:
+        transcript_file.write(line)
+        forward(line.rstrip("\n"))
+
+
+def _authored_report(status: str, error: str, files_written: int = 0) -> dict:
+    """A report the orchestrator authors when the container could not report one —
+    a timeout kill, or a missing/malformed report on a normal exit (FR-009/R8).
+
+    Every numeric field is null (unmeasured), kept distinct from a real 0.
+    """
+    return {
+        "status": status,
+        "tokens_in": None,
+        "tokens_out": None,
+        "turns": None,
+        "cost_usd": None,
+        "files_written": files_written,
+        "transcript_path": None,
+        "error": error,
+        "notes": None,
+    }
+
+
+def _numeric_md(value):
+    """A numeric report field as Dagster metadata, keeping null distinct from 0."""
+    if value is None:
+        return MetadataValue.text(NULL_NUMERIC_PLACEHOLDER)
+    if isinstance(value, bool):  # bool is an int subclass; render as text, never 0/1
+        return MetadataValue.text(str(value))
+    if isinstance(value, int):
+        return MetadataValue.int(value)
+    return MetadataValue.float(float(value))
+
+
+def build_metadata(cfg: dict, report: dict, output_files: list[str], log_path: str,
+                   stamp: str, session_id: str, context: OpExecutionContext) -> dict:
+    """The metadata union attached to a run/materialization (contract metadata.md).
+
+    The union of the run-report fields and the run-context fields recorded today.
+    ``transcript_path`` from the report maps onto the existing ``transcript`` key
+    (same host path) rather than a second key. Null numerics render distinct from 0
+    and a null ``notes`` is omitted (never ``MetadataValue.md(None)``).
+    """
+    metadata = {
+        # existing run-context fields (superset rule: every one of these stays present)
+        "output_files": MetadataValue.json(output_files),
+        "transcript": MetadataValue.path(log_path),
+        "run_stamp": stamp,
+        "session_id": session_id,
+        "harness": cfg["harness"],
+        "model": str(cfg.get("model") or ""),
+        # report fields
+        "status": MetadataValue.text(str(report.get("status"))),
+        "tokens_in": _numeric_md(report.get("tokens_in")),
+        "tokens_out": _numeric_md(report.get("tokens_out")),
+        "turns": _numeric_md(report.get("turns")),
+        "cost_usd": _numeric_md(report.get("cost_usd")),
+        "files_written": MetadataValue.int(int(report.get("files_written") or 0)),
+    }
+    if report.get("error") is not None:
+        metadata["error"] = MetadataValue.text(str(report["error"]))
+    if report.get("notes") is not None:
+        # markdown so an operator reads the run's closing note inline (FR-010/SC-006)
+        metadata["notes"] = MetadataValue.md(str(report["notes"]))
+    if context.has_partition_key:
+        metadata["partition"] = context.partition_key
+    return metadata
+
+
+def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
+                     session_id: str, ws: str, runtime_env: dict) -> list[str]:
+    """Build the full ``docker run`` argv for one agent launch.
+
+    Extracted verbatim from the op body so the launch is defined in one place and the
+    op can layer the Dagster Pipes flags onto it (spec 007). Every isolation flag is
+    produced here exactly as before; the Pipes additions are inserted by the caller
+    (contract pipes-transport.md §1), never here (FR-011/SC-007)."""
+    name = cfg["name"]
+    cmd = [
+        "docker", "run", "--rm",
+        "--name", f"agent-{name}-{context.run_id[:8]}",
+        "--memory", str(cfg.get("memory", "1g")),
+        "--cpus", str(cfg.get("cpus", "1.5")),
+        "--network", cfg.get("network", "agentnet"),
+        "-v", f"{cfg['output_dir']}:/output",
+    ]
+    if cfg["harness"] in PROMPT_MOUNT_HARNESSES:
+        cmd += ["-v", f"{HOST_REPO}/prompts/{cfg['prompt_file']}:/config/prompt.md:ro"]
+    if cfg.get("env_file"):
+        cmd += ["--env-file", cfg["env_file"]]
+    for k, v in cfg.get("env", {}).items():
+        ref = re.fullmatch(r"\$\{(\w+)\}", str(v))
+        if ref:
+            # passthrough: forward host env var into container without exposing the value
+            cmd += ["-e", ref.group(1)]
+        else:
+            cmd += ["-e", f"{k}={v}"]
+    for k, v in runtime_env.items():
+        cmd += ["-e", f"{k}={v}"]
+    cmd += ["-e", f"AGENTBOX_RUN_STAMP={stamp}", "-e", f"AGENTBOX_SESSION_ID={session_id}"]
+    if os.environ.get("TZ"):
+        # same clock inside the container, so `date` agrees with the run stamp
+        cmd += ["-e", f"TZ={os.environ['TZ']}"]
+    if cfg["harness"] == "api":
+        cmd += [
+            "-e", f"AGENT_MODEL={cfg.get('model', 'cheap')}",
+            "-e", f"AGENT_MAX_TOKENS={cfg.get('max_tokens', 1024)}",
+            "-e", f"LITELLM_KEY={os.environ['LITELLM_MASTER_KEY']}",
+            "agentbox/agent-python:latest",
+        ]
+    elif cfg["harness"] == "claude-code":
+        with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
+            prompt = f.read()
+        # writable, node-owned config dir; anything from the host is mounted read-only
+        cmd += ["--tmpfs", "/creds:uid=1000,gid=1000,mode=700", "-e", "CLAUDE_CONFIG_DIR=/creds"]
+        if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            # long-lived token from `claude setup-token`: passthrough by name so the value
+            # never appears in the command line, and no refreshable credentials file to go stale
+            cmd += ["-e", "CLAUDE_CODE_OAUTH_TOKEN"]
+        else:
+            # fallback: a copied interactive login, which expires when the host login refreshes
+            cmd += ["-v", "/data/credentials/claude/.credentials.json:/creds/.credentials.json:ro"]
+        if os.path.exists("/data/credentials/claude/.claude.json"):
+            # CLI settings/onboarding state; harmless without it but avoids first-run prompts
+            cmd += ["-v", "/data/credentials/claude/.claude.json:/creds/.claude.json:ro"]
+        cmd += [
+            "-v", f"{ws}:/workspace",
+            "-w", "/workspace",
+            "agentbox/agent-claude:latest",
+            "claude", "-p", prompt,
+            # stream-json emits one JSON event per line (init, every assistant
+            # turn + tool call, every tool result, final summary)
+            "--output-format", "stream-json", "--verbose",
+            "--max-turns", str(cfg.get("max_turns", 10)),
+            # fixed up front so the filename convention below can embed it
+            "--session-id", session_id,
+        ]
+        if cfg.get("model"):
+            cmd += ["--model", cfg["model"]]
+        if cfg.get("permission_mode"):
+            cmd += ["--permission-mode", cfg["permission_mode"]]
+        if cfg.get("effort"):
+            cmd += ["--effort", cfg["effort"]]
+        system_extra = output_convention(stamp, session_id)
+        if cfg.get("append_system_prompt"):
+            system_extra += " " + cfg["append_system_prompt"]
+        cmd += ["--append-system-prompt", system_extra]
+        if cfg.get("fallback_model"):
+            cmd += ["--fallback-model", cfg["fallback_model"]]
+        if cfg.get("mcp_config"):
+            cmd += ["--mcp-config", cfg["mcp_config"]]
+        if cfg.get("disallowed_tools"):
+            cmd += ["--disallowedTools"] + cfg["disallowed_tools"]
+        if cfg.get("allowed_tools"):
+            cmd += ["--allowedTools"] + cfg["allowed_tools"]
+    elif cfg["harness"] == "codex":
+        with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
+            prompt = f.read()
+        # codex has no system-prompt flag; the output convention is appended to the prompt itself
+        message = prompt.rstrip() + "\n\n" + output_convention(stamp, session_id)
+        if cfg.get("append_system_prompt"):
+            message += " " + cfg["append_system_prompt"]
+        cmd += [
+            # CODEX_HOME (auth.json, config.toml, sessions) is a dedicated host dir, mounted read-write so
+            # codex can persist the token refreshes it performs; see README "Codex credentials"
+            "-v", "/data/credentials/codex:/creds",
+            "-v", f"{ws}:/workspace",
+            "-w", "/workspace",
+            "agentbox/agent-codex:latest",
+            "exec", "--json", "--skip-git-repo-check", "-C", "/workspace",
+            # the container is the sandbox; codex's own landlock sandbox is not available inside it
+            "--dangerously-bypass-approvals-and-sandbox",
+        ]
+        if cfg.get("model"):
+            cmd += ["-m", cfg["model"]]
+        if cfg.get("effort"):
+            cmd += ["-c", f'model_reasoning_effort="{cfg["effort"]}"']
+        cmd += [message]
+    elif cfg["harness"] == "pi":
+        with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
+            prompt = f.read()
+        model = cfg.get("model", "smart")
+        if "/" not in model:
+            model = f"litellm/{model}"   # provider registered by the image's entrypoint
+        cmd += [
+            "-e", "LITELLM_MASTER_KEY",      # passthrough; the entrypoint writes it into models.json
+            "-v", f"{ws}:/workspace",
+            "-w", "/workspace",
+            "agentbox/agent-pi:latest",
+            # print mode runs the full tool loop and exits; json emits one event per line
+            "-p", "--mode", "json", "--model", model,
+            "--append-system-prompt", output_convention(stamp, session_id)
+            + ((" " + cfg["append_system_prompt"]) if cfg.get("append_system_prompt") else ""),
+        ]
+        if cfg.get("effort"):
+            cmd += ["--thinking", cfg["effort"]]   # same level names as claude-code's effort
+        if cfg.get("allowed_tools"):
+            cmd += ["--tools", ",".join(cfg["allowed_tools"])]
+        if cfg.get("disallowed_tools"):
+            context.log.warning("pi has no tool denylist flag; disallowed_tools ignored")
+        cmd += [prompt]
+    else:
+        raise ValueError(f"unknown harness: {cfg['harness']}")
+    return cmd
+
+
 def make_run_op(cfg: dict):
     @op(
         name=f"run_{cfg['name'].replace('-', '_')}",
@@ -141,239 +399,170 @@ def make_run_op(cfg: dict):
                 else:
                     os.remove(entry.path)
             context.log.info(f"wiped workspace {ws}")
-        cmd = [
-            "docker", "run", "--rm",
-            "--name", f"agent-{name}-{context.run_id[:8]}",
-            "--memory", str(cfg.get("memory", "1g")),
-            "--cpus", str(cfg.get("cpus", "1.5")),
-            "--network", cfg.get("network", "agentnet"),
-            "-v", f"{cfg['output_dir']}:/output",
-        ]
-        if cfg["harness"] in PROMPT_MOUNT_HARNESSES:
-            cmd += ["-v", f"{HOST_REPO}/prompts/{cfg['prompt_file']}:/config/prompt.md:ro"]
-        if cfg.get("env_file"):
-            cmd += ["--env-file", cfg["env_file"]]
-        for k, v in cfg.get("env", {}).items():
-            ref = re.fullmatch(r"\$\{(\w+)\}", str(v))
-            if ref:
-                # passthrough: forward host env var into container without exposing the value
-                cmd += ["-e", ref.group(1)]
-            else:
-                cmd += ["-e", f"{k}={v}"]
-        for k, v in runtime_env.items():
-            cmd += ["-e", f"{k}={v}"]
-        cmd += ["-e", f"AGENTBOX_RUN_STAMP={stamp}", "-e", f"AGENTBOX_SESSION_ID={session_id}"]
-        if os.environ.get("TZ"):
-            # same clock inside the container, so `date` agrees with the run stamp
-            cmd += ["-e", f"TZ={os.environ['TZ']}"]
-        if cfg["harness"] == "api":
-            cmd += [
-                "-e", f"AGENT_MODEL={cfg.get('model', 'cheap')}",
-                "-e", f"AGENT_MAX_TOKENS={cfg.get('max_tokens', 1024)}",
-                "-e", f"LITELLM_KEY={os.environ['LITELLM_MASTER_KEY']}",
-                "agentbox/agent-python:latest",
-            ]
-        elif cfg["harness"] == "claude-code":
-            with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
-                prompt = f.read()
-            # writable, node-owned config dir; anything from the host is mounted read-only
-            cmd += ["--tmpfs", "/creds:uid=1000,gid=1000,mode=700", "-e", "CLAUDE_CONFIG_DIR=/creds"]
-            if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-                # long-lived token from `claude setup-token`: passthrough by name so the value
-                # never appears in the command line, and no refreshable credentials file to go stale
-                cmd += ["-e", "CLAUDE_CODE_OAUTH_TOKEN"]
-            else:
-                # fallback: a copied interactive login, which expires when the host login refreshes
-                cmd += ["-v", "/data/credentials/claude/.credentials.json:/creds/.credentials.json:ro"]
-            if os.path.exists("/data/credentials/claude/.claude.json"):
-                # CLI settings/onboarding state; harmless without it but avoids first-run prompts
-                cmd += ["-v", "/data/credentials/claude/.claude.json:/creds/.claude.json:ro"]
-            cmd += [
-                "-v", f"{ws}:/workspace",
-                "-w", "/workspace",
-                "agentbox/agent-claude:latest",
-                "claude", "-p", prompt,
-                # stream-json emits one JSON event per line (init, every assistant
-                # turn + tool call, every tool result, final summary)
-                "--output-format", "stream-json", "--verbose",
-                "--max-turns", str(cfg.get("max_turns", 10)),
-                # fixed up front so the filename convention below can embed it
-                "--session-id", session_id,
-            ]
-            if cfg.get("model"):
-                cmd += ["--model", cfg["model"]]
-            if cfg.get("permission_mode"):
-                cmd += ["--permission-mode", cfg["permission_mode"]]
-            if cfg.get("effort"):
-                cmd += ["--effort", cfg["effort"]]
-            system_extra = output_convention(stamp, session_id)
-            if cfg.get("append_system_prompt"):
-                system_extra += " " + cfg["append_system_prompt"]
-            cmd += ["--append-system-prompt", system_extra]
-            if cfg.get("fallback_model"):
-                cmd += ["--fallback-model", cfg["fallback_model"]]
-            if cfg.get("mcp_config"):
-                cmd += ["--mcp-config", cfg["mcp_config"]]
-            if cfg.get("disallowed_tools"):
-                cmd += ["--disallowedTools"] + cfg["disallowed_tools"]
-            if cfg.get("allowed_tools"):
-                cmd += ["--allowedTools"] + cfg["allowed_tools"]
-        elif cfg["harness"] == "codex":
-            with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
-                prompt = f.read()
-            # codex has no system-prompt flag; the output convention is appended to the prompt itself
-            message = prompt.rstrip() + "\n\n" + output_convention(stamp, session_id)
-            if cfg.get("append_system_prompt"):
-                message += " " + cfg["append_system_prompt"]
-            cmd += [
-                # CODEX_HOME (auth.json, config.toml, sessions) is a dedicated host dir, mounted read-write so
-                # codex can persist the token refreshes it performs; see README "Codex credentials"
-                "-v", "/data/credentials/codex:/creds",
-                "-v", f"{ws}:/workspace",
-                "-w", "/workspace",
-                "agentbox/agent-codex:latest",
-                "exec", "--json", "--skip-git-repo-check", "-C", "/workspace",
-                # the container is the sandbox; codex's own landlock sandbox is not available inside it
-                "--dangerously-bypass-approvals-and-sandbox",
-            ]
-            if cfg.get("model"):
-                cmd += ["-m", cfg["model"]]
-            if cfg.get("effort"):
-                cmd += ["-c", f'model_reasoning_effort="{cfg["effort"]}"']
-            cmd += [message]
-        elif cfg["harness"] == "pi":
-            with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
-                prompt = f.read()
-            model = cfg.get("model", "smart")
-            if "/" not in model:
-                model = f"litellm/{model}"   # provider registered by the image's entrypoint
-            cmd += [
-                "-e", "LITELLM_MASTER_KEY",      # passthrough; the entrypoint writes it into models.json
-                "-v", f"{ws}:/workspace",
-                "-w", "/workspace",
-                "agentbox/agent-pi:latest",
-                # print mode runs the full tool loop and exits; json emits one event per line
-                "-p", "--mode", "json", "--model", model,
-                "--append-system-prompt", output_convention(stamp, session_id)
-                + ((" " + cfg["append_system_prompt"]) if cfg.get("append_system_prompt") else ""),
-            ]
-            if cfg.get("effort"):
-                cmd += ["--thinking", cfg["effort"]]   # same level names as claude-code's effort
-            if cfg.get("allowed_tools"):
-                cmd += ["--tools", ",".join(cfg["allowed_tools"])]
-            if cfg.get("disallowed_tools"):
-                context.log.warning("pi has no tool denylist flag; disallowed_tools ignored")
-            cmd += [prompt]
-        else:
-            raise ValueError(f"unknown harness: {cfg['harness']}")
+        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, runtime_env)
 
-        # snapshot the output dir before launch so we can tell, after, which files this
-        # run produced (FR-008a). The partition key is NEVER used here: the launch is
-        # identical regardless of partition (FR-008b) — it is a metadata label only.
-        output_before = _snapshot_dir(cfg["output_dir"])
+        # Whether this op runs bound to an asset (asset-mode via from_op / a materializing
+        # job) or as a plain job. The container decides report_asset_materialization vs
+        # report_custom_message from the injected Pipes context; the orchestrator reads the
+        # matching channel back. Both agree with cfg's produces block.
+        is_asset = bool((cfg.get("produces") or {}).get("asset"))
 
-        context.log.info(f"launching: {' '.join(cmd[:12])} ...")
-        result = subprocess.run(
-            cmd, capture_output=True, text=True,
-            timeout=cfg.get("timeout_seconds", 900),
-        )
-        # persist the full event stream for this run
-        log_dir = os.path.join(AGENT_LOG_ROOT, name, stamp[:10])
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, f"{context.run_id}.jsonl")
-        with open(log_path, "w") as f:
-            f.write(result.stdout)
-        context.log.info(f"transcript: {log_path}")
+        # Per-run Pipes messages file on a host temp dir, bind-mounted read-write at /pipes
+        # (never /output — Constitution V). Layer Dagster Pipes over the existing docker run:
+        # the launch argv is preserved verbatim except the /pipes mount and the two
+        # DAGSTER_PIPES_* env vars (contract §1, FR-011/SC-007). It MUST sit under PIPES_ROOT
+        # (a host==container shared mount), not the container-private /tmp: the host daemon
+        # resolves the bind-mount source, so a /tmp dir would never reach the agent container.
+        os.makedirs(PIPES_ROOT, exist_ok=True)
+        pipes_dir = tempfile.mkdtemp(prefix=f"agentbox-pipes-{context.run_id[:8]}-", dir=PIPES_ROOT)
+        # All harnesses but api run their container non-root (node, uid 1000 — see each image's
+        # `USER`), while the orchestrator runs as root, so the per-run Pipes files must be
+        # traversable and writable by that non-root user. mkdtemp makes the dir 0700; open it up
+        # so the container can traverse into it (o+x) and, as a fallback, create the messages
+        # file itself. The dir is ephemeral and rmtree'd below.
+        msg_path = os.path.join(pipes_dir, "messages")
+        os.chmod(pipes_dir, 0o777)
+        try:
+            with open_pipes_session(
+                context,
+                context_injector=PipesEnvContextInjector(),
+                message_reader=PipesFileMessageReader(path=msg_path),
+            ) as session:
+                # PipesFileMessageReader.read_messages() has already created `msg_path` root-owned
+                # 0644 (synchronously, before this yield); a non-root container cannot append to
+                # that, so widen it to 0666 or claude-code/codex/pi emit() hit PermissionError on
+                # /pipes/messages even though the dir is world-writable.
+                os.chmod(msg_path, 0o666)
+                boot = dict(session.get_bootstrap_env_vars())
+                # the container writes messages at the mount path, not the host path
+                msg_params = decode_env_var(boot[DAGSTER_PIPES_MESSAGES_ENV_VAR])
+                msg_params["path"] = "/pipes/messages"
+                pipes_flags = [
+                    "-v", f"{pipes_dir}:/pipes",
+                    "-e", f"{DAGSTER_PIPES_CONTEXT_ENV_VAR}={boot[DAGSTER_PIPES_CONTEXT_ENV_VAR]}",
+                    "-e", f"{DAGSTER_PIPES_MESSAGES_ENV_VAR}={encode_env_var(msg_params)}",
+                ]
+                # insert the Pipes flags immediately before the image name, so they are
+                # docker-run flags (never container args) and every prior flag is untouched.
+                img_idx = next(i for i, a in enumerate(cmd) if str(a).startswith("agentbox/"))
+                cmd[img_idx:img_idx] = pipes_flags
 
-        # After the container exits and the transcript is written, snapshot again and
-        # attach materialization metadata to the op's single output. Harmless in job-mode
-        # (nothing consumes the output); surfaced as materialization metadata in asset-mode
-        # once from_op binds this output to the asset key (FR-008/FR-008a/FR-008b/FR-009).
-        # The dict is deliberately open-ended so feature 005 can add token/cost fields here
-        # with no change to the produces schema.
-        output_files = _changed_files(output_before, _snapshot_dir(cfg["output_dir"]))
-        metadata = {
-            "output_files": MetadataValue.json(output_files),
-            "transcript": MetadataValue.path(log_path),
-            "run_stamp": stamp,
-            "session_id": session_id,
-            "harness": cfg["harness"],
-            "model": str(cfg.get("model") or ""),
-        }
-        if context.has_partition_key:
-            metadata["partition"] = context.partition_key
-        context.add_output_metadata(metadata)
+                # snapshot /output before launch so we can report which files this run
+                # produced (FR-005). The partition key is never used here: the launch is
+                # identical regardless of partition (FR-008b) — it is a metadata label only.
+                output_before = _snapshot_dir(cfg["output_dir"])
 
-        # surface just the final "result" event in the Dagster log
-        final = None
-        for line in reversed(result.stdout.splitlines()):
-            try:
-                evt = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(evt, dict) and evt.get("type") == "result":
-                final = evt
-                break
-        if final is None and cfg["harness"] == "codex":
-            usage = {"input_tokens": 0, "output_tokens": 0}; last_msg = ""; errors = []
-            for line in result.stdout.splitlines():
-                try:
-                    evt = json.loads(line)
-                except ValueError:
-                    continue
-                if not isinstance(evt, dict):
-                    continue
-                t = evt.get("type", "")
-                if t == "turn.completed":
-                    for k in usage:
-                        usage[k] += (evt.get("usage") or {}).get(k, 0)
-                elif t == "item.completed" and (evt.get("item") or {}).get("type") == "agent_message":
-                    last_msg = evt["item"].get("text", "")
-                elif t == "error":
-                    errors.append(evt.get("message") or json.dumps(evt))
-                final = evt
-            if final is not None:
-                context.log.info(
-                    f"result: codex | tokens in/out={usage['input_tokens']}/{usage['output_tokens']}"
-                    f" | is_error={bool(errors)}\n{last_msg[:4000]}"
-                )
-                if errors:
-                    context.log.error("\n".join(errors)[-2000:])
-        if final is None and cfg["harness"] == "pi":
-            # summarise pi's agent_end event the way the claude-code result event is summarised
-            for line in reversed(result.stdout.splitlines()):
-                try:
-                    evt = json.loads(line)
-                except ValueError:
-                    continue
-                if isinstance(evt, dict) and evt.get("type") == "agent_end":
-                    msgs = [m for m in evt.get("messages", []) if m.get("role") == "assistant"]
-                    cost = sum((m.get("usage", {}).get("cost", {}) or {}).get("total", 0) for m in msgs)
-                    errors = [m.get("errorMessage") for m in msgs if m.get("stopReason") == "error"]
-                    text = ""
-                    for m in reversed(msgs):
-                        text = " ".join(b.get("text", "") for b in m.get("content", []) if b.get("type") == "text").strip()
-                        if text:
-                            break
-                    context.log.info(
-                        f"result: pi | turns={len(msgs)} | cost_usd={cost:.4f} | is_error={bool(errors)}\n{text[:4000]}"
+                context.log.info(f"launching: {' '.join(cmd[:12])} ...")
+                timeout_seconds = cfg.get("timeout_seconds", 900)
+                container = f"agent-{name}-{context.run_id[:8]}"
+                log_dir = os.path.join(AGENT_LOG_ROOT, name, stamp[:10])
+                os.makedirs(log_dir, exist_ok=True)
+                log_path = os.path.join(log_dir, f"{context.run_id}.jsonl")
+
+                # Popen + line-by-line draining: each stdout line streams live into the
+                # Dagster run log (FR-003) while being written to the transcript unchanged
+                # (FR-006). stderr drains on a second thread so a chatty run cannot deadlock
+                # on a full stderr pipe buffer (R5).
+                timed_out = False
+                stderr_chunks: list[str] = []
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                        text=True, bufsize=1)
+                with open(log_path, "w") as tf:
+                    stdout_thread = threading.Thread(
+                        target=_stream_output, args=(proc.stdout, tf, context.log.info),
+                        daemon=True,
                     )
-                    if errors:
-                        raise Exception(f"{name}: model error: {errors[-1]}")
-                    final = evt
-                    break
-        if final:
-            if final.get("type") == "result":
-              context.log.info(
-                f"result: {final.get('subtype')} | turns={final.get('num_turns')}"
-                f" | is_error={final.get('is_error')}\n{str(final.get('result', ''))[:4000]}"
-              )
-        else:
-            context.log.info(result.stdout[-4000:])
+                    stderr_thread = threading.Thread(
+                        target=stderr_chunks.extend, args=(proc.stderr,), daemon=True,
+                    )
+                    stdout_thread.start()
+                    stderr_thread.start()
+                    try:
+                        proc.wait(timeout=timeout_seconds)
+                    except subprocess.TimeoutExpired:
+                        # kill the container by its deterministic name so `docker run` exits
+                        # (its stdout closes and the drain ends); `--rm` removes it (SC-004).
+                        timed_out = True
+                        subprocess.run(["docker", "kill", container], capture_output=True, text=True)
+                        context.log.error(f"{name}: timeout after {timeout_seconds}s; killed {container}")
+                        proc.wait()
+                    stdout_thread.join()
+                    stderr_thread.join()
+                returncode = proc.returncode
+                stderr = "".join(stderr_chunks)
+                context.log.info(f"transcript: {log_path}")
 
-        if result.returncode != 0:
-            context.log.error(result.stderr[-4000:])
-            raise Exception(f"{name} exited {result.returncode}")
+                output_files = _changed_files(output_before, _snapshot_dir(cfg["output_dir"]))
+                if timed_out:
+                    # the container was killed before it could report — the orchestrator
+                    # authors the report itself (FR-009/R8).
+                    report = _authored_report(
+                        "timeout",
+                        f"timeout_seconds ({timeout_seconds}) elapsed; container "
+                        f"agent-{name}-{context.run_id[:8]} was killed before it could report",
+                        len(output_files),
+                    )
+                else:
+                    # Recover the structured report the container emitted over Pipes — as a
+                    # DATA channel only (contract §3): read for its fields, never re-emitted,
+                    # so an asset's happy path records exactly one materialization (the from_op
+                    # output). All per-harness event parsing lives in the images now; the
+                    # orchestrator holds none (SC-002).
+                    report = _extract_report(session, is_asset)
+                    if report is None:
+                        # normal exit but no readable/well-formed report — record the absence
+                        report = _authored_report(
+                            "failed", "run report was missing or malformed", len(output_files),
+                        )
+                # the orchestrator owns the host transcript path (the container leaves it
+                # null); it surfaces through the existing `transcript` metadata key.
+                report["transcript_path"] = log_path
+
+                metadata = build_metadata(
+                    cfg, report, output_files, log_path, stamp, session_id, context
+                )
+                context.log.info(
+                    f"result: status={report.get('status')} turns={report.get('turns')}"
+                    f" tokens_in/out={report.get('tokens_in')}/{report.get('tokens_out')}"
+                    f" cost_usd={report.get('cost_usd')} files_written={report.get('files_written')}"
+                )
+                if report.get("notes"):
+                    context.log.info(str(report["notes"])[:4000])
+
+                if not timed_out and report.get("status") == "ok" and returncode == 0:
+                    # success: return the op's single output carrying the metadata union.
+                    # from_op records the one materialization in asset-mode (harmless in
+                    # job-mode). open_pipes_session puts the op in typed-event-stream mode,
+                    # so the output must be produced explicitly rather than falling through.
+                    return Output(value=None, metadata=metadata)
+
+                # failure (status != ok, non-zero exit, or timeout) — FR-007/FR-008, contract §3.
+                if stderr:
+                    context.log.error(stderr[-4000:])
+                if is_asset:
+                    # record the failed run as an OBSERVATION, not a materialization, then raise
+                    # to mark the run failed. A materialization event is Dagster's positive signal
+                    # that greens a partition, so emitting one here made a failed partition render
+                    # MATERIALIZED (bug failed-asset-shows-materialized). An AssetObservation
+                    # attaches the same report WITHOUT marking the partition materialized, so the
+                    # failed run leaves the partition red WITH the report (SC-003). log_event emits
+                    # it immediately, so it survives the raise.
+                    context.log_event(
+                        AssetObservation(
+                            asset_key=AssetKey(cfg["produces"]["asset"].split("/")),
+                            partition=context.partition_key if context.has_partition_key else None,
+                            metadata=metadata,
+                        )
+                    )
+                else:
+                    # job-only: attach the report to the run/output path (also visible as the
+                    # logged Pipes custom message + transcript), then raise (FR-008).
+                    context.add_output_metadata(metadata)
+                raise Exception(
+                    f"{name}: run failed (status={report.get('status')}, exit={returncode})"
+                )
+        finally:
+            shutil.rmtree(pipes_dir, ignore_errors=True)
     return run_agent
 
 def build_asset(cfg: dict, file: str | None = None, cron: str | None = None):

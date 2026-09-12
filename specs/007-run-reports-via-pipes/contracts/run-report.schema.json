@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentbox/contracts/run-report.schema.json",
+  "title": "Agentbox run report",
+  "description": "The single structured record a run hands back, produced by the harness image (or authored by the orchestrator on timeout/crash). Reported over the Dagster Pipes messages file: as report_asset_materialization metadata for asset agents, as a report_custom_message {\"report\": ...} for job-only agents.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "tokens_in",
+    "tokens_out",
+    "turns",
+    "cost_usd",
+    "files_written",
+    "transcript_path",
+    "error",
+    "notes"
+  ],
+  "properties": {
+    "status": {
+      "description": "Terminal state of the run.",
+      "enum": ["ok", "failed", "timeout"]
+    },
+    "tokens_in": {
+      "description": "Input tokens consumed; null when the run could not measure it (e.g. timeout).",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "tokens_out": {
+      "description": "Output tokens produced; null when unmeasured.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "turns": {
+      "description": "Number of model turns; null when unmeasured.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "cost_usd": {
+      "description": "Run cost in USD. Null for subscription harnesses (claude-code, codex) and when unknown; non-null for api and pi.",
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "files_written": {
+      "description": "Count of files the run wrote to /output. The full path list is NOT here; it stays in the orchestrator's output-file snapshot metadata.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "transcript_path": {
+      "description": "Host path of the run's .jsonl transcript. Filled by the orchestrator (the container cannot know the host path); the container leaves it null.",
+      "type": ["string", "null"]
+    },
+    "error": {
+      "description": "Human-readable failure/timeout explanation. Non-null if and only if status != ok.",
+      "type": ["string", "null"]
+    },
+    "notes": {
+      "description": "The run's final assistant message text (the agent's end-of-run note to its future self). Extracted from the harness's native events; no new prompt convention. Null if the run produced no assistant text.",
+      "type": ["string", "null"]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "ok" } } },
+      "then": { "properties": { "error": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["failed", "timeout"] } } },
+      "then": { "properties": { "error": { "type": "string" } } }
+    }
+  ],
+  "examples": [
+    {
+      "status": "ok",
+      "tokens_in": 5231,
+      "tokens_out": 812,
+      "turns": 4,
+      "cost_usd": 0.0231,
+      "files_written": 1,
+      "transcript_path": "/data/dagster/agent-logs/repo-librarian-pi-sonnet/2026-09-12/213b28cc-....jsonl",
+      "error": null,
+      "notes": "Documented the factory module; next time start from definitions.py."
+    },
+    {
+      "status": "ok",
+      "tokens_in": 8800,
+      "tokens_out": 1500,
+      "turns": 7,
+      "cost_usd": null,
+      "files_written": 2,
+      "transcript_path": "/data/dagster/agent-logs/repo-librarian-agentbox/2026-09-12/....jsonl",
+      "error": null,
+      "notes": "Reviewed the orchestrator; the from_op wiring is subtle."
+    },
+    {
+      "status": "timeout",
+      "tokens_in": null,
+      "tokens_out": null,
+      "turns": null,
+      "cost_usd": null,
+      "files_written": 0,
+      "transcript_path": "/data/dagster/agent-logs/repo-librarian-codex/2026-09-12/....jsonl",
+      "error": "timeout_seconds (120) elapsed; container agent-repo-librarian-codex-213b28cc was killed before it could report",
+      "notes": null
+    }
+  ]
+}

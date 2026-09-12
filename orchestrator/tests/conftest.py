@@ -10,6 +10,14 @@ The ``stub_launch`` fixture monkeypatches the single container-launch call in
 them, ``definitions`` can be materialized in-process without ``docker run``. It
 also redirects the transcript root at ``factory.AGENT_LOG_ROOT`` into a temp dir
 so an op body can run end-to-end without writing to ``/data``.
+
+Since spec 007 the op reports itself over Dagster Pipes: after the (stubbed) launch
+it reads the run report back via ``factory._extract_report``. With no real container
+there is nothing to read, so the stub also patches ``factory._extract_report`` to
+return the canned report a test drops on ``stub_launch.report`` (an ``ok`` report by
+default, so existing success tests keep passing). Set ``stub_launch.report = None``
+to exercise the orchestrator's missing-report fallback authoring. The real Pipes
+round-trip is covered end-to-end by the quickstart (T022), not in-process.
 """
 import subprocess
 import sys
@@ -26,33 +34,87 @@ if str(ORCHESTRATOR_DIR) not in sys.path:
 class LaunchStub:
     """Controller for the stubbed container launch.
 
-    Tests set ``returncode`` / ``stdout`` / ``stderr`` before materializing to
-    shape the fake result, and read ``calls`` afterwards to assert on the exact
-    ``docker run`` argv the op *would* have launched (the last one via ``cmd``).
+    Since US3 the op launches via ``subprocess.Popen`` and drains stdout line by line,
+    so this stubs ``factory.subprocess.Popen`` with a fake process whose stdout/stderr
+    are ``self.stdout`` / ``self.stderr`` split into lines. ``factory.subprocess.run``
+    stays stubbed too, for the timeout ``docker kill``. Tests set
+    ``returncode`` / ``stdout`` / ``stderr`` / ``timeout`` before materializing and read
+    ``calls`` afterwards; ``cmd`` returns the launched ``docker run`` argv.
     """
+
+    class _FakeProc:
+        """A minimal stand-in for a text-mode ``Popen`` process."""
+
+        def __init__(self, stub, cmd):
+            self._stub = stub
+            self._cmd = cmd
+            self.returncode = None
+            # line iterators (keepends), exactly as text-mode Popen pipes yield
+            self.stdout = iter(stub.stdout.splitlines(keepends=True))
+            self.stderr = iter(stub.stderr.splitlines(keepends=True))
+
+        def wait(self, timeout=None):
+            # a timed wait raises once, driving the op's kill + fallback authoring;
+            # the op's follow-up wait() (no timeout) then returns the code.
+            if self._stub.timeout and timeout is not None:
+                raise subprocess.TimeoutExpired(self._cmd, timeout)
+            self.returncode = self._stub.returncode
+            return self.returncode
+
+    #: a valid, schema-shaped ``ok`` report returned in place of the container's
+    #: Pipes report; a test may overwrite it (including with ``None`` to drop it).
+    DEFAULT_REPORT = {
+        "status": "ok",
+        "tokens_in": 100,
+        "tokens_out": 20,
+        "turns": 2,
+        "cost_usd": 0.0123,
+        "files_written": 1,
+        "transcript_path": None,  # the orchestrator fills this
+        "error": None,
+        "notes": "done; see /output.",
+    }
 
     def __init__(self):
         self.calls: list[list[str]] = []
         self.returncode = 0
         self.stdout = ""
         self.stderr = ""
+        self.report = dict(self.DEFAULT_REPORT)
+        #: when True, the launch's ``wait(timeout=...)`` raises TimeoutExpired, exercising
+        #: the op's timeout kill + fallback authoring. The follow-up ``docker kill`` (via
+        #: the ``subprocess.run`` stub) still returns normally so the op can clean up.
+        self.timeout = False
+
+    def popen(self, cmd, *args, **kwargs):
+        # stand in for subprocess.Popen: record the launch, return a fake process
+        self.calls.append(list(cmd))
+        return LaunchStub._FakeProc(self, list(cmd))
 
     def __call__(self, cmd, *args, **kwargs):
-        # record the launch and return a canned result instead of spawning docker
+        # stand in for subprocess.run — used only for the timeout `docker kill`
         self.calls.append(list(cmd))
-        return subprocess.CompletedProcess(
-            cmd, self.returncode, stdout=self.stdout, stderr=self.stderr
-        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    def extract_report(self, session, is_asset):
+        """Stand in for ``factory._extract_report``: hand back the canned report
+        (a fresh copy so the op may set ``transcript_path`` without mutating it)."""
+        return None if self.report is None else dict(self.report)
 
     @property
     def cmd(self) -> list[str]:
-        """The argv of the most recent launch (convenience for single-launch tests)."""
+        """The argv of the most recent container launch (the ``docker run``), ignoring
+        any follow-up ``docker kill``."""
+        for c in reversed(self.calls):
+            if c[:2] == ["docker", "run"]:
+                return c
         return self.calls[-1]
 
 
 @pytest.fixture
 def stub_launch(monkeypatch, tmp_path):
-    """Replace ``factory.subprocess.run`` so ops run without launching a container.
+    """Replace ``factory.subprocess.Popen`` (and ``.run``, for the timeout kill) so ops
+    run without launching a container.
 
     Yields a :class:`LaunchStub`; also points ``factory.AGENT_LOG_ROOT`` at a temp
     directory so the op's transcript write succeeds under test.
@@ -60,6 +122,11 @@ def stub_launch(monkeypatch, tmp_path):
     import factory
 
     stub = LaunchStub()
-    monkeypatch.setattr(factory.subprocess, "run", stub)
+    monkeypatch.setattr(factory.subprocess, "Popen", stub.popen)
+    monkeypatch.setattr(factory.subprocess, "run", stub)  # only the timeout docker kill
+    monkeypatch.setattr(factory, "_extract_report", stub.extract_report)
     monkeypatch.setattr(factory, "AGENT_LOG_ROOT", str(tmp_path / "agent-logs"))
+    # PIPES_ROOT points at /data/dagster in production; redirect it into the temp dir so the
+    # op's mkdtemp succeeds under test without writing to /data.
+    monkeypatch.setattr(factory, "PIPES_ROOT", str(tmp_path / "pipes"))
     return stub
