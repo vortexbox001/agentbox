@@ -136,13 +136,13 @@ Single project. Orchestrator code location at `orchestrator/`, agent container i
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T022 [P] [US5] Add load-rejection tests in [orchestrator/tests/test_definitions.py](../../orchestrator/tests/test_definitions.py): `checks` without `produces.asset` ⇒ `RejectAgent` naming the file; duplicate check names ⇒ rejected; a check missing `name`/`command` ⇒ rejected; other agents still load (FR-010, contracts/check-execution.md §6)
-- [ ] T023 [P] [US5] Add UI tests in [ui/tests/](../../ui/tests/): a job-only agent renders no Checks card; when the asset gate is off, checks are dropped on collect; `checks` without an asset (and missing `name`/`command`) fails `schema.validate` (FR-011, contracts/check-model.md §3–§4)
+- [X] T022 [P] [US5] Add load-rejection tests in [orchestrator/tests/test_definitions.py](../../orchestrator/tests/test_definitions.py): `checks` without `produces.asset` ⇒ `RejectAgent` naming the file; duplicate check names ⇒ rejected; a check missing `name`/`command` ⇒ rejected; other agents still load (FR-010, contracts/check-execution.md §6)
+- [X] T023 [P] [US5] Add UI tests in [ui/tests/](../../ui/tests/): a job-only agent renders no Checks card; when the asset gate is off, checks are dropped on collect; `checks` without an asset (and missing `name`/`command`) fails `schema.validate` (FR-011, contracts/check-model.md §3–§4)
 
 ### Implementation for User Story 5
 
-- [ ] T024 [US5] Implement `validate_checks(cfg, file)` in [orchestrator/factory.py](../../orchestrator/factory.py): raise `RejectAgent(file, msg)` when `checks` present without a valid `produces.asset`, when a check lacks `name`/`command`, or when two checks share a `name` (contracts/check-execution.md §6)
-- [ ] T025 [US5] Call `validate_checks` in the per-file try/except of `discover` (beside `validate_asset_key`) in [orchestrator/definitions.py](../../orchestrator/definitions.py) so one bad file is logged by name and skipped, all others load (FR-010)
+- [X] T024 [US5] Implement `validate_checks(cfg, file)` in [orchestrator/factory.py](../../orchestrator/factory.py): raise `RejectAgent(file, msg)` when `checks` present without a valid `produces.asset`, when a check lacks `name`/`command`, or when two checks share a `name` (contracts/check-execution.md §6)
+- [X] T025 [US5] Call `validate_checks` in the per-file try/except of `discover` (beside `validate_asset_key`) in [orchestrator/definitions.py](../../orchestrator/definitions.py) so one bad file is logged by name and skipped, all others load (FR-010)
 
 **Checkpoint**: Checks-without-asset is impossible to author (UI) and rejected at load (orchestrator) without taking down other agents.
 

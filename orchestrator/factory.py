@@ -80,6 +80,44 @@ def validate_asset_key(cfg: dict, file: str) -> str:
     if partition not in ("none", "daily"):
         raise RejectAgent(file, f'invalid produces.partition "{partition}" — must be none or daily')
     return str(asset)
+
+
+def validate_checks(cfg: dict, file: str) -> None:
+    """Structural backstop for ``produces.checks`` at load (contract check-execution §6, FR-010).
+
+    The UI's ``schema.validate`` is the authoring guard; this is the load-time backstop that
+    keeps a hand-written bad file from reaching the container path. Raise ``RejectAgent`` (naming
+    ``file``) when checks are present without a valid ``produces.asset``, when a check lacks a
+    ``name`` or ``command``, or when two checks share a ``name``. An agent with no checks is a
+    no-op here (FR-013). Fuller per-field validation (kebab pattern, timeout range, network enum)
+    lives in the UI copy; this backstop enforces only the three structural invariants of §6.
+    """
+    produces = cfg.get("produces")
+    checks = produces.get("checks") if isinstance(produces, dict) else None
+    if not checks:
+        return
+    # Checks are children of the produced asset — they are meaningless without one (FR-010).
+    asset = produces.get("asset") if isinstance(produces, dict) else None
+    if not asset or not re.match(ASSET_KEY_RE, str(asset)):
+        raise RejectAgent(file, "produces.checks requires a valid produces.asset (FR-010)")
+    if not isinstance(checks, list):
+        raise RejectAgent(file, "produces.checks must be a list of check objects")
+    seen: set[str] = set()
+    for i, c in enumerate(checks):
+        if not isinstance(c, dict):
+            raise RejectAgent(file, f"check #{i + 1} must be a mapping with a name and a command")
+        name = c.get("name")
+        if not name or not isinstance(name, str):
+            raise RejectAgent(file, f"check #{i + 1} is missing a name")
+        command = c.get("command")
+        if not command or not isinstance(command, str) or not command.strip():
+            raise RejectAgent(file, f'check "{name}" is missing a command')
+        if name in seen:
+            raise RejectAgent(
+                file,
+                f'duplicate check name "{name}" — check names must be unique within the agent',
+            )
+        seen.add(name)
 # full per-run transcripts: <root>/<agent>/<YYYY-MM-DD>/<run-id>.jsonl
 AGENT_LOG_ROOT = "/data/dagster/agent-logs"
 # per-run Dagster Pipes messages dirs. MUST live under a path bind-mounted identically

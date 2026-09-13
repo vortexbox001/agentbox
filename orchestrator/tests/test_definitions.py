@@ -311,3 +311,130 @@ def test_primary_path_is_default(agents_dir, monkeypatch):
     # primary: on_cron sensor, no job, no schedule
     assert out["jobs"] == [] and out["schedules"] == []
     assert [s.name for s in out["sensors"]] == ["autocond_repo_review_agentbox"]
+
+
+# --- US5: checks require an asset; malformed checks reject the file by name --
+# (contract check-execution §6, FR-010). One bad file is skipped by name; all others load.
+
+CHECKS_NO_ASSET = """\
+    name: checks-no-asset
+    harness: api
+    model: cheap
+    prompt_file: x.md
+    output_dir: /data/outputs/checks-no-asset
+    job: true
+    produces:
+      checks:
+        - name: has-output
+          command: "true"
+"""
+
+CHECKS_DUP_NAME = """\
+    name: checks-dup
+    harness: api
+    model: cheap
+    prompt_file: x.md
+    output_dir: /data/outputs/checks-dup
+    produces:
+      asset: verify/dup
+      checks:
+        - name: c
+          command: "true"
+        - name: c
+          command: "false"
+"""
+
+CHECKS_MISSING_COMMAND = """\
+    name: checks-nocmd
+    harness: api
+    model: cheap
+    prompt_file: x.md
+    output_dir: /data/outputs/checks-nocmd
+    produces:
+      asset: verify/nocmd
+      checks:
+        - name: c
+"""
+
+CHECKS_MISSING_NAME = """\
+    name: checks-noname
+    harness: api
+    model: cheap
+    prompt_file: x.md
+    output_dir: /data/outputs/checks-noname
+    produces:
+      asset: verify/noname
+      checks:
+        - command: "true"
+"""
+
+VALID_CHECKS_AGENT = """\
+    name: good-checks
+    harness: api
+    model: cheap
+    prompt_file: x.md
+    output_dir: /data/outputs/good-checks
+    produces:
+      asset: verify/good
+      checks:
+        - name: has-output
+          command: "test -n \\"$(ls /output)\\""
+"""
+
+
+def test_checks_without_asset_reject_only_that_file(agents_dir, caplog):
+    _write(agents_dir, "checks-no-asset", CHECKS_NO_ASSET)
+    _write(agents_dir, "plain-job", JOB_AGENT)
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    # the bad file is skipped by name; the good agent still loads
+    assert out["assets"] == []
+    assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
+    assert "agents/checks-no-asset.yaml" in caplog.text
+
+
+def test_duplicate_check_names_reject_by_name(agents_dir, caplog):
+    _write(agents_dir, "checks-dup", CHECKS_DUP_NAME)
+    _write(agents_dir, "plain-job", JOB_AGENT)
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    assert out["assets"] == []
+    assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
+    assert "agents/checks-dup.yaml" in caplog.text and "duplicate check name" in caplog.text
+
+
+def test_check_missing_command_rejects_by_name(agents_dir, caplog):
+    _write(agents_dir, "checks-nocmd", CHECKS_MISSING_COMMAND)
+    _write(agents_dir, "plain-job", JOB_AGENT)
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    assert out["assets"] == []
+    assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
+    assert "agents/checks-nocmd.yaml" in caplog.text
+
+
+def test_check_missing_name_rejects_by_name(agents_dir, caplog):
+    _write(agents_dir, "checks-noname", CHECKS_MISSING_NAME)
+    _write(agents_dir, "plain-job", JOB_AGENT)
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    assert out["assets"] == []
+    assert [j.name for j in out["jobs"]] == ["agent_plain_job"]
+    assert "agents/checks-noname.yaml" in caplog.text
+
+
+def test_valid_checks_agent_loads_as_asset(agents_dir):
+    _write(agents_dir, "good-checks", VALID_CHECKS_AGENT)
+    out = _discover(agents_dir)
+    # a well-formed checks agent still builds its asset (with its asset checks)
+    assert [tuple(k.path) for a in out["assets"] for k in a.keys] == [("verify", "good")]
+
+
+def test_bad_checks_file_does_not_take_down_valid_checks_agent(agents_dir, caplog):
+    _write(agents_dir, "checks-dup", CHECKS_DUP_NAME)
+    _write(agents_dir, "good-checks", VALID_CHECKS_AGENT)
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    # only the bad file is skipped; the valid checks agent still loads
+    assert [tuple(k.path) for a in out["assets"] for k in a.keys] == [("verify", "good")]
+    assert "agents/checks-dup.yaml" in caplog.text
