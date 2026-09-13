@@ -1,0 +1,23 @@
+<!-- @dsCard group="Components" viewport="700x100" name="Button" subtitle="Primary, outlined, danger, and default button variants" -->
+<!DOCTYPE html><html><head>
+<link rel="stylesheet" href="../../styles.css">
+<script src="../../_ds_bundle.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+</head><body style="margin:0;padding:12px;background:var(--color-background-default);font-family:var(--font-default)">
+<div id="root"></div>
+<script type="text/babel">
+const {Button} = window.AgentBoxDesignSystem_463fbd;
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+    <Button intent="primary">Primary</Button>
+    <Button outlined>Outlined</Button>
+    <Button intent="danger" outlined>Danger</Button>
+    <Button intent="success">Success</Button>
+    <Button>Default</Button>
+    <Button disabled>Disabled</Button>
+  </div>
+);
+</script>
+</body></html>

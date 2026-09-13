@@ -1,0 +1,17 @@
+/* AgentBox Design System — Animations */
+
+@keyframes ab-fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes ab-slideIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes ab-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+@keyframes ab-spin {
+  to { transform: rotate(360deg); }
+}

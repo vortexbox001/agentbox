@@ -1,0 +1,32 @@
+/* AgentBox Design System — Base Reset & Globals */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  color-scheme: var(--browser-color-scheme);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font: var(--type-body-md);
+  font-family: var(--font-default);
+  background-color: var(--color-background-default);
+  color: var(--color-text-default);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a { color: var(--color-link-default); text-decoration: none; }
+a:hover { color: var(--color-link-hover); }
+
+input, select, textarea { font-family: var(--font-default); }
+button { font-family: inherit; color: var(--color-text-default); }
+code, pre { font-family: var(--font-mono); font-size: 14px; font-variant-ligatures: none; }
+
+:focus-visible { outline: var(--color-focus-ring) auto 1px; }
+:focus:not(:focus-visible) { outline: none; }
+:not(a):focus, :not(a):focus-visible { outline-offset: 1px; }
+
+.ab-label { text-transform: uppercase; letter-spacing: var(--tracking-label); }
+.ab-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

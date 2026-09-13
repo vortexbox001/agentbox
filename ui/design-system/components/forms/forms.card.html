@@ -1,0 +1,24 @@
+<!-- @dsCard group="Components" viewport="700x220" name="TextInput, Select, Checkbox, Toggle" subtitle="Form controls — input, select, checkbox, toggle" -->
+<!DOCTYPE html><html><head>
+<link rel="stylesheet" href="../../styles.css">
+<script src="../../_ds_bundle.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+</head><body style="margin:0;padding:12px;background:var(--color-background-default);font-family:var(--font-default)">
+<div id="root"></div>
+<script type="text/babel">
+const {TextInput, Select, Checkbox, Toggle} = window.AgentBoxDesignSystem_463fbd;
+function Demo() {
+  const [checked, setChecked] = React.useState(true);
+  const [toggled, setToggled] = React.useState(true);
+  return <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
+    <TextInput label="Agent Name" placeholder="e.g. summarizer-v2" />
+    <Select label="Model" options={['gpt-4o','gpt-4o-mini','claude-3.5-sonnet']} />
+    <Checkbox label="Enable auto-retry" checked={checked} onChange={setChecked} />
+    <Toggle label="Active" checked={toggled} onChange={setToggled} />
+  </div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body></html>

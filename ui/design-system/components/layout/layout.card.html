@@ -1,0 +1,25 @@
+<!-- @dsCard group="Components" viewport="700x160" name="Card, Dialog" subtitle="Content card and modal dialog" -->
+<!DOCTYPE html><html><head>
+<link rel="stylesheet" href="../../styles.css">
+<script src="../../_ds_bundle.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+</head><body style="margin:0;padding:12px;background:var(--color-background-default);font-family:var(--font-default)">
+<div id="root"></div>
+<script type="text/babel">
+const {Card, Dialog} = window.AgentBoxDesignSystem_463fbd;
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <div style={{display:'flex',gap:'12px'}}>
+    <Card style={{flex:1}}>
+      <div style={{font:'var(--type-display-sm)',color:'var(--color-text-default)',marginBottom:'8px'}}>Agent Summary</div>
+      <div style={{font:'var(--type-body-sm)',color:'var(--color-text-light)'}}>3 runs today · 2 success · 1 error</div>
+    </Card>
+    <Card interactive style={{flex:1,borderColor:'var(--color-core-teal500)'}}>
+      <div style={{font:'var(--type-display-sm)',color:'var(--color-text-default)',marginBottom:'8px'}}>Quick Actions</div>
+      <div style={{font:'var(--type-body-sm)',color:'var(--color-text-light)'}}>Click to trigger a manual run</div>
+    </Card>
+  </div>
+);
+</script>
+</body></html>

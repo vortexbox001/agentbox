@@ -1,0 +1,47 @@
+/* AgentBox Design System — Spacing, Sizing, Layout */
+
+:root {
+  /* ── Spacing scale ── */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-9: 20px;
+  --space-10: 24px;
+  --space-11: 28px;
+  --space-12: 32px;
+  --space-13: 40px;
+  --space-14: 48px;
+
+  /* ── Radii (matches Dagster) ── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+  --radius-pill: 9999px;
+  --radius-round: 50%;
+
+  /* ── Layout ── */
+  --nav-width: 240px; /* @kind spacing */
+  --nav-width-collapsed: 68px; /* @kind spacing */
+  --topbar-height: 48px; /* @kind spacing */
+
+  /* ── Z-index ── */
+  --z-dropdown: 50; /* @kind other */
+  --z-modal: 100; /* @kind other */
+  --z-toast: 150; /* @kind other */
+
+  /* ── Component sizing ── */
+  --icon-sm: 16px;
+  --icon-md: 18px;
+  --icon-lg: 24px;
+  --avatar-sm: 28px;
+  --avatar-md: 32px;
+  --avatar-lg: 40px;
+}

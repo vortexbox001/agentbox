@@ -1,0 +1,33 @@
+<!-- @dsCard group="Components" viewport="700x180" name="Badge, StatusDot, Spinner, Alert" subtitle="Status badges, dots, spinner, and alert banners" -->
+<!DOCTYPE html><html><head>
+<link rel="stylesheet" href="../../styles.css">
+<script src="../../_ds_bundle.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+</head><body style="margin:0;padding:12px;background:var(--color-background-default);font-family:var(--font-default)">
+<div id="root"></div>
+<script type="text/babel">
+const {Badge, StatusDot, Spinner, Alert} = window.AgentBoxDesignSystem_463fbd;
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+    <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+      <Badge label="running" intent="running" />
+      <Badge label="success" intent="success" />
+      <Badge label="error" intent="error" />
+      <Badge label="warning" intent="warning" />
+      <Badge label="queued" intent="queued" />
+      <Badge label="scheduled" intent="scheduled" />
+    </div>
+    <div style={{display:'flex',gap:'12px',alignItems:'center'}}>
+      <StatusDot status="running" /><span style={{fontSize:'12px',color:'var(--color-text-light)'}}>Running</span>
+      <StatusDot status="success" /><span style={{fontSize:'12px',color:'var(--color-text-light)'}}>Success</span>
+      <StatusDot status="error" /><span style={{fontSize:'12px',color:'var(--color-text-light)'}}>Error</span>
+      <StatusDot status="idle" /><span style={{fontSize:'12px',color:'var(--color-text-light)'}}>Idle</span>
+      <Spinner size={16} />
+    </div>
+    <Alert intent="info" title="Agent deployed">summarizer-v2 is now running on schedule.</Alert>
+  </div>
+);
+</script>
+</body></html>

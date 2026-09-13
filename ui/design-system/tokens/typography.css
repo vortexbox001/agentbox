@@ -1,0 +1,31 @@
+/* AgentBox Design System — Typography
+   Uses Inter (Dagster's fallback sans) + Source Code Pro (mono).
+   NOTE: Dagster uses Geist Sans + Geist Mono as primary.
+   Replace with Geist if you have access to the font files. */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Code+Pro:wght@300;400;500;600&display=swap');
+
+:root {
+  --font-default: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu,
+    Cantarell, Open Sans, Helvetica Neue, sans-serif;
+  --font-mono: 'Source Code Pro', Roboto Mono, SF Mono, SFMono-Regular, ui-monospace,
+    Menlo, Monaco, Cascadia Mono, monospace;
+  --font-family-default: var(--font-default);
+
+  /* Type scale — matches Dagster's sizing */
+  --type-display-xl: 600 32px/1.2 var(--font-default);
+  --type-display-lg: 600 24px/1.3 var(--font-default);
+  --type-display-md: 600 20px/1.3 var(--font-default);
+  --type-display-sm: 600 16px/1.4 var(--font-default);
+  --type-body-lg: 400 16px/1.5 var(--font-default);
+  --type-body-md: 400 14px/1.5 var(--font-default);
+  --type-body-sm: 400 12px/1.5 var(--font-default);
+  --type-body-xs: 400 11px/1.4 var(--font-default);
+  --type-label: 500 12px/1.3 var(--font-default);
+  --type-label-sm: 500 11px/1.3 var(--font-default);
+  --type-mono-lg: 400 14px/1.5 var(--font-mono);
+  --type-mono-md: 400 12px/1.5 var(--font-mono);
+  --type-mono-sm: 400 11px/1.4 var(--font-mono);
+  --type-mono-xs: 400 10px/1.4 var(--font-mono);
+  --tracking-label: 0.04em;
+}
