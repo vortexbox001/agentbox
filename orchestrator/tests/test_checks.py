@@ -172,8 +172,10 @@ def test_materialize_records_materialization_and_check_results(tmp_path, stub_la
     monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
     os.makedirs(str(tmp_path / "out"), exist_ok=True)
     stub_launch.check_outcomes = [{"returncode": 0}, {"returncode": 1}]
+    # the failing check is non-blocking (advisory) so the run still succeeds; blocking
+    # gating is exercised in the US2 tests below.
     cfg = _api_cfg(tmp_path, [{"name": "has-output", "command": "true"},
-                              {"name": "advisory", "command": "false"}])
+                              {"name": "advisory", "command": "false", "blocking": False}])
     ad = factory.build_asset(cfg)
     result = materialize([ad])
     assert result.success
@@ -193,3 +195,127 @@ def test_producer_launched_before_checks(tmp_path, stub_launch, monkeypatch):
     # the producer is the api image; the check container is launched afterwards
     assert "agentbox/agent-python:latest" in stub_launch.producer_cmd
     assert len(stub_launch.check_calls) == 1
+
+
+# --- US2: blocking vs. non-blocking (severity + gating) ---------------------
+# blocking -> AssetCheckSpec(blocking=...) on the asset and
+# severity=ERROR/WARN on the AssetCheckResult; absent blocking defaults to
+# blocking (contract check-execution §3–§4, quickstart §3).
+
+def test_blocking_check_result_severity_is_error(tmp_path, stub_launch):
+    cfg = _api_cfg(tmp_path, [{"name": "c", "command": "false", "blocking": True}])
+    results = factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
+                                 str(tmp_path / "ws"))
+    assert results[0].severity == factory.AssetCheckSeverity.ERROR
+
+
+def test_non_blocking_check_result_severity_is_warn(tmp_path, stub_launch):
+    cfg = _api_cfg(tmp_path, [{"name": "c", "command": "false", "blocking": False}])
+    results = factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
+                                 str(tmp_path / "ws"))
+    assert results[0].severity == factory.AssetCheckSeverity.WARN
+
+
+def test_absent_blocking_defaults_to_error_severity(tmp_path, stub_launch):
+    cfg = _api_cfg(tmp_path, [{"name": "c", "command": "false"}])
+    results = factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
+                                 str(tmp_path / "ws"))
+    assert results[0].severity == factory.AssetCheckSeverity.ERROR
+
+
+def test_check_specs_carry_blocking(tmp_path):
+    cfg = _api_cfg(tmp_path, [{"name": "gate", "command": "true", "blocking": True},
+                              {"name": "advisory", "command": "true", "blocking": False},
+                              {"name": "default", "command": "true"}])
+    ad = factory.build_asset(cfg)
+    blocking = {s.name: s.blocking for s in ad.check_specs}
+    # absent -> blocking (default true)
+    assert blocking == {"gate": True, "advisory": False, "default": True}
+
+
+def test_failing_non_blocking_check_run_succeeds_and_materializes(tmp_path, stub_launch, monkeypatch):
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    os.makedirs(str(tmp_path / "out"), exist_ok=True)
+    stub_launch.check_outcomes = [{"returncode": 0}, {"returncode": 1}]
+    cfg = _api_cfg(tmp_path, [{"name": "passes", "command": "true"},
+                              {"name": "advisory", "command": "false", "blocking": False}])
+    result = materialize([factory.build_asset(cfg)])
+    # a failing NON-blocking check is advisory: run still succeeds, asset materialized
+    assert result.success
+    assert len(result.get_asset_materialization_events()) == 1
+    evals = {e.check_name: e for e in result.get_asset_check_evaluations()}
+    assert evals["advisory"].passed is False
+
+
+def test_failing_blocking_check_fails_run_but_records_materialization(tmp_path, stub_launch, monkeypatch):
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    os.makedirs(str(tmp_path / "out"), exist_ok=True)
+    stub_launch.check_outcomes = [{"returncode": 1}]
+    cfg = _api_cfg(tmp_path, [{"name": "gate", "command": "false", "blocking": True}])
+    result = materialize([factory.build_asset(cfg)], raise_on_error=False)
+    # a failing BLOCKING check gates automation: the run fails, but the
+    # materialization is still recorded (asset counts as materialized).
+    assert not result.success
+    assert len(result.get_asset_materialization_events()) == 1
+
+
+# --- US3: read-only isolation (contract check-execution §5, quickstart §4) ---
+# A check sees the produced output but cannot change it: /output and /workspace
+# are mounted :ro, /report.json is mounted, no env/env_file/credential mounts
+# reach the check container, and it defaults to no network. FR-003/FR-009,
+# Constitution I & V.
+
+def test_check_argv_mounts_output_report_readonly_and_no_network(tmp_path, stub_launch):
+    cfg = _api_cfg(tmp_path, [{"name": "guard", "command": "touch /output/x"}])
+    factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
+                       str(tmp_path / "ws"))
+    argv = stub_launch.check_calls[0]
+    # /output read-only and /report.json mounted (read-only) — the check observes, never writes.
+    assert f"{cfg['output_dir']}:/output:ro" in argv
+    assert f"{os.path.join(str(tmp_path / 'pipes'), 'report.json')}:/report.json:ro" in argv
+    # no /output write mount ever (only the :ro form appears)
+    assert f"{cfg['output_dir']}:/output" not in argv
+    # no network by default
+    assert argv[argv.index("--network") + 1] == "none"
+
+
+def test_check_workspace_mounted_readonly_and_omitted_when_absent(tmp_path, stub_launch):
+    # workspace harness: /workspace present and read-only, never writable
+    cc = _cc_cfg(tmp_path, [{"name": "c", "command": "true"}])
+    factory.run_checks(cc, _Ctx(), cc["produces"]["checks"], str(tmp_path / "pipes"), cc["workspace"])
+    cc_argv = stub_launch.check_calls[-1]
+    assert f"{cc['workspace']}:/workspace:ro" in cc_argv
+    assert f"{cc['workspace']}:/workspace" not in cc_argv
+    # workspaceless (api) harness: no /workspace mount at all
+    api = _api_cfg(tmp_path, [{"name": "c", "command": "true"}])
+    factory.run_checks(api, _Ctx(), api["produces"]["checks"], str(tmp_path / "pipes"),
+                       str(tmp_path / "ws"))
+    api_argv = stub_launch.check_calls[-1]
+    assert not any("/workspace" in str(a) for a in api_argv)
+
+
+def test_check_argv_passes_no_env_or_env_file(tmp_path, stub_launch):
+    # even when the agent forwards env and an env_file to its producer, no environment
+    # or env-file reaches the check container (Constitution V — no creds/secrets).
+    cfg = _api_cfg(tmp_path, [{"name": "c", "command": "true"}],
+                   env={"FOO": "bar", "TOKEN": "${SECRET}"},
+                   env_file="/data/credentials/some.env")
+    factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
+                       str(tmp_path / "ws"))
+    argv = stub_launch.check_calls[0]
+    assert "-e" not in argv
+    assert "--env-file" not in argv
+    assert not any("some.env" in str(a) for a in argv)
+
+
+def test_check_argv_mounts_no_credentials(tmp_path, stub_launch):
+    # a claude-code producer mounts host credentials; its checks never do.
+    cfg = _cc_cfg(tmp_path, [{"name": "c", "command": "true"}])
+    factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"), cfg["workspace"])
+    argv = stub_launch.check_calls[0]
+    assert not any("/creds" in str(a) for a in argv)
+    assert not any(".credentials.json" in str(a) for a in argv)
+    assert not any("/data/credentials" in str(a) for a in argv)
+    # the only bind mounts are the read-only observation mounts
+    mounts = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
+    assert all(m.endswith(":ro") for m in mounts)

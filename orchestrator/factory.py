@@ -559,15 +559,23 @@ def run_checks(cfg: dict, context: OpExecutionContext, checks: list, pipes_dir: 
         combined = (proc.stdout or "") + (proc.stderr or "")
         # keep only the tail: the end (usually the failure) within 4 KB (FR-007/SC-006).
         tail = combined.encode("utf-8", "replace")[-4096:].decode("utf-8", "replace")
+        blocking = bool(check.get("blocking", True))
         metadata = {
             "output": MetadataValue.text(tail),
             "exit_code": MetadataValue.int(exit_code),
-            "blocking": bool(check.get("blocking", True)),
+            "blocking": blocking,
             "image": MetadataValue.text(str(image)),
         }
         context.log.info(f"check {name}: exit={exit_code} passed={exit_code == 0}")
+        # A blocking check is an ERROR (gates downstream automation), a non-blocking
+        # one a WARN (advisory only) — the asset materializes either way (FR-006, R3).
         results.append(
-            AssetCheckResult(check_name=name, passed=(exit_code == 0), metadata=metadata)
+            AssetCheckResult(
+                check_name=name,
+                passed=(exit_code == 0),
+                severity=AssetCheckSeverity.ERROR if blocking else AssetCheckSeverity.WARN,
+                metadata=metadata,
+            )
         )
     return results
 
@@ -727,9 +735,13 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
     automation_condition = (
         AutomationCondition.on_cron(cron, cron_timezone=cron_timezone()) if cron else None
     )
-    # check i -> output "check_<i>" (Dagster-valid) mapped to an AssetCheckSpec keeping the kebab name.
+    # check i -> output "check_<i>" (Dagster-valid) mapped to an AssetCheckSpec keeping the kebab
+    # name. `blocking` (default true when omitted) makes a failing check gate downstream automation
+    # while the asset still materializes (FR-006, contract §4).
     check_specs_by_output_name = {
-        f"check_{i}": AssetCheckSpec(name=c["name"], asset=key) for i, c in enumerate(checks)
+        f"check_{i}": AssetCheckSpec(name=c["name"], asset=key,
+                                     blocking=bool(c.get("blocking", True)))
+        for i, c in enumerate(checks)
     }
     outs = {"result": Out(is_required=False)}
     for out_name in check_specs_by_output_name:

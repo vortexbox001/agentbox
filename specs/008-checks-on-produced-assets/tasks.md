@@ -82,11 +82,11 @@ Single project. Orchestrator code location at `orchestrator/`, agent container i
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T016 [US2] Add blocking/severity tests to [orchestrator/tests/test_checks.py](../../orchestrator/tests/test_checks.py): `blocking: true` ⇒ `AssetCheckSeverity.ERROR` + `AssetCheckSpec(blocking=True)`; `blocking: false` ⇒ `WARN` + `blocking=False`; absent ⇒ blocking (default true); a failing non-blocking check leaves the run successful and the asset materialized; a failing blocking check records the materialization while failing the run (contracts/check-execution.md §4, quickstart §3)
+- [X] T016 [US2] Add blocking/severity tests to [orchestrator/tests/test_checks.py](../../orchestrator/tests/test_checks.py): `blocking: true` ⇒ `AssetCheckSeverity.ERROR` + `AssetCheckSpec(blocking=True)`; `blocking: false` ⇒ `WARN` + `blocking=False`; absent ⇒ blocking (default true); a failing non-blocking check leaves the run successful and the asset materialized; a failing blocking check records the materialization while failing the run (contracts/check-execution.md §4, quickstart §3)
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Map `blocking` → `AssetCheckSpec(name, asset, blocking=…)` in the `check_specs` list and → `severity=AssetCheckSeverity.ERROR if blocking else WARN` in the `AssetCheckResult` in [orchestrator/factory.py](../../orchestrator/factory.py) (FR-006, R3)
+- [X] T017 [US2] Map `blocking` → `AssetCheckSpec(name, asset, blocking=…)` in the `check_specs` list and → `severity=AssetCheckSeverity.ERROR if blocking else WARN` in the `AssetCheckResult` in [orchestrator/factory.py](../../orchestrator/factory.py) (FR-006, R3)
 
 **Checkpoint**: Blocking gates automation; non-blocking is advisory-only — both visible on the asset.
 
@@ -100,11 +100,11 @@ Single project. Orchestrator code location at `orchestrator/`, agent container i
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T018 [US3] Add read-only isolation tests to [orchestrator/tests/test_checks.py](../../orchestrator/tests/test_checks.py): assert the argv mounts `/output` and `/workspace` with `:ro`, mounts `/report.json`, passes no `env`/`env_file`/credential mounts, and defaults to `--network none` (a workspaceless agent omits the `/workspace` mount) (contracts/check-execution.md §5, quickstart §4)
+- [X] T018 [US3] Add read-only isolation tests to [orchestrator/tests/test_checks.py](../../orchestrator/tests/test_checks.py): assert the argv mounts `/output` and `/workspace` with `:ro`, mounts `/report.json`, passes no `env`/`env_file`/credential mounts, and defaults to `--network none` (a workspaceless agent omits the `/workspace` mount) (contracts/check-execution.md §5, quickstart §4)
 
 ### Implementation for User Story 3
 
-- [ ] T019 [US3] Ensure `run_checks` in [orchestrator/factory.py](../../orchestrator/factory.py) mounts `-v <output_dir>:/output:ro`, `-v <workspace>:/workspace:ro` (only when the agent has a workspace), and `-v <pipes_dir>/report.json:/report.json:ro`, and passes no env/creds — no isolation flag on the producer launch changes (FR-003/FR-009, Constitution I & V)
+- [X] T019 [US3] Ensure `run_checks` in [orchestrator/factory.py](../../orchestrator/factory.py) mounts `-v <output_dir>:/output:ro`, `-v <workspace>:/workspace:ro` (only when the agent has a workspace), and `-v <pipes_dir>/report.json:/report.json:ro`, and passes no env/creds — no isolation flag on the producer launch changes (FR-003/FR-009, Constitution I & V)
 
 **Checkpoint**: Checks are read-only observers; a produced file is never modified by its own checks.
 
