@@ -1,13 +1,13 @@
-# Agentbox → Dagster assets: feature briefs 007–027
+# Agentbox → Dagster assets: feature briefs 007–028
 
 Paste each brief into `/speckit.specify` in order. Each stands alone; later ones assume earlier ones are merged.
 
-> Numbering: 009 is the design-system migration; 010 is reserved for a brief to be added; feature briefs continue from 011. Cross-references use these brief numbers.
+> Paths: from 010 onward, instance configuration lives under `config/` (`AGENTBOX_CONFIG_DIR`) and instance state under `$AGENTBOX_DATA` (default `/data/agentbox`), with Dagster's own storage as a sibling at `$DAGSTER_HOME` (default `/data/dagster`); briefs 012–028 reference those roots.
 
 
-State these briefs build on (schema 4, after specs 004–006): an agent is an asset (`produces: {asset, partition: none|daily}`), a job (`job: true`), or both; triggers live on the agent in `triggers: {asset_schedule, job_schedule}`; the Automation view edits triggers per agent; asset crons become `on_cron` automation conditions behind a paused-by-default `autocond_<name>` sensor, with a documented fallback to a schedule + materializing job for partitioned assets; `ui/schema.py` is the single source of truth for the YAML format, with a migrations list; outputs land in `<output_dir>` as `<stamp>_<name>_<session_id>.md`; transcripts land in `/data/dagster/agent-logs/<agent>/<date>/<run-id>.jsonl`; `env` values of the form `${NAME}` are forwarded by name; the UI reloads Dagster via GraphQL after saving.
+State these briefs build on (schema 4, after specs 004–006): an agent is an asset (`produces: {asset, partition: none|daily}`), a job (`job: true`), or both; triggers live on the agent in `triggers: {asset_schedule, job_schedule}`; the Automation view edits triggers per agent; asset crons become `on_cron` automation conditions behind a paused-by-default `autocond_<name>` sensor, with a documented fallback to a schedule + materializing job for partitioned assets; `ui/schema.py` is the single source of truth for the YAML format, with a migrations list; outputs land in `<output_dir>` as `<stamp>_<name>_<session_id>.md`; transcripts land in `$AGENTBOX_DATA/runs/<agent>/<date>/<run-id>.jsonl`; `env` values of the form `${NAME}` are forwarded by name; the UI reloads Dagster via GraphQL after saving.
 
-Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010 (reserved) · 011 run transparency · 012 dependencies & event triggers · 013 base-image refactor · 014 parameterized agents · 015 projects · 016 dynamic partitions & external assets · 017 mini-swe-agent harness · 018 escalation ladder · 019 git worktree workspaces · 020 publish results · 021 per-agent runtime tools · 022 management UI catch-up · 023 repository reconciliation · 024 rule library & authoring · 025 provenance receipts · 026 codebase tour & deep review · 027 design fitness rules & ADR gate.
+Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010 layout (product / config / data) · 011 page rebuild from mocks · 012 run transparency · 013 dependencies & event triggers · 014 base-image refactor · 015 parameterized agents · 016 projects · 017 dynamic partitions & external assets · 018 mini-swe-agent harness · 019 escalation ladder · 020 git worktree workspaces · 021 publish results · 022 per-agent runtime tools · 023 management UI catch-up · 024 repository reconciliation · 025 rule library & authoring · 026 provenance receipts · 027 codebase tour & deep review · 028 design fitness rules & ADR gate.
 
 ---
 
@@ -43,7 +43,7 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 **What changes.**
 - New optional `checks:` list inside `produces:`. Each check: `name`, `command` (run inside a container), optional `image` (default: the agent's harness image), optional `blocking` (default `true`), optional `timeout_seconds`.
 - A check runs in a fresh container with the output dir read-only at `/output`, the workspace (if any) read-only at `/workspace`, and the run report (007) at `/report.json`. Exit 0 = pass.
-- Each check becomes a Dagster asset check on the asset. Blocking failures show on the asset and prevent downstream automation (012) from firing; non-blocking ones show but don't block.
+- Each check becomes a Dagster asset check on the asset. Blocking failures show on the asset and prevent downstream automation (013) from firing; non-blocking ones show but don't block.
 - Check stdout/stderr (last 4 KB) attached to the check result as metadata.
 - Schema (a Checks card under Job), YAML comments, README updated.
 
@@ -53,7 +53,7 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 - A check that writes to `/output` fails with a read-only error.
 - An agent without `produces` cannot have `checks`; the UI hides the card and the factory rejects the file naming it.
 
-**Out of scope.** Escalation on failed checks (018). Checks for job-only agents. Built-in check types.
+**Out of scope.** Escalation on failed checks (019). Checks for job-only agents. Built-in check types.
 
 **Null action.** If asset checks can't attach per-partition in this Dagster version, attach them unpartitioned and record the partition key in metadata; note the limitation in the plan.
 
@@ -61,7 +61,7 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ## 009 — Design system migration: Archon → AgentBox (Dagster sibling)
 
-**Intent.** Replace the Archon design system (dark-only, cyan/magenta, Playfair serif, `--ax-*` tokens) with the AgentBox design system delivered in `AgentBox_Design_System.zip`: a Dagster-derived system with light and dark themes, navy/teal/lime brand colours, Inter + Source Code Pro, a 240px collapsible sidebar and no top bar, Lucide outline icons, and a component set matching Dagster's. After this, the management UI looks like a sibling app to Dagster, every page uses the new tokens and components, and the design system lives in the repo where both humans and coding agents can reference it. This is a visual and structural migration only; no feature behaviour changes. It runs before 011 because 011 adds the largest new surface (Runs, Settings) and should be built on the new system, not migrated after.
+**Intent.** Replace the Archon design system (dark-only, cyan/magenta, Playfair serif, `--ax-*` tokens) with the AgentBox design system delivered in `AgentBox_Design_System.zip`: a Dagster-derived system with light and dark themes, navy/teal/lime brand colours, Inter + Source Code Pro, a 240px collapsible sidebar and no top bar, Lucide outline icons, and a component set matching Dagster's. After this, the management UI looks like a sibling app to Dagster, every page uses the new tokens and components, and the design system lives in the repo where both humans and coding agents can reference it. This is a visual and structural migration only; no feature behaviour changes. It runs before 012 because 012 adds the largest new surface (Runs, Settings) and should be built on the new system, not migrated after.
 
 **Where the artifacts live.**
 - `ui/design-system/` — the unzipped bundle replaces the Archon files wholesale (`ARCHON-DESIGN-SYSTEM.md`, `archon-tokens.css`, the three `.dc.html` specimens, `support.js` are deleted). Kept as delivered: `readme.md`, `SKILL.md`, `github.md`, `styles.css`, `tokens/`, `components/`, `guidelines/`, `ui_kits/`, `assets/`, `_ds_manifest.json`, `_ds_bundle.js`, `thumbnail.html`. Dropped: `uploads/` (raw logo sources, duplicated in `assets/`), `.thumbnail`, `_adherence.oxlintrc.json` (React/oxlint rules that do not apply to a Jinja app; their intent is enforced by the tests below). The existing mount stays: `config.DESIGN_SYSTEM_DIR` serves the directory at `/design-system/`, and `/design-system/` now opens `ui_kits/agentbox-app/index.html` as the developer reference.
@@ -91,23 +91,85 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 - Run the test suite: the extended literal-value tests fail on a deliberately inserted `#fff`, a `12px`, and a `--ax-cyan`, and pass on the migrated tree.
 - `/design-system/` serves the reference app; a Claude Code session in the repo lists `agentbox-design` under skills and, asked to add a card, produces markup using the `card` macro.
 
-**Out of scope.** New pages or features (011+ build on this). Replacing Inter/Source Code Pro with Geist. A theme setting in `orchestrator/settings.yaml` (the Settings page arrives in 011; localStorage suffices now). Porting the React `ui_kits` to Jinja beyond what the pages need. Mobile layout.
+**Out of scope.** New pages or features (012+ build on this). Replacing Inter/Source Code Pro with Geist. A theme setting in `config/settings.yaml` (the Settings page arrives in 012; localStorage suffices now). Porting the React `ui_kits` to Jinja beyond what the pages need. Mobile layout.
 
 **Null action.** If self-hosting the fonts under a licence-compatible path is blocked, keep the system-font fallback stack (`-apple-system … sans-serif`, `ui-monospace … monospace`) as the effective rendering, leave the `@font-face` file in place with a comment, and record in the plan that Inter/Source Code Pro load only when the box has internet — never restore the Google Fonts `@import` in the served CSS.
 
 ---
 
-## 011 — Run transparency: conversation view and context snapshot
+## 010 — Layout: product, instance config, and instance data
+
+**Intent.** Separate the three kinds of files agentbox has today: the product (same on every box), the instance configuration (this box's agents, prompts, projects — versioned in git, edited by the UI), and instance state (run records, outputs, workspaces, Dagster storage — on disk, backed up). Today the first two share the product repo and the third is scattered across seven top-level directories under `/data`. After this, a fresh install is "clone agentbox, copy `examples/config` to `config/`, point `AGENTBOX_DATA` at a disk", and every later brief places its files under one of two roots.
+
+**What changes.**
+- **Three roots, three env vars.** `AGENTBOX_CONFIG_DIR` (default `./config`, resolved against the repo) holds instance configuration; `AGENTBOX_DATA` (default `/data/agentbox`) holds instance state; `DAGSTER_HOME` (default `/data/dagster`) stays a sibling, since Dagster may serve other workloads on the same box. All three are read once in `orchestrator/factory.py` and `ui/config.py` and never hard-coded elsewhere; compose mounts exactly these three paths (plus the product tree read-only and the Docker socket). `.env.example` documents all three.
+- **Instance config tree** (`config/`, gitignored in the product repo; intended to become its own repo — README describes checking a config repo out at that path):
+  ```
+  config/
+    agents/            # today's agents/*.yaml (templates removed, see examples)
+    prompts/           # today's prompts/*.md
+    projects/          # 016
+    assets/external/   # 017
+    settings.yaml      # today's orchestrator/settings.yaml (012 retention, 013 governors, …)
+    litellm.yaml       # instance overlay: providers, keys by env name, alias→model bindings
+  ```
+  `litellm/config.yaml` in the product becomes the alias-tier template; a small generator (`scripts/render-litellm.py`, also run at compose start) merges it with `config/litellm.yaml` into the file LiteLLM actually loads. Product-owned catalogs stay in the product: `images/`, `invariants/` (the 025 library), the schema, the design system.
+- **Examples.** `examples/config/` holds the current `_template-*.yaml`, a sample prompt, a sample project, and a minimal `settings.yaml` and `litellm.yaml`. The UI's template picker reads templates from `examples/config/agents/`, not from the instance's agents directory.
+- **Instance data tree** (`$AGENTBOX_DATA`):
+  ```
+  runs/           # per-run directories (today /data/dagster/agent-logs)
+  outputs/        # today /data/outputs
+  workspaces/     # today /data/workspaces
+  repos/          # bare mirrors (020)
+  provenance/     # ledgers and completed receipts (026)
+  credentials/    # today /data/credentials, mode 700
+  keys/           # box keys (026)
+  ```
+  `DAGSTER_HOME` (`/data/dagster`) holds only Dagster's own storage and compute logs; `agent-logs` moves out of it into `$AGENTBOX_DATA/runs/`. `orchestrator/dagster.yaml` and `workspace.yaml` derive their paths from `DAGSTER_HOME`; everything agentbox-owned derives from `AGENTBOX_DATA`. Backups cover both roots.
+- **Migration.** `scripts/migrate-layout.py` moves `agents/` and `prompts/` into `config/`, `orchestrator/settings.yaml` into `config/settings.yaml`, each `/data/<x>` (outputs, workspaces, credentials) into `$AGENTBOX_DATA/<x>`, and `/data/dagster/agent-logs` into `$AGENTBOX_DATA/runs` (leaving `/data/dagster` otherwise untouched), rewriting `output_dir`, `workspace`, and `env_file` values in agent YAML that begin with the old roots. It prints the plan and does nothing without `--apply`; it refuses to run if the destination already has content. `scripts/bootstrap.sh` creates the data tree with correct ownership (uid 1000 for workspaces and outputs, 700 for credentials).
+- **Compose and images.** Volume mounts reduce to `./:/opt/agentbox:ro`, `${AGENTBOX_CONFIG_DIR}:/opt/agentbox/config` (writable for the UI), `${AGENTBOX_DATA}:/data/agentbox`, `${DAGSTER_HOME}:/data/dagster` (orchestrator and daemon only), and the Docker socket. Agent containers keep their existing mount contract (`/workspace`, `/output`, `/config/prompt.md`); only the host side of each bind changes.
+- **Schema and validation.** `ui/schema.py` validates that `output_dir`, `workspace`, and `env_file` fall under `$AGENTBOX_DATA` (or are the documented defaults) and rejects paths under the product tree. The schema version increments; the migrations list records the root change.
+- **Docs.** README gets a "Layout" section with the three-kinds model and both trees, and the file-tree listing is rewritten. `AGENTS.md` states where new file kinds go: product code in the product, instance config under `config/`, state under `$AGENTBOX_DATA`, samples under `examples/config/`.
+
+**What I'd check.**
+- On the existing box: run the migration with `--apply`, restart compose, and every agent, prompt, schedule, past run, and output is where the UI and Dagster expect it; `git status` in the product repo shows only deletions of `agents/` and `prompts/` and the new `.gitignore` entry.
+- Fresh-install rehearsal in a clean directory on the Pi: clone, `cp -r examples/config config`, set `AGENTBOX_DATA` and `DAGSTER_HOME` to empty directories, run `bootstrap.sh`, `docker compose up`; the UI lists the example agents, one materializes, its run directory appears under `$AGENTBOX_DATA/runs/`, and nothing was written outside the two roots (verify with a filesystem watch); `$DAGSTER_HOME` contains no agentbox run directories.
+- Set `AGENTBOX_DATA` and `DAGSTER_HOME` to non-default paths; all services follow them with no residual writes to the defaults.
+- An agent YAML with `output_dir: /opt/agentbox/ui` is rejected naming the field and the rule.
+- `config/` is a separate git repo checked out at that path; the UI's saves commit-free edits land there and `git status` in the product repo stays clean.
+- `render-litellm.py` produces a config with the product's alias tiers bound to the instance's providers; a missing provider key name is reported at render time, not at first request.
+
+**Out of scope.** Multiple config directories or multi-instance on one box. Sharing `DAGSTER_HOME` with a non-agentbox code location (supported by the sibling layout, but not configured here). Moving the design system or images. Git-committing config edits from the UI (a later brief). Backup tooling beyond documenting the single root.
+
+**Null action.** If moving `agent-logs` out of `DAGSTER_HOME` breaks a materialization-metadata link in existing runs, leave a symlink `$DAGSTER_HOME/agent-logs → $AGENTBOX_DATA/runs` for the migrated history only, and record it in the plan; new runs never write under `DAGSTER_HOME`.
+
+---
+
+## 011 — Page rebuild from mocks
+
+**Intent.** Rebuild the existing pages (agents list, agent create/edit, automation, 404, app shell) to the operator's mocks on the design system from 009 and the layout from 010, and set the information architecture that 012 onward build inside. Purely presentational: no schema or behaviour change.
+
+**What changes.** *(To be completed from the mocks. Cover: which screens are rebuilt; the sidebar navigation set and which entries are live vs placeholders for later briefs — Runs and Settings (012), Projects (016), Assets (023), Rules (025), Provenance (026), Tour (027); page-header pattern; list/table density; form layout and card grouping; empty states and error states per the design system's content rules.)*
+
+**What I'd check.** *(Per screen: a side-by-side with the mock at the mock's viewport; keyboard paths from spec 002 still pass; no literal values per the 009 tests; placeholder nav entries render an empty state, not an error.)*
+
+**Out of scope.** New data or features. Mobile layout.
+
+**Null action.** *(Where a mock needs data a later brief supplies, render the frame with an empty state and note the dependency in the plan.)*
+
+---
+
+## 012 — Run transparency: conversation view and context snapshot
 
 **Intent.** Open any run and see exactly what the agent did and exactly what it was given: a full chat-style history like a Claude Code session in VS Code, and a frozen snapshot of the agent's context at start — prompt, model, tools, instruction files, environment, workspace. Same view for every harness.
 
 **What changes.**
-- **Run directory.** Every run (and every escalation attempt, later) writes to `/data/dagster/agent-logs/<agent>/<date>/<run-id>/`: `events.jsonl` (normalized), `transcript.jsonl` (native, as today), `context.json`, `report.json` (007). Materialization/run metadata links to the directory.
+- **Run directory.** Every run (and every escalation attempt, later) writes to `$AGENTBOX_DATA/runs/<agent>/<date>/<run-id>/`: `events.jsonl` (normalized), `transcript.jsonl` (native, as today), `context.json`, `report.json` (007). Materialization/run metadata links to the directory.
 - **Normalized events.** One schema for all harnesses: `system`, `user`, `assistant`, `tool_call`, `tool_result`, `final`, `error`; each with `ts`, `turn`, `tokens_in`/`tokens_out` where reported, `cost_usd` where known. `tool_call` carries tool name and arguments; `tool_result` carries the result and, for file edits, a unified diff. Each harness image emits `events.jsonl` from its native stream. Faithful order and content; nothing summarized.
-- **Context snapshot** (`context.json`), written at launch: effective prompt text as sent; appended system-prompt text; model, effort, fallback model; harness and version; image digest; tool allow/deny lists, permission mode, MCP servers and the tools each exposed (from the harness init event where available); every instruction file the harness loaded (AGENTS.md, CLAUDE.md, nested) with path and full contents; env var **names** only; mounts with modes; network; memory/cpu caps; working directory; file tree of `/workspace` and `/output` at start (paths and sizes); for asset runs: asset key, partition key, variant, upstream handoff files (012), attempt number. A `completeness` field states what the harness does not disclose (vendor base system prompt for claude-code and codex).
+- **Context snapshot** (`context.json`), written at launch: effective prompt text as sent; appended system-prompt text; model, effort, fallback model; harness and version; image digest; tool allow/deny lists, permission mode, MCP servers and the tools each exposed (from the harness init event where available); every instruction file the harness loaded (AGENTS.md, CLAUDE.md, nested) with path and full contents; env var **names** only; mounts with modes; network; memory/cpu caps; working directory; file tree of `/workspace` and `/output` at start (paths and sizes); for asset runs: asset key, partition key, variant, upstream handoff files (013), attempt number. A `completeness` field states what the harness does not disclose (vendor base system prompt for claude-code and codex).
 - **Redaction.** `events.jsonl` and `context.json` pass through the existing secret heuristic (`ui/secret_scan.py`, moved to a shared module) before writing. Matches become `[REDACTED:<kind>]`. Env values are never written. Applies to tool results too.
 - **Viewer (management UI).** New Runs area: run list (agent, time, status, model, cost, attempts) with filters; run page with tabs — **Conversation** (threaded, collapsible tool calls/results, diffs as diffs, per-turn tokens/cost, search), **Context**, **Report**, **Files**. A **Compare** action diffs two runs' `context.json`. Post-run only.
-- **Settings page.** New UI page, one section for now: **Retention** — keep forever (default) or prune run directories older than N days, with `report.json` and `context.json` always kept. Stored in `orchestrator/settings.yaml`; enforced by a nightly prune job the factory registers. Documented in README.
+- **Settings page.** New UI page, one section for now: **Retention** — keep forever (default) or prune run directories older than N days, with `report.json` and `context.json` always kept. Stored in `config/settings.yaml`; enforced by a nightly prune job the factory registers. Documented in README.
 
 **What I'd check.**
 - Run one agent per harness. Each run directory has all four files. The Conversation tab has the same shape for all four. For claude-code, every tool call in the native transcript appears with its result, and a file edit shows as a diff.
@@ -123,16 +185,16 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ---
 
-## 012 — Assets depend on assets; event-driven triggers
+## 013 — Assets depend on assets; event-driven triggers
 
 **Intent.** An agent can declare that its asset depends on other assets and be triggered when they change. Upstream outputs are handed to the container. This replaces "watch a folder" with an explicit graph.
 
 **What changes.**
-- `produces.depends_on:` list of asset keys (other agents' assets, or external assets from 016).
+- `produces.depends_on:` list of asset keys (other agents' assets, or external assets from 017).
 - `triggers:` gains two asset-kind keys alongside `asset_schedule`: `on_upstream: true` (materialize when any upstream materializes and passes its blocking checks) and `on_missing: true` (materialize when the partition has never been produced). Both become automation conditions on the asset, behind the same `autocond_<name>` sensor.
 - For partitioned assets, upstream/downstream partitions map one-to-one (daily → daily) by default.
 - At launch, for each upstream asset the container receives an env var `AGENTBOX_UPSTREAM_<KEY>` (key upper-snaked) pointing at a small read-only JSON file listing that upstream's latest materialization for the matching partition: output file paths, report metadata, materialization time. The prompt can be told to read it.
-- Governors in `orchestrator/settings.yaml` (011): `max_runs_per_hour` (default 12), enforced before launching any automated run — a refused run is logged and skipped; every automated run carries a `chain_depth` tag, and a run exceeding `max_chain_depth` (default 5) is refused. Manual runs bypass both. Both editable on the Settings page.
+- Governors in `config/settings.yaml` (012): `max_runs_per_hour` (default 12), enforced before launching any automated run — a refused run is logged and skipped; every automated run carries a `chain_depth` tag, and a run exceeding `max_chain_depth` (default 5) is refused. Manual runs bypass both. Both editable on the Settings page.
 - Schema (Depends-on card; Automation view gains the two new trigger kinds), README updated. `depends_on` cycles are rejected at load naming the assets.
 
 **What I'd check.**
@@ -142,13 +204,13 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 - Set `max_runs_per_hour: 2`, trigger three automated materializations within an hour; the third is refused, visibly in the daemon log.
 - Chain A → B → C → D → E → F; F is refused for exceeding `max_chain_depth: 5`.
 
-**Out of scope.** Fan-in of many partitions to one. Non-identity partition mappings. Sensors on external systems (016).
+**Out of scope.** Fan-in of many partitions to one. Non-identity partition mappings. Sensors on external systems (017).
 
 **Null action.** If `on_upstream` misbehaves on partitioned assets with the daily mapping, restrict it to unpartitioned assets in this release and say so.
 
 ---
 
-## 013 — Base image refactor: one shared base, thin harness layers
+## 014 — Base image refactor: one shared base, thin harness layers
 
 **Intent.** Extract a single `agent-base` image with the OS, non-root user, git, and the common command-line tools every agent tends to need, and rebuild each harness image as a thin layer on top. Adding a tool for all agents becomes a one-line change in one place; Pi builds get smaller and faster. No agent YAML changes.
 
@@ -164,15 +226,15 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 - Combined harness image size is smaller (shared layer), per `docker image ls`.
 - Add `yq` to `agent-base`, rebuild base and one harness; the tool is present with no change to the harness Dockerfile.
 
-**Out of scope.** Per-agent images. Runtime tool installation (021). Changing which harness images exist. Language toolchains beyond the common set.
+**Out of scope.** Per-agent images. Runtime tool installation (022). Changing which harness images exist. Language toolchains beyond the common set.
 
 **Null action.** If a harness genuinely can't use the shared base, leave that one on its own base and document why, rather than forcing a lowest-common-denominator base that bloats the others.
 
 ---
 
-## 014 — Parameterized agents: static partitions, per-partition triggers, variants, templating
+## 015 — Parameterized agents: static partitions, per-partition triggers, variants, templating
 
-**Intent.** One agent file can run against many targets, and can exist in several configurations, without copy-pasting files. Today `agents/` holds ten near-identical `repo-librarian-*` files differing only in model or harness; after this, that is one file.
+**Intent.** One agent file can run against many targets, and can exist in several configurations, without copy-pasting files. Today `config/agents/` holds ten near-identical `repo-librarian-*` files differing only in model or harness; after this, that is one file.
 
 **What changes.**
 - **Static partitions.** `produces.partition` accepts a list: `partition: [agentbox, cogni, findhills]`. The asset gets a static partition set; each key is a separate row with its own history and checks. `AGENTBOX_PARTITION_KEY` is passed to every container launched for a partitioned asset (including daily).
@@ -184,25 +246,25 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 - **Migration.** A one-off script `scripts/collapse-variants.py` takes a base agent file and a list of sibling files, emits one file with a `variants:` block containing only the differences, and prints what it would delete; it does not delete without `--apply`.
 
 **What I'd check.**
-- Collapse the ten `repo-librarian-*` files into `repo-librarian.yaml` with variants `claude-opus`, `claude-fable`, `claude-haiku`, `claude-sonnet`, `codex`, `pi-haiku`, `pi-kimi`, `pi-kimi-k3`, `pi-opus`, `pi-sonnet`. After reload, Dagster shows ten assets under `repo-review/…`, each materializable, each launching the same container it did from its old file (verify by comparing `context.json` from 011 before and after: only `variant` differs).
-- Make `repo-librarian` partitioned by `[agentbox, cogni]` with `output_dir: /data/outputs/repo-review/{{ partition }}` and `env: {GITHUB_REPONAME: "{{ partition }}"}`. Materialize `cogni`; the container has `GITHUB_REPONAME=cogni` and writes under `/data/outputs/repo-review/cogni/`.
+- Collapse the ten `repo-librarian-*` files into `repo-librarian.yaml` with variants `claude-opus`, `claude-fable`, `claude-haiku`, `claude-sonnet`, `codex`, `pi-haiku`, `pi-kimi`, `pi-kimi-k3`, `pi-opus`, `pi-sonnet`. After reload, Dagster shows ten assets under `repo-review/…`, each materializable, each launching the same container it did from its old file (verify by comparing `context.json` from 012 before and after: only `variant` differs).
+- Make `repo-librarian` partitioned by `[agentbox, cogni]` with `output_dir: $AGENTBOX_DATA/outputs/repo-review/{{ partition }}` and `env: {GITHUB_REPONAME: "{{ partition }}"}`. Materialize `cogni`; the container has `GITHUB_REPONAME=cogni` and writes under `$AGENTBOX_DATA/outputs/repo-review/cogni/`.
 - Give `asset_schedule` two entries: `agentbox` nightly, `cogni` weekly. Dagster shows two paused schedules with the right names and crons; turning on `agentbox`'s materializes only that partition at its cron.
 - Set `vars: {focus: "drift"}`, put `{{ vars.focus }}` in the prompt, launch a manual run with `vars: {focus: "security"}`; `context.json` shows the prompt with "security".
 - A variant that overrides `harness: pi` but leaves a claude-code-only field set is rejected naming the variant and the field.
 - Put `{{ partition }}` in `network:`; the file is rejected naming the field as non-templatable.
 
-**Out of scope.** Multi-dimensional partitions. Dynamic partitions (016). Variants of variants.
+**Out of scope.** Multi-dimensional partitions. Dynamic partitions (017). Variants of variants.
 
 **Null action.** If a schedule cannot target a single static partition of an asset in this Dagster version, emit one materializing job per partition entry and schedule that; name the deviation in the plan.
 
 ---
 
-## 015 — Projects
+## 016 — Projects
 
 **Intent.** A project groups repos, defaults, and agents. An agent attached to a project can reach the project's repos by alias, inherits its defaults and credentials, and has its assets namespaced under the project. Two projects can't see each other's secrets.
 
 **What changes.**
-- New directory `projects/` with one YAML per project:
+- New directory `config/projects/` with one YAML per project:
   ```yaml
   name: cogni
   repos:
@@ -213,14 +275,14 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
     network: bridge
     timeout_seconds: 1800
   ```
-- Agent YAML gains optional `project: <name>`. With it: the agent's `produces.asset` is namespaced to `<project>/<asset>` and its Dagster asset group is the project; `depends_on` keys without a `/` prefix resolve within the project; `output_dir` defaults to `/data/outputs/<project>/<agent>/`; `workspace` defaults to `/data/workspaces/<project>/<agent>/`; the project's `defaults` apply beneath the agent's own values; `credentials_env` is forwarded as `GITHUB_TOKEN` (name-only passthrough, like `${NAME}` today); `{{ project.repos.<alias>.url }}` and `.base_ref` are available in templated fields (014).
+- Agent YAML gains optional `project: <name>`. With it: the agent's `produces.asset` is namespaced to `<project>/<asset>` and its Dagster asset group is the project; `depends_on` keys without a `/` prefix resolve within the project; `output_dir` defaults to `$AGENTBOX_DATA/outputs/<project>/<agent>/`; `workspace` defaults to `$AGENTBOX_DATA/workspaces/<project>/<agent>/`; the project's `defaults` apply beneath the agent's own values; `credentials_env` is forwarded as `GITHUB_TOKEN` (name-only passthrough, like `${NAME}` today); `{{ project.repos.<alias>.url }}` and `.base_ref` are available in templated fields (015).
 - `produces.partition: repos` gives the asset one static partition per project repo alias; `{{ partition }}` resolves to the alias.
 - Harness images, model tiers, LiteLLM config, and networks stay box-level; a project cannot declare them.
 - Agents without `project:` behave exactly as today.
 - UI: a Projects view (list, form: name, repos table, credentials env, defaults); the agent form gains a Project dropdown, and shows inherited defaults greyed with "from project"; the Assets/Automation views group by project. README gains a Projects section and the key table gains `project`.
 
 **What I'd check.**
-- Create `projects/agentbox.yaml` with repo `main` → this repo. Set `project: agentbox` on `repo-librarian`, remove its hard-coded `GITHUB_*` env and `output_dir`. After reload, its asset is `agentbox/repo-review`, group `agentbox`, outputs land in `/data/outputs/agentbox/repo-librarian/`, and the container has `GITHUB_TOKEN` set from `AGENTBOX_GITHUB_TOKEN` (the project's `credentials_env`) with no value visible in `context.json`.
+- Create `config/projects/agentbox.yaml` with repo `main` → this repo. Set `project: agentbox` on `repo-librarian`, remove its hard-coded `GITHUB_*` env and `output_dir`. After reload, its asset is `agentbox/repo-review`, group `agentbox`, outputs land in `$AGENTBOX_DATA/outputs/agentbox/repo-librarian/`, and the container has `GITHUB_TOKEN` set from `AGENTBOX_GITHUB_TOKEN` (the project's `credentials_env`) with no value visible in `context.json`.
 - Create a second project `cogni` with a different `credentials_env`; an agent in `cogni` sees only cogni's token.
 - Set `partition: repos` on an agent in a two-repo project; Dagster shows two partitions named by alias, and `{{ project.repos[partition].url }}` resolves in the prompt.
 - Two projects each with an asset named `code-map` coexist as `agentbox/code-map` and `cogni/code-map`.
@@ -232,14 +294,14 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ---
 
-## 016 — Dynamic partitions and external assets
+## 017 — Dynamic partitions and external assets
 
 **Intent.** Partitions that appear at runtime (one per item in a list an agent produced), and assets agentbox doesn't produce but watches (a git branch, a folder outside `/data`).
 
 **What changes.**
 - `produces.partition: dynamic` with `partition_set: <name>`. The asset materializes one partition per key.
 - A materialization may register new keys for a set: the run report (007) gains optional `register_partitions: {set: <name>, keys: [...]}`. The factory adds those keys after the run. This is how "A produces a list; B runs once per item" works.
-- New file kind `assets/external/*.yaml`: `asset` key, `kind` (`git-ref` | `path`), kind-specific fields (`repo` or a project repo alias, `ref` / `path`, `glob`), `poll_seconds` (default 300), optional `project`. The factory creates an observable external asset with a sensor that records a new observation when the ref moves or the path's newest mtime changes. Downstream `depends_on` + `on_upstream` (012) then fire.
+- New file kind `config/assets/external/*.yaml`: `asset` key, `kind` (`git-ref` | `path`), kind-specific fields (`repo` or a project repo alias, `ref` / `path`, `glob`), `poll_seconds` (default 300), optional `project`. The factory creates an observable external asset with a sensor that records a new observation when the ref moves or the path's newest mtime changes. Downstream `depends_on` + `on_upstream` (013) then fire.
 - Schema/UI/README updated; the Automation view lists external assets with last observation.
 
 **What I'd check.**
@@ -254,15 +316,15 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ---
 
-## 017 — mini-swe-agent harness
+## 018 — mini-swe-agent harness
 
 **Intent.** A fifth harness: a minimal bash-loop coding agent through LiteLLM with hard step and cost caps — the cheap, metered, looped option the existing harnesses don't cover (api has no loop; pi has no cost cap; claude-code and codex bypass LiteLLM).
 
 **What changes.**
-- New image `images/agent-mini/` with mini-swe-agent in local-environment mode (the container is the sandbox). Entrypoint writes the run report (007) and events (011) from mini's trajectory JSON, including `cost_usd` from mini's accounting.
+- New image `images/agent-mini/` with mini-swe-agent in local-environment mode (the container is the sandbox). Entrypoint writes the run report (007) and events (012) from mini's trajectory JSON, including `cost_usd` from mini's accounting.
 - `harness: mini` in the schema. Applicable keys: `model` (LiteLLM alias), `effort` (mapped to the model's reasoning parameter where supported), `workspace`, `wipe_workspace`, `output_dir`, `env`, plus `step_limit` (default 40) and `cost_limit_usd` (default 0.50). `max_turns` does not apply.
 - Model access: `openai/<alias>` against `http://litellm:4000/v1` with `LITELLM_MASTER_KEY` passthrough, as `api` does. Default network `agentnet-isolated`.
-- `_template-mini.yaml`; README harness table, key table, image build steps; UI harness rules in `schema.py`.
+- `examples/config/agents/_template-mini.yaml`; README harness table, key table, image build steps; UI harness rules in `schema.py`.
 
 **What I'd check.**
 - Build on the Pi (arm64); run an agent with `model: cheap`, a prompt to create a file in `/output`, `step_limit: 15`. The file appears with the naming convention; the report shows steps, tokens, non-null `cost_usd`; LiteLLM's spend log shows the same calls.
@@ -270,20 +332,20 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 - `step_limit: 1`: same, mentioning the step limit.
 - The form for a `mini` agent shows Step limit and Cost limit under Limits, hides Max turns and Tools & permissions.
 
-**Out of scope.** Structured editing tools. Repo maps. Escalation (018).
+**Out of scope.** Structured editing tools. Repo maps. Escalation (019).
 
 **Null action.** If mini's native tool-calling mode fails against a given LiteLLM alias, fall back to its text-based command parsing for that alias and document which aliases need it.
 
 ---
 
-## 018 — Escalation ladder
+## 019 — Escalation ladder
 
 **Intent.** An asset agent can try a cheap model first and re-run on a stronger one only when its blocking checks fail — inside one materialization, so the attempt history stays together.
 
 **What changes.**
 - Optional `escalation:` block inside `produces:`: `ladder: [<model>, ...]` (aliases or harness model ids, in order) and `max_attempts` (default = ladder length, capped at 3). When present, `model` is ignored.
 - The materialization runs at ladder[0], runs blocking checks (008), and on failure re-runs at ladder[1] with the failed checks' output appended to the system prompt (or prompt, for codex), up to `max_attempts`. Non-blocking checks don't escalate.
-- The run report becomes a list of attempt reports; metadata records `attempts`, final model, per-attempt cost, summed cost. The run directory (011) holds one sub-directory per attempt.
+- The run report becomes a list of attempt reports; metadata records `attempts`, final model, per-attempt cost, summed cost. The run directory (012) holds one sub-directory per attempt.
 - `wipe_workspace` applies only before the first attempt.
 - Each attempt counts as one run for `max_runs_per_hour`.
 - Schema/UI (Escalation card under Box)/README updated.
@@ -300,13 +362,13 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ---
 
-## 019 — Git worktree workspaces
+## 020 — Git worktree workspaces
 
 **Intent.** An agent's workspace can be a checkout of a project repo on a branch created for the run. Commits stay on that branch; nothing an agent does can reach the base branch.
 
 **What changes.**
-- `workspace` accepts a host path (as today) or a block: `repo: <project repo alias>` (or a bare `url` for project-less agents), `branch_prefix` (default `agent/<name>/`), `push` (default `false`). The factory keeps a bare mirror under `/data/repos/<project>/<alias>/`, fetches, creates a worktree at `/data/workspaces/<project>/<agent>/<run-id>` on branch `<branch_prefix><partition-or-stamp>` from the repo's `base_ref`, mounts it at `/workspace`, and removes the worktree after the run, keeping the branch.
-- Credentials: the project's `credentials_env` (015), forwarded by name.
+- `workspace` accepts a host path (as today) or a block: `repo: <project repo alias>` (or a bare `url` for project-less agents), `branch_prefix` (default `agent/<name>/`), `push` (default `false`). The factory keeps a bare mirror under `$AGENTBOX_DATA/repos/<project>/<alias>/`, fetches, creates a worktree at `$AGENTBOX_DATA/workspaces/<project>/<agent>/<run-id>` on branch `<branch_prefix><partition-or-stamp>` from the repo's `base_ref`, mounts it at `/workspace`, and removes the worktree after the run, keeping the branch.
+- Credentials: the project's `credentials_env` (016), forwarded by name.
 - Post-run: uncommitted changes are committed by the orchestrator as `agentbox: end of run <run-id>`; the report gains `git: {branch, head_sha, base_sha, commits, files_changed}`; the branch is pushed only if `push: true`.
 - The factory refuses a `branch_prefix` resolving to `base_ref`, `main`, or `master`, and never pushes to `base_ref`. The remote configured inside the mirror is push-restricted to the branch prefix where the hosting supports it.
 - Checks (008) run against the worktree at `head_sha`.
@@ -325,15 +387,15 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ---
 
-## 020 — Publish results: push branches and open pull requests
+## 021 — Publish results: push branches and open pull requests
 
-**Intent.** After a worktree run (019), take the branch the rest of the way to a reviewable artifact: push it and, optionally, open a pull request whose body is assembled from the run report. This turns "the factory produced a branch" into "the factory produced work you can review and merge," keeping the rule that only you merge.
+**Intent.** After a worktree run (020), take the branch the rest of the way to a reviewable artifact: push it and, optionally, open a pull request whose body is assembled from the run report. This turns "the factory produced a branch" into "the factory produced work you can review and merge," keeping the rule that only you merge.
 
 **What changes.**
-- The worktree block (019) gains `pull_request:` with `enabled` (default `false`), `draft` (default `auto` — ready when blocking checks pass, draft when they don't), `title` (templatable), `base` (default the repo's `base_ref`), `labels` (optional), `reviewers` (optional).
-- After a run whose branch has commits beyond `base_ref`, the orchestrator pushes the branch (implying `push: true`) and opens a PR via `gh` (from the base image, 013) using the project's `credentials_env` token. The PR body is generated from the run report and run directory: `files_changed` summary, the agent's `notes`, per-attempt models and summed cost (018), a link to the transcript, and the check results table.
+- The worktree block (020) gains `pull_request:` with `enabled` (default `false`), `draft` (default `auto` — ready when blocking checks pass, draft when they don't), `title` (templatable), `base` (default the repo's `base_ref`), `labels` (optional), `reviewers` (optional).
+- After a run whose branch has commits beyond `base_ref`, the orchestrator pushes the branch (implying `push: true`) and opens a PR via `gh` (from the base image, 014) using the project's `credentials_env` token. The PR body is generated from the run report and run directory: `files_changed` summary, the agent's `notes`, per-attempt models and summed cost (019), a link to the transcript, and the check results table.
 - The run report (007) gains `pull_request: {url, number, state}` (null if none); materialization metadata surfaces the PR URL.
-- Escalation (018): the PR reflects the final attempt; the body notes attempt count and succeeding model.
+- Escalation (019): the PR reflects the final attempt; the body notes attempt count and succeeding model.
 - Guardrails: the token and remote branch rules must forbid pushing to or merging `base`; the orchestrator never merges, only opens the PR. A run configured for a PR where the token lacks PR scope fails with a clear message rather than silently skipping.
 - Schema/UI (a Pull request card under Directories, gated on the worktree block)/README updated.
 
@@ -350,14 +412,14 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ---
 
-## 021 — Per-agent runtime tools via `setup:`
+## 022 — Per-agent runtime tools via `setup:`
 
-**Intent.** Let a single agent install the few extra tools it needs at container start, without a new image and without bloating the shared base (013). Most agents need nothing beyond the base; the rare one that needs, say, `duckdb` or a specific linter declares it in its YAML and the entrypoint installs it before the harness runs.
+**Intent.** Let a single agent install the few extra tools it needs at container start, without a new image and without bloating the shared base (014). Most agents need nothing beyond the base; the rare one that needs, say, `duckdb` or a specific linter declares it in its YAML and the entrypoint installs it before the harness runs.
 
 **What changes.**
 - New optional `setup:` block with two lists: `apt:` (Debian package names) and `pip:` (Python package specs). Before launching the harness, the entrypoint runs `apt-get install -y --no-install-recommends <apt...>` and/or `pip install <pip...>`. Empty/absent means no setup step.
-- Runs inside the agent container as part of normal launch; packages exist only for that run. Docs note that a frequently-needed tool should be promoted into `agent-base` (013) rather than installed every run.
-- `setup:` is captured in the context snapshot (011) so a run records exactly what was installed.
+- Runs inside the agent container as part of normal launch; packages exist only for that run. Docs note that a frequently-needed tool should be promoted into `agent-base` (014) rather than installed every run.
+- `setup:` is captured in the context snapshot (012) so a run records exactly what was installed.
 - Guardrails: `setup` runs no arbitrary shell — only package names for the two managers, validated against a name pattern (no shell metacharacters, no URLs); anything else is rejected naming the field. `apt` needs the install step to run as root then drop to the agent user for the harness (the base entrypoint supports this); if a harness image is non-root only, `apt` is rejected and only `pip --user` is allowed — the plan decides and documents which.
 - Network note: `setup:` needs a network reaching the package index (`agentnet` or `bridge`, not `agentnet-isolated`); the factory warns (or fails, per the plan) if `setup:` is set on an isolated-network agent.
 - Schema/UI (a Setup card under Job, two tag-style lists)/README updated; templates gain a commented example.
@@ -375,20 +437,20 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ---
 
-## 022 — Management UI catches up
+## 023 — Management UI catches up
 
 **Intent.** The management UI shows the asset side of an agent — what it produces, recent materializations with status and cost, check results, triggers, project — so day-to-day operation doesn't need the Dagster UI.
 
 **What changes.**
 - Agent list gains columns: project, produces (asset key or —), variants/partitions count, last run (time, status, cost), trigger summary.
-- Agent form's Runs column gains a read-only Recent runs card (last 5 materializations/runs: time, status, model, cost, attempts, link to the 011 run page and to Dagster) and a Check results card (last result per check).
+- Agent form's Runs column gains a read-only Recent runs card (last 5 materializations/runs: time, status, model, cost, attempts, link to the 012 run page and to Dagster) and a Check results card (last result per check).
 - New Assets view: asset, agent, project, partition scheme, upstream, downstream, last materialization, last observation for external assets.
-- All read through the existing GraphQL client in `ui/dagster.py` and the run directories from 011; the UI stays read-only for run data and writable only for `agents/`, `prompts/`, `projects/`, `assets/external/`, `orchestrator/settings.yaml`.
+- All read through the existing GraphQL client in `ui/dagster.py` and the run directories from 012; the UI stays read-only for run data and writable only for `config/agents/`, `config/prompts/`, `config/projects/`, `config/assets/external/`, `config/settings.yaml`.
 - Design-system compliance per spec 002.
 
 **What I'd check.**
 - Materialize an asset agent twice (once failing); the Recent runs card shows both with correct status and cost; clicking one opens the run page.
-- The Assets view shows the 012 A → B chain and the 016 external asset with its last observation.
+- The Assets view shows the 013 A → B chain and the 017 external asset with its last observation.
 - With Dagster stopped, the UI still renders agents, forms, and run history from disk, with Dagster-backed panels showing "Dagster unreachable" rather than an error page.
 
 **Out of scope.** Triggering runs from the UI. Editing check results. Cost reports.
@@ -397,18 +459,18 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ---
 
-## 023 — Repository reconciliation: invariants, drift, human-gated convergence
+## 024 — Repository reconciliation: invariants, drift, human-gated convergence
 
-**Intent.** Declare what state a project's repository should be in, and have agentbox continuously observe drift from that state and dispatch agents to close it — never merging, only proposing. This turns the box from "produce an artifact on a schedule" into a reconciliation controller: invariants are the desired state, a deterministic scan is the observation, agents are the actuators, checks are the proof of convergence, and you are the admission controller. Builds directly on checks (008), handoffs and governors (012), escalation (018), worktrees (019), and pull requests (020).
+**Intent.** Declare what state a project's repository should be in, and have agentbox continuously observe drift from that state and dispatch agents to close it — never merging, only proposing. This turns the box from "produce an artifact on a schedule" into a reconciliation controller: invariants are the desired state, a deterministic scan is the observation, agents are the actuators, checks are the proof of convergence, and you are the admission controller. Builds directly on checks (008), handoffs and governors (013), escalation (019), worktrees (020), and pull requests (021).
 
 **What changes.**
-- A project (015) gains an optional `invariants:` map (in `projects/<name>.yaml` or an adjacent `projects/<name>.invariants.yaml`). Each invariant has `observe` (a command run in a fresh worktree at `base_ref` that exits 0 when satisfied and, on failure, prints a JSON list of violations on stdout), `describe` (one line, for the UI and PR bodies), `actuator` (the name of an agent in the project), `priority` (`low|normal|high`, default `normal`), optional `escalation` (018 ladder override for the actuator), optional `partition_by_violation` (default `false`). `observe` accepts package-style arguments only — a command name and flags, no shell metacharacters — and runs in a container, never on the host. Observers and agent output checks (008) are one primitive: the same runner, the same result format (exit code plus a JSON violations list on stdout), the same `blocking` semantics; 023 points that primitive at the repository at `base_ref` instead of at an agent's output. The scan asset accepts a `setup:` block (021) so observer toolchains (`pip-audit`, `trivy`, `lychee`, `gitleaks`) can be installed without bloating `agent-base`; the project may instead name an `observer_image`. Each observer receives the previous drift report for its invariant at `AGENTBOX_PREVIOUS_STATE` so ratchet rules (coverage high-water mark, "no dependency more than N versions behind", "no TODO older than N days") can compare against last time; the drift report records an optional numeric `value` alongside `satisfied` so ratchets have history.
-- A deterministic, LLM-free asset `<project>/state` is added per project with invariants. It materializes on `triggers.asset_schedule` (project default) or on external git-ref change (016), checks out `base_ref` in a throwaway worktree (019 machinery), runs every `observe`, and records a drift report as materialization metadata: per invariant `satisfied`, `violations`, `observed_sha`, `duration`. The drift report is also written to `/data/outputs/<project>/state/<stamp>.json`.
-- A per-project `reconcile_<project>` sensor (paused by default, like the autocond sensors) reads each new drift report. For every unsatisfied invariant it requests a materialization of the actuator's asset, partitioned by invariant name (or by `<invariant>/<violation-id>` when `partition_by_violation` is set), passing the violation list through the existing upstream handoff file mechanism (012) as `AGENTBOX_UPSTREAM_STATE`. Actuators are ordinary worktree agents (019) with `pull_request.enabled: true` (020); the brief adds nothing to what an actuator is.
+- A project (016) gains an optional `invariants:` map (in `config/projects/<name>.yaml` or an adjacent `config/projects/<name>.invariants.yaml`). Each invariant has `observe` (a command run in a fresh worktree at `base_ref` that exits 0 when satisfied and, on failure, prints a JSON list of violations on stdout), `describe` (one line, for the UI and PR bodies), `actuator` (the name of an agent in the project), `priority` (`low|normal|high`, default `normal`), optional `escalation` (019 ladder override for the actuator), optional `partition_by_violation` (default `false`). `observe` accepts package-style arguments only — a command name and flags, no shell metacharacters — and runs in a container, never on the host. Observers and agent output checks (008) are one primitive: the same runner, the same result format (exit code plus a JSON violations list on stdout), the same `blocking` semantics; 024 points that primitive at the repository at `base_ref` instead of at an agent's output. The scan asset accepts a `setup:` block (022) so observer toolchains (`pip-audit`, `trivy`, `lychee`, `gitleaks`) can be installed without bloating `agent-base`; the project may instead name an `observer_image`. Each observer receives the previous drift report for its invariant at `AGENTBOX_PREVIOUS_STATE` so ratchet rules (coverage high-water mark, "no dependency more than N versions behind", "no TODO older than N days") can compare against last time; the drift report records an optional numeric `value` alongside `satisfied` so ratchets have history.
+- A deterministic, LLM-free asset `<project>/state` is added per project with invariants. It materializes on `triggers.asset_schedule` (project default) or on external git-ref change (017), checks out `base_ref` in a throwaway worktree (020 machinery), runs every `observe`, and records a drift report as materialization metadata: per invariant `satisfied`, `violations`, `observed_sha`, `duration`. The drift report is also written to `$AGENTBOX_DATA/outputs/<project>/state/<stamp>.json`.
+- A per-project `reconcile_<project>` sensor (paused by default, like the autocond sensors) reads each new drift report. For every unsatisfied invariant it requests a materialization of the actuator's asset, partitioned by invariant name (or by `<invariant>/<violation-id>` when `partition_by_violation` is set), passing the violation list through the existing upstream handoff file mechanism (013) as `AGENTBOX_UPSTREAM_STATE`. Actuators are ordinary worktree agents (020) with `pull_request.enabled: true` (021); the brief adds nothing to what an actuator is.
 - The judge is immutable to the judged. Observers, checks, and the test files they invoke are always executed from `base_ref`'s copy, never from the actuator's branch; the scan asset checks out `base_ref` for the observer code and the branch only for the code under observation. Any actuator PR whose diff touches a file matched by the project's `protected_paths` (default: the observer commands' scripts, test directories, CI config, and the invariants file itself) is marked `touches_judge: true` in the run report, opens as draft regardless of `converged`, and is labelled for human review; the sensor never counts such a PR as progress.
-- Convergence check: after an actuator run produces a branch, the orchestrator re-runs that invariant's `observe` on the branch before opening the PR and records `converged: true|false` in the run report (007). `converged: true` opens a ready PR whose body begins with the invariant's `describe` and the before/after violation counts; `converged: false` is a failed blocking check that drives escalation (018) and, if the ladder is exhausted, opens a draft PR or none per the actuator's `draft` setting.
+- Convergence check: after an actuator run produces a branch, the orchestrator re-runs that invariant's `observe` on the branch before opening the PR and records `converged: true|false` in the run report (007). `converged: true` opens a ready PR whose body begins with the invariant's `describe` and the before/after violation counts; `converged: false` is a failed blocking check that drives escalation (019) and, if the ladder is exhausted, opens a draft PR or none per the actuator's `draft` setting.
 - Governors, all in the project block with defaults: `max_open_prs_per_invariant` (default 3 — no new dispatch while that many unmerged actuator PRs exist for the invariant), `max_dispatches_per_scan` (default 5, highest priority first), `regression_freeze` (default `true` — if a scan shows an invariant that was satisfied at the previous scan now unsatisfied and the intervening merged commits came from another invariant's actuator, both invariants are frozen and surfaced), `quarantine_after` (default 3 — an invariant whose actuator PR was merged by the human but whose `observe` still fails on the next scan `quarantine_after` times in a row is disabled and surfaced, on the assumption the observer is wrong before the human is). Frozen and quarantined invariants appear in the drift report with their state and are skipped by the sensor until the operator clears them in the UI.
-- Reconciliation queue in the UI (022): one row per unsatisfied invariant showing priority, violation count, open actuator PRs with `converged` state and cost, and freeze/quarantine flags with a clear action. This is the review surface; merging happens on GitHub.
+- Reconciliation queue in the UI (023): one row per unsatisfied invariant showing priority, violation count, open actuator PRs with `converged` state and cost, and freeze/quarantine flags with a clear action. This is the review surface; merging happens on GitHub.
 - Schema migration adds the fields; `ui/schema.py` validates that every `actuator` names an agent in the same project that has a worktree block and a pull request block; README gains a "Reconciliation" section stating the principle: reconcile the mechanical, materialize the judgment-based on demand — an invariant whose `observe` needs a model is not an invariant.
 
 **What I'd check.**
@@ -420,25 +482,25 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 - An `observe` containing shell metacharacters is rejected at YAML validation.
 - An actuator that "fixes" a failing `docstrings` invariant by deleting the docstring-check script: the observer, run from `base_ref`'s copy, still fails on the branch; the PR opens as draft with `touches_judge: true` and the review label, and does not count against `max_open_prs_per_invariant` as converged work.
 - A `coverage` ratchet invariant: with the previous drift report recording 81%, a branch at 80% fails and one at 82% passes; the new high-water mark is recorded in the next drift report.
-- The scan asset with `setup: {pip: [pip-audit]}` runs the observer without `pip-audit` being in `agent-base`, and the tool appears in the scan's context snapshot (011).
+- The scan asset with `setup: {pip: [pip-audit]}` runs the observer without `pip-audit` being in `agent-base`, and the tool appears in the scan's context snapshot (012).
 - Full cycle with the sensor unpaused for 24 hours against a real repo: no merge to `base_ref` occurred that a human didn't perform, and total spend equals the sum of actuator run reports.
 
-**Out of scope.** LLM-based observers. Auto-merge under any condition. Cross-project invariants. Reusable rule library, per-rule modes, PR outcome tracking, and rule authoring UI (024). Invariants over non-git targets. Learned prioritization. Conflict resolution between concurrent actuator branches.
+**Out of scope.** LLM-based observers. Auto-merge under any condition. Cross-project invariants. Reusable rule library, per-rule modes, PR outcome tracking, and rule authoring UI (025). Invariants over non-git targets. Learned prioritization. Conflict resolution between concurrent actuator branches.
 
-**Null action.** If per-invariant partitioning of the actuator asset conflicts with an actuator that already uses `partition: repos` (014/015), dispatch the actuator unpartitioned with the invariant name in the handoff file and a `reconcile.invariant` tag on the run; record in the plan that a second partition dimension is the real fix and belongs with multi-dimensional partitions.
+**Null action.** If per-invariant partitioning of the actuator asset conflicts with an actuator that already uses `partition: repos` (015/016), dispatch the actuator unpartitioned with the invariant name in the handoff file and a `reconcile.invariant` tag on the run; record in the plan that a second partition dimension is the real fix and belongs with multi-dimensional partitions.
 
 ---
 
-## 024 — Rule library, per-rule modes, PR outcome tracking, and rule authoring
+## 025 — Rule library, per-rule modes, PR outcome tracking, and rule authoring
 
-**Intent.** Turn "a project can declare an invariant" (023) into "an operator manages rules." Universal rules (vulnerable dependencies, secrets, lint, dead code, docstring coverage, stale TODOs, broken doc links) are written once at box level and included by name; rules can be watched before they are allowed to spend money; the system notices when a human keeps refusing a rule's PRs; and rules are edited in the UI rather than by hand.
+**Intent.** Turn "a project can declare an invariant" (024) into "an operator manages rules." Universal rules (vulnerable dependencies, secrets, lint, dead code, docstring coverage, stale TODOs, broken doc links) are written once at box level and included by name; rules can be watched before they are allowed to spend money; the system notices when a human keeps refusing a rule's PRs; and rules are edited in the UI rather than by hand.
 
 **What changes.**
-- A box-level rule library at `invariants/*.yaml`. Each library rule has the 023 fields plus `params:` with typed defaults (thresholds, allowlists, file globs, day counts), a `cluster` tag (`universal`, `library`, `service`, `cli`, `data`, `infra`, `ml`, `monorepo`), a `setup:` for its toolchain, and a `default_actuator` naming a box-level agent template that projects can accept or override. Library rules are templated with `{{ params.* }}` in the same engine as 014.
-- A project's `invariants:` may contain `include:` entries — a library rule name plus `params` overrides and an optional `actuator` override — alongside inline rules. Includes expand at load time into ordinary 023 invariants; the schema validates that every required param is set and every param name exists. The repo ships the universal cluster and one preset per other cluster as starting points, with README guidance that a preset is a menu, not a mandate.
-- Per-rule `mode:` with values `off` (defined, not scanned), `observe` (scanned and reported, never dispatched), and `dispatch` (023 behaviour). Default `observe`. A rule moves to `dispatch` only by explicit operator action; the sensor ignores anything else. The scan asset always runs `observe`- and `dispatch`-mode rules so the drift history exists before spending begins.
-- PR outcome tracking. The scan asset refreshes the state of every actuator PR opened for the project (`gh pr view` on each recorded URL, using the project token) and records per invariant: `merged`, `closed_unmerged`, `open`, with ages. The run report (007/020) `pull_request.state` is updated in materialization metadata rather than being frozen at creation. A new governor `refusal_threshold` (default 3): when the last N actuator PRs for a rule were all closed unmerged by a human, the rule drops to `observe` mode and is surfaced with "rule refused" — the same treatment as quarantine (023), for the opposite signal: the observer may be right but the fixes are unwanted.
-- Rules page in the UI (022) per project: list of rules with cluster, mode, last drift (satisfied / count / ratchet value), open PRs, and merged / refused counts over the last 30 days; add a rule by picking from the library and filling params; edit params, mode, priority, actuator; clear a freeze, quarantine, or refusal; a "what would dispatch now" preview that runs the sensor's selection logic without requesting anything. Saving writes the project YAML and reloads Dagster as elsewhere.
+- A box-level rule library at `invariants/*.yaml`. Each library rule has the 024 fields plus `params:` with typed defaults (thresholds, allowlists, file globs, day counts), a `cluster` tag (`universal`, `library`, `service`, `cli`, `data`, `infra`, `ml`, `monorepo`), a `setup:` for its toolchain, and a `default_actuator` naming a box-level agent template that projects can accept or override. Library rules are templated with `{{ params.* }}` in the same engine as 015.
+- A project's `invariants:` may contain `include:` entries — a library rule name plus `params` overrides and an optional `actuator` override — alongside inline rules. Includes expand at load time into ordinary 024 invariants; the schema validates that every required param is set and every param name exists. The repo ships the universal cluster and one preset per other cluster as starting points, with README guidance that a preset is a menu, not a mandate.
+- Per-rule `mode:` with values `off` (defined, not scanned), `observe` (scanned and reported, never dispatched), and `dispatch` (024 behaviour). Default `observe`. A rule moves to `dispatch` only by explicit operator action; the sensor ignores anything else. The scan asset always runs `observe`- and `dispatch`-mode rules so the drift history exists before spending begins.
+- PR outcome tracking. The scan asset refreshes the state of every actuator PR opened for the project (`gh pr view` on each recorded URL, using the project token) and records per invariant: `merged`, `closed_unmerged`, `open`, with ages. The run report (007/021) `pull_request.state` is updated in materialization metadata rather than being frozen at creation. A new governor `refusal_threshold` (default 3): when the last N actuator PRs for a rule were all closed unmerged by a human, the rule drops to `observe` mode and is surfaced with "rule refused" — the same treatment as quarantine (024), for the opposite signal: the observer may be right but the fixes are unwanted.
+- Rules page in the UI (023) per project: list of rules with cluster, mode, last drift (satisfied / count / ratchet value), open PRs, and merged / refused counts over the last 30 days; add a rule by picking from the library and filling params; edit params, mode, priority, actuator; clear a freeze, quarantine, or refusal; a "what would dispatch now" preview that runs the sensor's selection logic without requesting anything. Saving writes the project YAML and reloads Dagster as elsewhere.
 - Cost attribution: LiteLLM spend and flat-rail run counts are tagged with `project` and `invariant` so the Rules page can show spend per rule, and `max_spend_per_rule_per_day` (default unset) can stop a runaway rule.
 - Schema migration, README "Rules" section, and a `scripts/lint-invariants.py` that runs every library rule's `observe` against a fixture repo in CI so the library can't rot.
 
@@ -447,7 +509,7 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 - A rule added in default `observe` mode shows drift in the Rules page for three scans and dispatches nothing; switching it to `dispatch` in the UI causes the next scan to dispatch.
 - Three consecutive actuator PRs for a rule closed unmerged on GitHub; the next scan records them as `closed_unmerged`, the rule drops to `observe`, and the Rules page shows "refused" with the three PR links.
 - A merged actuator PR shows `merged` in the next scan's metadata and in the Rules page counts.
-- The "what would dispatch now" preview lists exactly the rules the sensor would request, respecting mode, priority, and the 023 governors, and requests nothing.
+- The "what would dispatch now" preview lists exactly the rules the sensor would request, respecting mode, priority, and the 024 governors, and requests nothing.
 - `scripts/lint-invariants.py` fails CI when a library rule's observer errors against the fixture repo.
 - Spend per rule on the Rules page equals the sum of tagged LiteLLM spend plus flat-rail runs for that rule over the window.
 
@@ -457,18 +519,18 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ---
 
-## 025 — Provenance receipts
+## 026 — Provenance receipts
 
 **Intent.** Make the trust claim auditable from inside the repository. Every change agentbox lands leaves a receipt: which spec it served, which checks it passed and from whose copy, whether the judge was touched, how many attempts and which models, what it cost, who merged it, and where the full run record lives. A third party reading the repo can verify the process without trusting agentbox or its operator. This is the difference between "built carefully" and "here is the proof": provenance, not quality, is what is certified.
 
 **What changes.**
-- Per-run receipt. Every worktree run (019) that produces commits writes `receipt.json` into the run directory (011) alongside `report.json`, containing: `spec` (the brief/spec path or ticket reference from the agent YAML or handoff, null if none), `invariant` (023, if dispatched by reconciliation), `commits` (SHAs on the branch), `checks` (name, verdict, `ran_from: base_ref`, observer command, blocking), `touches_judge` (023), `attempts` (per attempt: model, harness, cost, verdict; 018), `context_snapshot` (hash of `context.json`, 011), `harness_image` (image digest), `agentbox_version`, and `run_id`. The receipt is signed with a box-level key (`/data/keys/receipt.ed25519`, generated at setup) so it can be checked against a published public key.
-- Receipt in the PR (020). The PR body gains a collapsed "Provenance" section rendering the receipt, and the receipt file is committed on the branch under `.agentbox/receipts/<run-id>.json` in a final commit made by the orchestrator, not the agent, after the agent's commits. The agent's worktree is read-only to `.agentbox/` (a `protected_paths` entry, 023).
-- Merge record. The scan asset's PR outcome refresh (024) records, for each merged PR, `merged_by` and `merged_at` from GitHub and appends them to the receipt as a `merge` block, writing the completed receipt to `/data/provenance/<project>/<run-id>.json`. A `merge_rationale` is read from the PR's merge commit message or the last review comment by the merger, if present; the project may set `require_merge_rationale: true`, in which case the scan marks a merge without one as `rationale: missing` in the ledger and the Rules page.
+- Per-run receipt. Every worktree run (020) that produces commits writes `receipt.json` into the run directory (012) alongside `report.json`, containing: `spec` (the brief/spec path or ticket reference from the agent YAML or handoff, null if none), `invariant` (024, if dispatched by reconciliation), `commits` (SHAs on the branch), `checks` (name, verdict, `ran_from: base_ref`, observer command, blocking), `touches_judge` (024), `attempts` (per attempt: model, harness, cost, verdict; 019), `context_snapshot` (hash of `context.json`, 012), `harness_image` (image digest), `agentbox_version`, and `run_id`. The receipt is signed with a box-level key (`$AGENTBOX_DATA/keys/receipt.ed25519`, generated at setup) so it can be checked against a published public key.
+- Receipt in the PR (021). The PR body gains a collapsed "Provenance" section rendering the receipt, and the receipt file is committed on the branch under `.agentbox/receipts/<run-id>.json` in a final commit made by the orchestrator, not the agent, after the agent's commits. The agent's worktree is read-only to `.agentbox/` (a `protected_paths` entry, 024).
+- Merge record. The scan asset's PR outcome refresh (025) records, for each merged PR, `merged_by` and `merged_at` from GitHub and appends them to the receipt as a `merge` block, writing the completed receipt to `$AGENTBOX_DATA/provenance/<project>/<run-id>.json`. A `merge_rationale` is read from the PR's merge commit message or the last review comment by the merger, if present; the project may set `require_merge_rationale: true`, in which case the scan marks a merge without one as `rationale: missing` in the ledger and the Rules page.
 - Repository ledger. A deterministic asset `<project>/provenance` (LLM-free, like `<project>/state`) regenerates `.agentbox/PROVENANCE.md` and `.agentbox/provenance.jsonl` on `base_ref` after each merge, opening its own orchestrator-authored PR when the files change (or pushing directly if the project sets `provenance_push: true` — the one place the orchestrator may push to base, limited to `.agentbox/` by a path-scoped check). The ledger lists every agentbox-authored commit with its receipt summary, plus a level assessment (below), and names commits on `base_ref` that are not agentbox-authored so the reader can see the human share of the history.
-- Levels, computed from the ledger and shown at its top and in the UI: **Level 1** — every agentbox commit is spec-linked and human-merged; **Level 2** — plus every agentbox commit passed at least one blocking deterministic check run from `base_ref`'s copy with `touches_judge: false`; **Level 3** — plus the project runs the universal rule cluster (024) in `dispatch` or `observe` mode, has a coverage ratchet, has no quarantined or refused rules older than 30 days, every merge carries a rationale, the codebase tour rules are green and the deep-review sample rate is above its floor (026), and the `design` rule cluster is active with the ADR gate on declared boundaries (027). Until 026 and 027 are merged, Level 3 is computed without their conditions and the ledger says so. The level is a statement about the repository's history, recomputed each time; a single unreceipted agentbox commit drops it and the ledger says which.
+- Levels, computed from the ledger and shown at its top and in the UI: **Level 1** — every agentbox commit is spec-linked and human-merged; **Level 2** — plus every agentbox commit passed at least one blocking deterministic check run from `base_ref`'s copy with `touches_judge: false`; **Level 3** — plus the project runs the universal rule cluster (025) in `dispatch` or `observe` mode, has a coverage ratchet, has no quarantined or refused rules older than 30 days, every merge carries a rationale, the codebase tour rules are green and the deep-review sample rate is above its floor (027), and the `design` rule cluster is active with the ADR gate on declared boundaries (028). Until 027 and 028 are merged, Level 3 is computed without their conditions and the ledger says so. The level is a statement about the repository's history, recomputed each time; a single unreceipted agentbox commit drops it and the ledger says which.
 - Verifier. `scripts/verify-provenance.py <repo-path> --pubkey <key>` runs anywhere with no agentbox install: checks receipt signatures, confirms each receipted commit exists on `base_ref`, confirms the receipt's commit list matches the PR's merged commits, and prints the level and any discrepancies. This is the artifact you hand to a skeptic.
-- UI (022): a Provenance card per project with the level, counts of receipted vs unreceipted agentbox commits, missing rationales, and a link to the ledger; the run viewer (011) shows the receipt next to the report.
+- UI (023): a Provenance card per project with the level, counts of receipted vs unreceipted agentbox commits, missing rationales, and a link to the ledger; the run viewer (012) shows the receipt next to the report.
 - Schema/README: `.agentbox/` documented as orchestrator-owned; README "Provenance" section stating the boundary — receipts certify process, not design quality.
 
 **What I'd check.**
@@ -481,20 +543,20 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 **Out of scope.** Certifying design quality or correctness beyond the checks. Third-party attestation services or transparency logs. Cross-repository provenance. Receipts for job-only agents with no commits.
 
-**Null action.** If committing receipts on the branch conflicts with a harness that force-pushes or rewrites the branch, keep receipts out of the branch and rely on the PR body plus `/data/provenance/`; the ledger then links to the PR rather than to an in-repo receipt, and the verifier checks the PR body via the GitHub API instead. Note the reduced offline verifiability in the plan.
+**Null action.** If committing receipts on the branch conflicts with a harness that force-pushes or rewrites the branch, keep receipts out of the branch and rely on the PR body plus `$AGENTBOX_DATA/provenance/`; the ledger then links to the PR rather than to an in-repo receipt, and the verifier checks the PR body via the GitHub API instead. Note the reduced offline verifiability in the plan.
 
 ---
 
-## 026 — Codebase tour and sampled deep review
+## 027 — Codebase tour and sampled deep review
 
 **Intent.** Make human understanding reconstructable and sampled, since it cannot be proved. Reconstructable: every project carries a maintained, ordered walkthrough of its own code that a person can follow to understand what is there and why, kept truthful by deterministic rules rather than good intentions. Sampled: the ledger records that randomly chosen agentbox commits received a full human read, so the claim "a human understands this" becomes "N% of changes were deep-reviewed, sampled at random" — a number a skeptic can check.
 
 **What changes.**
-- The tour is a maintained asset `<project>/tour`, produced by a doc-writer agent (the librarian split from the documentation guide: writer → critic → deterministic gate) and stored in the repo as `.agentbox/tour/*.tour` in the VS Code CodeTour JSON format, plus a rendered `TOUR.md`. Each stop names a file, a symbol or line range, an explanation of what it does and why it exists, and a link to the spec or ADR that motivated it. Tours are ordered: an entry tour for the whole codebase, then one per top-level module. The writer is fed the PR explanation sections (020) since the last tour update, so the tour grows with the code.
-- Tour rules, shipped in the rule library (024) as a `understanding` cluster and deterministic throughout: every source module has at least one stop; every stop's file and symbol resolve on `base_ref` (via `ctags`/tree-sitter symbol lookup); every stop links to a spec or ADR that exists; no stop is older than N merged changes to its file (default 20) without being revisited; any PR adding a public module adds or updates a stop, checked from the diff. Violations dispatch the doc-writer as actuator; the tour PR is orchestrator-labelled `tour` and never mixes with code changes.
-- Deep review. The project sets `deep_review: {per_week: N, seed: <string>}` (default 1). Each week the scan asset (023) deterministically samples N receipted commits merged in the prior period (seeded PRNG over receipt hashes, so the selection is reproducible and provably not chosen by hand) and opens a review issue per commit via `gh issue create` with the diff summary, the receipt, and the relevant tour stops. A human closes the issue with a written explanation of the change in their own words. The scan records per commit `deep_review: {reviewer, date, explanation_hash, sampled: true}` in the ledger (025); reviews of unsampled commits are also recorded with `sampled: false` and count separately.
-- Explain-back check (advisory only). When a deep review or a merge rationale (025) is recorded, a critic agent compares the human's explanation to the diff and flags contradictions or explanations that describe something the diff does not do. The result is stored beside the review as `explain_back: {consistent: bool, notes}`; it never blocks, never changes a level, and is shown on the Provenance card as a hint that a review may have been a rubber stamp.
-- Understanding metrics on the Provenance card (025) and in the ledger: tour coverage (modules with a stop / modules), tour freshness (stops within their revisit window), deep-review sample rate over 90 days, open deep-review issues and their ages, and explain-back inconsistency count. Level 3 (025) requires tour rules green and a sample rate at or above `deep_review.floor` (default 10%).
+- The tour is a maintained asset `<project>/tour`, produced by a doc-writer agent (the librarian split from the documentation guide: writer → critic → deterministic gate) and stored in the repo as `.agentbox/tour/*.tour` in the VS Code CodeTour JSON format, plus a rendered `TOUR.md`. Each stop names a file, a symbol or line range, an explanation of what it does and why it exists, and a link to the spec or ADR that motivated it. Tours are ordered: an entry tour for the whole codebase, then one per top-level module. The writer is fed the PR explanation sections (021) since the last tour update, so the tour grows with the code.
+- Tour rules, shipped in the rule library (025) as a `understanding` cluster and deterministic throughout: every source module has at least one stop; every stop's file and symbol resolve on `base_ref` (via `ctags`/tree-sitter symbol lookup); every stop links to a spec or ADR that exists; no stop is older than N merged changes to its file (default 20) without being revisited; any PR adding a public module adds or updates a stop, checked from the diff. Violations dispatch the doc-writer as actuator; the tour PR is orchestrator-labelled `tour` and never mixes with code changes.
+- Deep review. The project sets `deep_review: {per_week: N, seed: <string>}` (default 1). Each week the scan asset (024) deterministically samples N receipted commits merged in the prior period (seeded PRNG over receipt hashes, so the selection is reproducible and provably not chosen by hand) and opens a review issue per commit via `gh issue create` with the diff summary, the receipt, and the relevant tour stops. A human closes the issue with a written explanation of the change in their own words. The scan records per commit `deep_review: {reviewer, date, explanation_hash, sampled: true}` in the ledger (026); reviews of unsampled commits are also recorded with `sampled: false` and count separately.
+- Explain-back check (advisory only). When a deep review or a merge rationale (026) is recorded, a critic agent compares the human's explanation to the diff and flags contradictions or explanations that describe something the diff does not do. The result is stored beside the review as `explain_back: {consistent: bool, notes}`; it never blocks, never changes a level, and is shown on the Provenance card as a hint that a review may have been a rubber stamp.
+- Understanding metrics on the Provenance card (026) and in the ledger: tour coverage (modules with a stop / modules), tour freshness (stops within their revisit window), deep-review sample rate over 90 days, open deep-review issues and their ages, and explain-back inconsistency count. Level 3 (026) requires tour rules green and a sample rate at or above `deep_review.floor` (default 10%).
 - Schema, README ("Understanding" section stating the boundary: the tour makes understanding possible, sampling makes it measurable, neither proves it), and UI: a Tour view that renders the entry tour with links into the repo, and a Deep review card listing sampled commits and their status.
 
 **What I'd check.**
@@ -502,7 +564,7 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 - Rename a symbol referenced by a stop and merge: the next scan flags the stop; the doc-writer's fix PR touches only `.agentbox/tour/` and `TOUR.md`.
 - A code PR that adds a new public module without a tour stop opens as draft with the `understanding/new-module-stop` check failing in the body.
 - With `per_week: 2` and eight receipted commits merged last week, the scan opens exactly two review issues; re-running the scan with the same seed and inputs selects the same two.
-- Close a review issue with an explanation; the ledger records the review, the sample rate updates, and `verify-provenance.py` (025) reports it.
+- Close a review issue with an explanation; the ledger records the review, the sample rate updates, and `verify-provenance.py` (026) reports it.
 - Close a review issue with an explanation that describes the wrong function; `explain_back.consistent` is false on the Provenance card, the level is unaffected.
 - A project below the deep-review floor cannot reach Level 3, and the ledger names the shortfall.
 
@@ -512,22 +574,22 @@ Order: 007 Pipes run reports · 008 checks · 009 design system migration · 010
 
 ---
 
-## 027 — Design fitness rules, ADR gate, and non-degradation ratchets
+## 028 — Design fitness rules, ADR gate, and non-degradation ratchets
 
 **Intent.** Design quality cannot be certified, but three things about it can: that the structure the architect declared is the structure that exists, that only humans move architectural boundaries, and that design metrics do not get worse without a recorded human decision. This brief encodes design principles as executable fitness functions in the rule library, gates boundary changes on architecture decision records, and ratchets the measurable proxies. What remains unmeasurable goes to the constitution the agents are prompted with and to the code critic's recorded, advisory review.
 
 **What changes.**
-- A `design` cluster in the rule library (024), all deterministic: dependency direction and layering (`import-linter` for Python, `dependency-cruiser` for JS/TS, ArchUnit-style tooling per language) against a human-authored `architecture.yaml` in the repo declaring layers, allowed edges, and the public API surface; no circular imports; module, file, and function size ceilings; cyclomatic complexity ceiling; duplication threshold (`jscpd`); public API surface size; "no package imports another package's `internal`"; dependency count per package; maximum diff size per PR (default 400 changed lines, since design erodes through large unreviewed changes). Each has params and a `default_actuator` (usually a refactor agent scoped to the violation).
-- Architecture decision records. `docs/adr/` in the MADR format is human-authored and orchestrator-protected (`protected_paths`, 023): agents may not create or edit ADRs. The ADR gate is a rule: any PR whose diff touches a declared boundary — `architecture.yaml`, files matched by the project's `boundary_paths` (public API modules, schema definitions, the module map, CI config), or any change that alters the layering graph as computed by the layering tool — must reference an accepted ADR by id in its body or commit message, checked mechanically; without one the PR opens as draft, `touches_boundary: true` is recorded in the receipt (025), and the actuator is not re-dispatched for that violation until an ADR exists. Agents implement inside boundaries; only humans move them.
-- Ratchets. Complexity, coupling (afferent/efferent per package), duplication, API surface, dependency count, and churn concentration (share of changes in the top 5% of files) are recorded per scan (023's `value`) and may not regress on a branch unless the PR references an ADR that names the metric it is allowed to worsen. The rule library ships these as `design/ratchet-*` with `mode: observe` by default so a project accumulates baselines before enforcing.
-- Constitution in context. The project's `constitution.md` (Spec Kit) is mounted into every agent run and its hash recorded in the context snapshot (011) and the receipt (025), so the ledger can state which principles each change was made under. Changing the constitution is itself a boundary change and needs an ADR.
+- A `design` cluster in the rule library (025), all deterministic: dependency direction and layering (`import-linter` for Python, `dependency-cruiser` for JS/TS, ArchUnit-style tooling per language) against a human-authored `architecture.yaml` in the repo declaring layers, allowed edges, and the public API surface; no circular imports; module, file, and function size ceilings; cyclomatic complexity ceiling; duplication threshold (`jscpd`); public API surface size; "no package imports another package's `internal`"; dependency count per package; maximum diff size per PR (default 400 changed lines, since design erodes through large unreviewed changes). Each has params and a `default_actuator` (usually a refactor agent scoped to the violation).
+- Architecture decision records. `docs/adr/` in the MADR format is human-authored and orchestrator-protected (`protected_paths`, 024): agents may not create or edit ADRs. The ADR gate is a rule: any PR whose diff touches a declared boundary — `architecture.yaml`, files matched by the project's `boundary_paths` (public API modules, schema definitions, the module map, CI config), or any change that alters the layering graph as computed by the layering tool — must reference an accepted ADR by id in its body or commit message, checked mechanically; without one the PR opens as draft, `touches_boundary: true` is recorded in the receipt (026), and the actuator is not re-dispatched for that violation until an ADR exists. Agents implement inside boundaries; only humans move them.
+- Ratchets. Complexity, coupling (afferent/efferent per package), duplication, API surface, dependency count, and churn concentration (share of changes in the top 5% of files) are recorded per scan (024's `value`) and may not regress on a branch unless the PR references an ADR that names the metric it is allowed to worsen. The rule library ships these as `design/ratchet-*` with `mode: observe` by default so a project accumulates baselines before enforcing.
+- Constitution in context. The project's `constitution.md` (Spec Kit) is mounted into every agent run and its hash recorded in the context snapshot (012) and the receipt (026), so the ledger can state which principles each change was made under. Changing the constitution is itself a boundary change and needs an ADR.
 - Critic as evidence. The code-critic agent's design review of each PR (the existing critic role, prompted with the constitution and the diff) is stored in the run directory and summarized in the receipt as `design_review: {score, concerns}`; it is advisory, never a gate, and the Provenance card trends it so a slow decline is visible even when every ratchet is green.
-- Provenance (025) gains a design section in the ledger: fitness rules active and green, boundary changes and their ADRs, ratchet baselines and every permitted regression with its ADR, and critic trend. Level 3 requires the `design` cluster active with the ADR gate on and no unlinked boundary change in the ledger.
+- Provenance (026) gains a design section in the ledger: fitness rules active and green, boundary changes and their ADRs, ratchet baselines and every permitted regression with its ADR, and critic trend. Level 3 requires the `design` cluster active with the ADR gate on and no unlinked boundary change in the ledger.
 - Schema (`architecture.yaml`, `boundary_paths`, ADR directory config), README ("Design" section stating the boundary: fitness rules certify declared structure and non-degradation, not good design), and UI: an Architecture card showing the layering graph, boundary changes awaiting ADRs, and ratchet trends.
 
 **What I'd check.**
 - A repo with `architecture.yaml` declaring `api → service → data` and a branch where `data` imports `api`: the layering rule fails on the branch, the PR opens as draft naming the forbidden edge, and the refactor actuator's fix PR converges.
-- A PR that edits a public API module without an ADR reference opens as draft with `touches_boundary: true`; adding `ADR-0007` to the PR body and re-running the check lets it open as ready (or converged per 023); the receipt records the ADR id.
+- A PR that edits a public API module without an ADR reference opens as draft with `touches_boundary: true`; adding `ADR-0007` to the PR body and re-running the check lets it open as ready (or converged per 024); the receipt records the ADR id.
 - An agent PR that creates a file under `docs/adr/`: rejected as a protected path, `touches_judge: true`.
 - Ratchet: with a baseline complexity of 12.4, a branch at 12.9 fails; the same branch with a PR body referencing an ADR that names `complexity` passes and the ledger records the permitted regression; a branch at 12.1 passes and lowers the baseline.
 - A 900-line diff opens as draft on the diff-size rule; splitting it into three PRs under the cap passes.
