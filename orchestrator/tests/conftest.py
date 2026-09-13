@@ -88,9 +88,14 @@ class LaunchStub:
         #: Per-check outcomes for the check-container ``docker run``s (spec 008), in declared
         #: order: a list of dicts ``{"returncode": int, "stdout": str, "stderr": str}``. Missing
         #: entries (or missing keys) fall back to exit 0 / empty output, so a check passes by
-        #: default. ``check_calls`` records each check-container argv in launch order.
+        #: default. A ``{"timeout": True}`` entry makes that check's ``subprocess.run`` raise
+        #: ``TimeoutExpired`` (exercising the US4 kill + ``timed_out`` path). ``check_calls``
+        #: records each check-container argv in launch order; ``check_timeouts`` the ``timeout=``
+        #: passed for each; ``kill_calls`` every ``docker kill`` argv.
         self.check_outcomes: list[dict] = []
         self.check_calls: list[list[str]] = []
+        self.check_timeouts: list = []
+        self.kill_calls: list[list[str]] = []
 
     def popen(self, cmd, *args, **kwargs):
         # stand in for subprocess.Popen: record the launch, return a fake process
@@ -98,17 +103,25 @@ class LaunchStub:
         return LaunchStub._FakeProc(self, list(cmd))
 
     def __call__(self, cmd, *args, **kwargs):
-        # stand in for subprocess.run. Two callers reach it: the producer's timeout
-        # ``docker kill`` (``docker kill <name>``) and each check container (``docker run …``).
+        # stand in for subprocess.run. Callers: the producer's timeout ``docker kill``
+        # (``docker kill <name>``), each check container (``docker run …``), and a check's
+        # own timeout ``docker kill`` (spec 008 US4).
         self.calls.append(list(cmd))
         if list(cmd[:2]) == ["docker", "run"]:
             i = len(self.check_calls)
             self.check_calls.append(list(cmd))
+            self.check_timeouts.append(kwargs.get("timeout"))
             spec = self.check_outcomes[i] if i < len(self.check_outcomes) else {}
+            if spec.get("timeout"):
+                # the check outran its timeout_seconds: run_checks catches this, kills the
+                # container by name, and records the result as timed_out.
+                raise subprocess.TimeoutExpired(list(cmd), kwargs.get("timeout"))
             return subprocess.CompletedProcess(
                 cmd, spec.get("returncode", 0),
                 stdout=spec.get("stdout", ""), stderr=spec.get("stderr", ""),
             )
+        if list(cmd[:2]) == ["docker", "kill"]:
+            self.kill_calls.append(list(cmd))
         # a `docker kill` (or any other run) — succeed quietly.
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 

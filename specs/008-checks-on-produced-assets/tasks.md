@@ -118,11 +118,11 @@ Single project. Orchestrator code location at `orchestrator/`, agent container i
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T020 [US4] Add timeout tests to [orchestrator/tests/test_checks.py](../../orchestrator/tests/test_checks.py): a command exceeding its `timeout_seconds` ⇒ `passed=False` with `metadata.timed_out == True`, and the kill-by-name path is invoked (no surviving container) (FR-008/SC-004, quickstart §5)
+- [X] T020 [US4] Add timeout tests to [orchestrator/tests/test_checks.py](../../orchestrator/tests/test_checks.py): a command exceeding its `timeout_seconds` ⇒ `passed=False` with `metadata.timed_out == True`, and the kill-by-name path is invoked (no surviving container) (FR-008/SC-004, quickstart §5)
 
 ### Implementation for User Story 4
 
-- [ ] T021 [US4] Enforce each check's independent `timeout_seconds` (defaulting to 300 s when the check omits it — never unbounded) in `run_checks` in [orchestrator/factory.py](../../orchestrator/factory.py): on expiry `docker kill check-<agent>-<check>-<runid[:8]>`, mark the result failed with `metadata.timed_out=True`; every declared check still runs in order (FR-017 — no short-circuit)
+- [X] T021 [US4] Enforce each check's independent `timeout_seconds` (defaulting to 300 s when the check omits it — never unbounded) in `run_checks` in [orchestrator/factory.py](../../orchestrator/factory.py): on expiry `docker kill check-<agent>-<check>-<runid[:8]>`, mark the result failed with `metadata.timed_out=True`; every declared check still runs in order (FR-017 — no short-circuit)
 
 **Checkpoint**: A hung check never stalls the asset; every declared check still reports.
 

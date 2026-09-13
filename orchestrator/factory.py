@@ -545,34 +545,56 @@ def run_checks(cfg: dict, context: OpExecutionContext, checks: list, pipes_dir: 
     For each check: resolve its image (``check.image`` or the harness default, R6), launch one
     ``--rm`` check container (``_check_argv``), capture combined stdout+stderr, and record one
     ``AssetCheckResult`` — ``passed`` on exit 0, else failed — carrying the last 4 KB of output,
-    the exit code, and the check's ``blocking``/``image`` for legibility (contract §3). agentbox
-    reads only the exit code; it attaches no meaning to what the command does (Constitution II).
+    the exit code, ``timed_out``, and the check's ``blocking``/``image`` for legibility
+    (contract §3). Each check is bounded by its own ``timeout_seconds`` (default 300, never
+    unbounded): on expiry the container is ``docker kill``ed by name and the check fails with
+    ``timed_out=True``; every remaining check still runs (no short-circuit, FR-008/FR-017).
+    agentbox reads only the exit code; it attaches no meaning to what the command does
+    (Constitution II).
     """
     results = []
     for check in checks:
         name = check["name"]
         image = check.get("image") or HARNESS_IMAGE.get(cfg["harness"])
         argv = _check_argv(cfg, context, check, image, pipes_dir, ws)
+        # each check is bounded by its own timeout_seconds — default 300, never unbounded (FR-008).
+        timeout_seconds = int(check.get("timeout_seconds") or 300)
+        cname = f"check-{cfg['name']}-{name}-{context.run_id[:8]}"
         context.log.info(f"check {name}: {' '.join(argv[:8])} ...")
-        proc = subprocess.run(argv, capture_output=True, text=True)
-        exit_code = proc.returncode
-        combined = (proc.stdout or "") + (proc.stderr or "")
+        timed_out = False
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout_seconds)
+            exit_code = proc.returncode
+            combined = (proc.stdout or "") + (proc.stderr or "")
+        except subprocess.TimeoutExpired as e:
+            # kill the (still-running) container by name so none survives (--rm + kill),
+            # then fail the check; every remaining check still runs (no short-circuit, FR-017).
+            timed_out = True
+            exit_code = -1
+            subprocess.run(["docker", "kill", cname], capture_output=True, text=True)
+            partial = (e.stdout or b"") if isinstance(e.stdout, bytes) else (e.stdout or "")
+            if isinstance(partial, bytes):
+                partial = partial.decode("utf-8", "replace")
+            combined = f"{partial}\ncheck timed out after {timeout_seconds}s; killed {cname}"
+            context.log.error(f"check {name}: timeout after {timeout_seconds}s; killed {cname}")
         # keep only the tail: the end (usually the failure) within 4 KB (FR-007/SC-006).
         tail = combined.encode("utf-8", "replace")[-4096:].decode("utf-8", "replace")
         blocking = bool(check.get("blocking", True))
+        passed = (exit_code == 0) and not timed_out
         metadata = {
             "output": MetadataValue.text(tail),
             "exit_code": MetadataValue.int(exit_code),
+            "timed_out": timed_out,
             "blocking": blocking,
             "image": MetadataValue.text(str(image)),
         }
-        context.log.info(f"check {name}: exit={exit_code} passed={exit_code == 0}")
+        context.log.info(f"check {name}: exit={exit_code} timed_out={timed_out} passed={passed}")
         # A blocking check is an ERROR (gates downstream automation), a non-blocking
         # one a WARN (advisory only) — the asset materializes either way (FR-006, R3).
         results.append(
             AssetCheckResult(
                 check_name=name,
-                passed=(exit_code == 0),
+                passed=passed,
                 severity=AssetCheckSeverity.ERROR if blocking else AssetCheckSeverity.WARN,
                 metadata=metadata,
             )

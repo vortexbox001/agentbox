@@ -319,3 +319,57 @@ def test_check_argv_mounts_no_credentials(tmp_path, stub_launch):
     # the only bind mounts are the read-only observation mounts
     mounts = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
     assert all(m.endswith(":ro") for m in mounts)
+
+
+# --- US4: per-check timeout (contract check-execution §3, quickstart §5) ------
+# Each check enforces its own timeout_seconds (default 300, never unbounded). On
+# expiry the container is docker-killed by name and the result is failed with
+# metadata.timed_out=True; every declared check still runs in order (no
+# short-circuit). FR-008/FR-017/SC-004.
+
+def test_check_timeout_marks_failed_and_timed_out(tmp_path, stub_launch):
+    stub_launch.check_outcomes = [{"timeout": True}]
+    cfg = _api_cfg(tmp_path, [{"name": "slow", "command": "sleep 60", "timeout_seconds": 2}])
+    results = factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
+                                 str(tmp_path / "ws"))
+    assert results[0].passed is False
+    assert results[0].metadata["timed_out"].value is True
+
+
+def test_check_timeout_kills_container_by_name(tmp_path, stub_launch):
+    stub_launch.check_outcomes = [{"timeout": True}]
+    cfg = _api_cfg(tmp_path, [{"name": "slow", "command": "sleep 60", "timeout_seconds": 2}])
+    factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
+                       str(tmp_path / "ws"))
+    cname = f"check-verify-checks-slow-{_Ctx.run_id[:8]}"
+    # the kill-by-name path fired so no check container survives (`--rm` + kill)
+    assert ["docker", "kill", cname] in stub_launch.kill_calls
+
+
+def test_check_timeout_does_not_short_circuit(tmp_path, stub_launch):
+    stub_launch.check_outcomes = [{"timeout": True}, {"returncode": 0}]
+    checks = [{"name": "slow", "command": "sleep 60", "timeout_seconds": 1},
+              {"name": "after", "command": "true"}]
+    cfg = _api_cfg(tmp_path, checks)
+    results = factory.run_checks(cfg, _Ctx(), checks, str(tmp_path / "pipes"), str(tmp_path / "ws"))
+    # both checks run in declared order; the timed-out one fails, the next still runs
+    assert [r.check_name for r in results] == ["slow", "after"]
+    assert results[0].passed is False
+    assert results[0].metadata["timed_out"].value is True
+    assert results[1].passed is True
+    assert results[1].metadata["timed_out"].value is False
+
+
+def test_check_default_timeout_is_300_when_omitted(tmp_path, stub_launch):
+    # never unbounded: a check with no timeout_seconds is bounded at 300s.
+    cfg = _api_cfg(tmp_path, [{"name": "c", "command": "true"}])
+    factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
+                       str(tmp_path / "ws"))
+    assert stub_launch.check_timeouts[0] == 300
+
+
+def test_check_explicit_timeout_is_passed_through(tmp_path, stub_launch):
+    cfg = _api_cfg(tmp_path, [{"name": "c", "command": "true", "timeout_seconds": 5}])
+    factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
+                       str(tmp_path / "ws"))
+    assert stub_launch.check_timeouts[0] == 5
