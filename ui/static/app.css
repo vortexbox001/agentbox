@@ -376,6 +376,21 @@
 .ax-kv-remove { flex: none; padding: var(--ax-space-3) var(--ax-space-5); line-height: 1; }
 .ax-kv-add { align-self: flex-start; }
 
+/* ── Checks editor (produces.checks) ──────────────────── */
+.ax-checks { display: flex; flex-direction: column; gap: var(--ax-space-4); }
+.ax-check-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ax-space-4);
+  align-items: center;
+}
+.ax-check-name { flex: 1 1 10rem; }
+.ax-check-command { flex: 3 1 16rem; }
+.ax-check-image { flex: 2 1 12rem; }
+.ax-check-blocking { flex: none; }
+.ax-check-timeout { flex: none; width: 8rem; }
+.ax-check-network { flex: none; }
+
 /* ── Secret warning (inline + preview) ────────────────── */
 .ax-secret-warn {
   display: block;

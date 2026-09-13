@@ -74,3 +74,32 @@ def test_automation_uses_shared_dropdown_and_notice():
     auto = open(os.path.join(_STATIC, "automation.js"), encoding="utf-8").read()
     assert "enhanceSelects" in auto and "/static/dropdown.js" in auto
     assert "/static/shell.js" in auto
+
+
+# ── US5: checks require an asset — the Checks card lives inside the Asset card ──
+# (spec 008, FR-011, contract check-model §4). A job-only agent never renders it, and
+# the checks list is dropped on collect when the asset gate is off.
+
+def _fn_body(text, name):
+    """Slice a top-level `function <name>(` … up to the next top-level `function `."""
+    start = text.index(f"function {name}(")
+    nxt = text.find("\nfunction ", start + 1)
+    return text[start : nxt if nxt != -1 else len(text)]
+
+
+def test_checks_card_rendered_only_inside_asset_card():
+    text = open(os.path.join(_STATIC, "agent-form.js"), encoding="utf-8").read()
+    # The checks editor is built in buildAssetCard (so it is present only for an asset)…
+    assert "renderChecks()" in _fn_body(text, "buildAssetCard")
+    # …and never in the Job card, so a job-only agent has no Checks control (FR-011).
+    assert "renderChecks" not in _fn_body(text, "buildJobCard")
+
+
+def test_collect_drops_checks_when_asset_gate_off():
+    text = open(os.path.join(_STATIC, "agent-form.js"), encoding="utf-8").read()
+    body = _fn_body(text, "collect")
+    # checks are children of the produces block: when the Asset card is off they are dropped
+    # alongside asset/partition/asset_schedule (contract check-model §4).
+    assert "delete agent.checks" in body
+    # the drop sits in the gate-off branch, after the drops of the other produces children.
+    assert body.index("delete agent.checks") > body.index("delete agent.asset")

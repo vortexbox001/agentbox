@@ -142,6 +142,46 @@ shape). Two independent flags on the agent decide what Dagster builds; at least 
 
 Saving an agent that is neither is rejected: *"the agent must be an asset, a job, or both."*
 
+### Asset checks
+
+An asset agent can declare **checks** on its produced asset — pass/fail probes that run *after*
+the producer and surface as Dagster **asset checks** on the asset. Each check runs as its own
+`--rm` container, in declared order, with `/output` (and `/workspace`, when the harness has one)
+and the run's `/report.json` mounted **read-only** and no network, env, or credentials — a check
+observes the output, it can never change it. A check is **green** when its command exits 0, **red**
+otherwise, with the last 4 KB of its combined output attached as metadata. Every declared check
+runs even if the producer failed or an earlier check failed (no short-circuit).
+
+```yaml
+produces:
+  asset: repo-review/agentbox
+  checks:
+    - name: has-output                       # required, kebab-case, unique within the agent
+      command: test -n "$(ls /output)"       # required; run as sh -c. Exit 0 passes.
+    - name: advisory-lint
+      command: 'false'
+      blocking: false                        # advisory (WARN); does not gate automation
+    - name: slow-scan
+      command: ./scan.sh
+      timeout_seconds: 120                    # killed + failed after this long (default 300)
+      image: agentbox/agent-python:latest     # default: the agent's own harness image
+      network: agentnet                        # default: no network
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `name` | required | Kebab-case, unique within the agent. Names the asset check. |
+| `command` | required | Shell command line run as `sh -c`. Exit 0 passes; anything else fails. |
+| `image` | the agent's harness image | Docker image the check runs in. |
+| `blocking` | `true` | `true` gates downstream automation on failure (severity ERROR); `false` is advisory (WARN). |
+| `timeout_seconds` | `300` | Killed and failed after this many seconds (1 to 86400). |
+| `network` | none | Docker network for the check: `agentnet-isolated`, `agentnet`, or `bridge`. |
+
+A **blocking** check that fails marks the run failed while still recording the materialization, so
+downstream automation is gated but the asset still counts as materialized; a **non-blocking** check
+is advisory only. Checks require an asset — a `checks:` list without a `produces.asset` is rejected
+at load (and hidden in the UI for job-only agents).
+
 ## Automation
 
 *When* an agent runs lives **on the agent**, in its own `triggers:` block — two optional
@@ -247,6 +287,7 @@ This table is descriptive. The authoritative per-key wording, valid values, defa
 | `append_system_prompt` | none | *claude-code*, *pi*: extra text appended to the system prompt. *codex*: appended to the prompt message instead, since `codex exec` has no system-prompt flag. |
 | `produces.asset` | none | Asset key this agent materializes, e.g. `repo-review/agentbox`. Kebab segments joined by `/` for grouping. Declaring a `produces:` block makes the agent a Dagster **asset** (with a materialization history). Combine with `job: true` to also get a materializing `agent_<name>` job. |
 | `produces.partition` | `none` | Partition set for the asset: `none` (single) or `daily`. A tracking label only — it does not change the run or output. Default `none`. |
+| `produces.checks` | none | Optional list of pass/fail **asset checks** on the produced asset (asset kind only). Each check runs after the producer in a fresh, read-only container and surfaces as a Dagster asset check. See **Asset checks** below for the per-check fields. |
 | `job` | `false` | `true` makes the agent a launchable Dagster job `agent_<name>`. An agent must be an asset (`produces`), a job (`job: true`), or both. |
 | `triggers.asset_schedule` | none | Five-field cron (no `@`-macros) that materializes the asset on a schedule (an `on_cron` auto-condition). Applies only when the agent is an asset. |
 | `triggers.job_schedule` | none | Five-field cron (no `@`-macros) that launches `agent_<name>` on a schedule (`sched_<name>`). Applies only when the agent has a job. |

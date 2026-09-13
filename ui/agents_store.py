@@ -176,6 +176,8 @@ def read_agent(stem: str) -> dict:
         loaded["asset"] = block.get("asset", "")
         if "partition" in block:
             loaded["partition"] = block["partition"]
+        if "checks" in block:
+            loaded["checks"] = block["checks"]
 
     # Lift the nested `triggers:` block into flat asset_schedule/job_schedule managed fields the
     # same way `produces` is lifted — never routed to "Unmanaged" (contract agent-model §2). An
@@ -307,12 +309,33 @@ def _field_lines(agent: dict, f, harness: str) -> list[str]:
     return [f"{f.id}: {_emit_scalar(raw)}  # {help_text}"]
 
 
+# The order check fields are emitted in each `- ` mapping under `produces.checks` (contract §5).
+_CHECK_FIELD_ORDER = ["name", "command", "image", "blocking", "timeout_seconds", "network"]
+
+
+def _check_item_lines(check: dict) -> list[str]:
+    """One check emitted as a `- ` sequence item under `produces.checks:`.
+
+    Only the fields the check actually sets are written, in a canonical order; the first
+    field carries the `- ` list marker (4-space indent), the rest align under it (6 spaces).
+    """
+    lines: list[str] = []
+    for fid in _CHECK_FIELD_ORDER:
+        if fid not in check:
+            continue
+        prefix = "    - " if not lines else "      "
+        lines.append(f"{prefix}{fid}: {_emit_scalar(check[fid])}")
+    return lines
+
+
 def _produces_block_lines(agent: dict, harness: str) -> list[str]:
     """The `produces:` block lines: a real nested block when `asset` is set, else the
     whole block commented-out (opt-in, matching the templates — contract §3/FR-016).
 
     ``asset`` and ``partition`` are schema fields but children of a `produces` block, so
-    they are emitted here as a nested mapping rather than two flat top-level keys.
+    they are emitted here as a nested mapping rather than two flat top-level keys. When the
+    asset carries ``checks`` (spec 008), they follow as a nested sequence-of-mappings under a
+    ``checks:`` header comment; with no checks nothing is emitted for them (contract §5).
     """
     asset_help = schema.field_help("asset", harness)
     part_help = schema.field_help("partition", harness)
@@ -324,11 +347,18 @@ def _produces_block_lines(agent: dict, harness: str) -> list[str]:
         part_val = agent.get("partition")
         if part_val is None or part_val == "":
             part_val = part_default
-        return [
+        lines = [
             f"produces:  # {header}",
             f"  asset: {_emit_scalar(asset_val)}  # {asset_help}",
             f"  partition: {_emit_scalar(part_val)}  # {part_help}",
         ]
+        checks = agent.get("checks")
+        if isinstance(checks, list) and checks:
+            lines.append(f"  checks:  # {schema.CHECKS_BLOCK_HELP}")
+            for check in checks:
+                if isinstance(check, dict):
+                    lines.extend(_check_item_lines(check))
+        return lines
     return [
         f"#produces:  # {header}",
         f"#  asset:  # {asset_help}",
@@ -414,6 +444,8 @@ def emit_yaml(agent: dict) -> str:
         agent.setdefault("asset", block.get("asset", ""))
         if "partition" in block:
             agent.setdefault("partition", block["partition"])
+        if "checks" in block:
+            agent.setdefault("checks", block["checks"])
     triggers = agent.get("triggers", _MISSING)
     if triggers is not _MISSING:
         block = agent.pop("triggers") if isinstance(triggers, dict) else {}

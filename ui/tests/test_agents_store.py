@@ -100,6 +100,55 @@ def test_produces_block_round_trips_byte_stable(settings):
     assert st.emit_yaml(agent) == once
 
 
+# ── produces.checks list (spec 008, contract check-model §5) ──
+_CHECKS = [
+    {"name": "has-output", "command": "test -n \"$(ls /output)\""},
+    {"name": "advisory-fail", "command": "false", "blocking": False},
+    {"name": "slow", "command": "sleep 60", "timeout_seconds": 2, "network": "agentnet",
+     "image": "agentbox/agent-python:latest"},
+]
+
+
+def test_checks_emitted_as_nested_sequence_under_produces(settings):
+    cfg = dict(GOLDEN["api"], asset="verify/checks", checks=_CHECKS)
+    text = st.emit_yaml(cfg)
+    loaded = yaml.safe_load(text)
+    # the nested checks list round-trips to exactly the input mappings
+    assert loaded["produces"]["asset"] == "verify/checks"
+    assert loaded["produces"]["checks"] == _CHECKS
+    assert "  checks:  #" in text          # header comment on the list
+    assert "    - name: has-output" in text
+
+
+def test_checks_round_trip_byte_stable(settings):
+    cfg = dict(GOLDEN["api"], name="verify-checks", asset="verify/checks", checks=_CHECKS)
+    once = st.emit_yaml(cfg)
+    st.write_agent("verify-checks", cfg)
+    agent = st.read_agent("verify-checks")["agent"]
+    assert agent["checks"] == _CHECKS            # lifted into the flat model, unchanged
+    assert "produces" not in (agent.get("unmanaged") or {})
+    assert "checks" not in (agent.get("unmanaged") or {})
+    assert st.emit_yaml(agent) == once           # re-emit is byte-identical
+
+
+def test_checks_not_emitted_without_asset(settings):
+    # checks are children of produces; with no asset the produces block is commented and
+    # carries no checks line (contract §5).
+    cfg = dict(GOLDEN["api"]); cfg.pop("asset", None); cfg["checks"] = _CHECKS
+    text = st.emit_yaml(cfg)
+    assert "checks:" not in text
+
+
+def test_checks_validate_emit_read_are_consistent(settings):
+    # The round-trip a save performs: validate → emit → read back → validate again.
+    cfg = dict(GOLDEN["api"], asset="verify/checks", checks=_CHECKS)
+    assert schema.validate(cfg, prompt_exists=lambda _p: True) == {}
+    st.write_agent("verify-checks", cfg)
+    agent = st.read_agent("verify-checks")["agent"]
+    agent2 = dict(agent, harness="api")
+    assert schema.validate(agent2, prompt_exists=lambda _p: True) == {}
+
+
 def test_asset_less_produces_read_as_empty_declaration(settings):
     # A hand-written asset-less produces: surfaces as a present-but-empty asset so the
     # form/validate can flag it, and is not dropped into unmanaged.

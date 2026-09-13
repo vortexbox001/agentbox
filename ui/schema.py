@@ -21,7 +21,7 @@ import config
 
 # Current schema version, stamped into every emitted file. Bump when a migration
 # is added below. Files without the stamp are read as version 0.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def migrate_1_to_2(data: dict) -> dict:
@@ -54,11 +54,18 @@ def migrate_3_to_4(data: dict) -> dict:
     return data
 
 
+def migrate_4_to_5(data: dict) -> dict:
+    """Schema 4 -> 5: `produces.checks` was added (spec 008). Checks are additive — a
+    schema-4 file simply has none — so this is the identity function. Existing files load
+    with zero migration noise and re-stamp to 5 only when next saved from the UI."""
+    return data
+
+
 # Ordered, forward-only migrations. Each pair is (target_version, fn) where fn
 # transforms a definition dict from target_version - 1 to target_version. Pure
 # dict -> dict, applied on read (never mutating the file until the user saves).
 MIGRATIONS: list[tuple[int, Callable[[dict], dict]]] = [
-    (2, migrate_1_to_2), (3, migrate_2_to_3), (4, migrate_3_to_4),
+    (2, migrate_1_to_2), (3, migrate_2_to_3), (4, migrate_3_to_4), (5, migrate_4_to_5),
 ]
 
 
@@ -108,6 +115,26 @@ ASSET_KEY_RE = r"^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$"
 
 # Comment on the `produces:` block header line in emitted YAML (real or commented-out).
 PRODUCES_BLOCK_HELP = "Declare an output asset so this agent is a tracked Dagster asset; leave commented to stay a plain job."
+
+# Networks a check container may opt into; omitted ⇒ no network (contract check-model §2.6).
+CHECK_NETWORKS = ["agentnet-isolated", "agentnet", "bridge"]
+
+# Comment on the `produces.checks:` list header line, and the per-field comments on each check
+# mapping, emitted verbatim by the YAML writer (contract check-model §5/§7 — FR-012). These are
+# the authoritative wording for the checks list; the form and README track them.
+CHECKS_BLOCK_HELP = (
+    "Optional pass/fail checks on the produced asset (needs an asset). Each runs after the "
+    "producer in a fresh, read-only container and surfaces as a Dagster asset check — green on "
+    "exit 0, red otherwise, with the last 4 KB of its output attached."
+)
+CHECK_FIELD_HELP: dict[str, str] = {
+    "name": "Required, unique within the agent; kebab-case. Names the asset check.",
+    "command": "Required; a shell command line run as sh -c. Exit 0 passes; anything else fails.",
+    "image": "Docker image the check runs in. Default: the agent's harness image.",
+    "blocking": "true gates downstream automation on failure (ERROR); false is advisory (WARN). Default true.",
+    "timeout_seconds": "Killed and failed after this many seconds. 1 to 86400; default 300.",
+    "network": "Docker network for the check: agentnet-isolated, agentnet, or bridge. Default: no network.",
+}
 
 # Comment on the `triggers:` block header line in emitted YAML (real or commented-out).
 TRIGGERS_BLOCK_HELP = "When this agent runs on its own. Optional per-kind cron(s); leave commented for manual/on-demand only."
@@ -173,6 +200,14 @@ FIELDS: list[SchemaField] = [
         "Partition set for the asset: none (single) or daily. A tracking label only — it does not "
         "change the run or output. Default none.",
         _ALL, default="none", choices=["none", "daily"], block="produces",
+    ),
+    # A list of pass/fail check objects on the produced asset (spec 008). A new list-of-objects
+    # field type ("checks"): its per-item shape and validation live in `_validate_checks`, and it
+    # is emitted as a nested sequence-of-mappings under `produces:` by the YAML writer.
+    SchemaField(
+        "checks", "produces", "Checks", "checks",
+        CHECKS_BLOCK_HELP,
+        _ALL, block="produces",
     ),
     # Triggers (Runs) — the nested `triggers` block; each cron applies only to its kind.
     SchemaField(
@@ -416,7 +451,7 @@ def _is_unset(f: SchemaField, value) -> bool:
     """
     if value is None:
         return True
-    if f.type == "list" and value == []:
+    if f.type in ("list", "checks") and value == []:
         return True
     if f.type == "map" and value == {}:
         return True
@@ -481,6 +516,61 @@ def _validate_model(agent: dict, harness: str, errors: dict) -> None:
         pass  # any non-empty string is accepted (codex)
     elif custom == "none":
         errors["model"] = f"invalid model for the {harness} harness: must be one of {', '.join(choices)}"
+
+
+def _validate_checks(agent: dict, is_asset: bool, errors: dict) -> None:
+    """Validate the `produces.checks` list (contract check-model §2/§3, FR-010).
+
+    A single ``checks`` error message is set on the first offending item so the form can
+    surface it; the orchestrator's ``validate_checks`` is the structural backstop at load.
+    Checks require a valid asset, each needs a kebab ``name`` (unique) and a non-empty
+    ``command``, and the optional fields must be well-typed / in range.
+    """
+    if "checks" in errors:
+        return
+    checks = agent.get("checks")
+    if checks is None or checks == []:
+        return
+    if not isinstance(checks, list):
+        errors["checks"] = "checks must be a list of check objects"
+        return
+    if not is_asset:
+        errors["checks"] = "checks require an asset — declare an asset key above"
+        return
+    seen: set[str] = set()
+    for i, c in enumerate(checks):
+        if not isinstance(c, dict):
+            errors["checks"] = f"check #{i + 1} must be a mapping with a name and a command"
+            return
+        name = c.get("name")
+        if not name or not isinstance(name, str):
+            errors["checks"] = f"check #{i + 1} is missing a name"
+            return
+        if not _NAME_RE.match(name):
+            errors["checks"] = f'check "{name}": name must be kebab-case (lowercase letters and digits, single hyphens)'
+            return
+        if name in seen:
+            errors["checks"] = f'duplicate check name "{name}" — check names must be unique within the agent'
+            return
+        seen.add(name)
+        command = c.get("command")
+        if not command or not isinstance(command, str) or not command.strip():
+            errors["checks"] = f'check "{name}" is missing a command'
+            return
+        if "image" in c and not (isinstance(c["image"], str) and c["image"].strip()):
+            errors["checks"] = f'check "{name}": image must be a non-empty string'
+            return
+        if "blocking" in c and not isinstance(c["blocking"], bool):
+            errors["checks"] = f'check "{name}": blocking must be true or false'
+            return
+        if "timeout_seconds" in c:
+            ts = c["timeout_seconds"]
+            if not isinstance(ts, int) or isinstance(ts, bool) or ts < 1 or ts > 86400:
+                errors["checks"] = f'check "{name}": timeout_seconds must be a whole number between 1 and 86400'
+                return
+        if "network" in c and c["network"] not in CHECK_NETWORKS:
+            errors["checks"] = f'check "{name}": network must be one of {", ".join(CHECK_NETWORKS)}'
+            return
 
 
 def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, str]:
@@ -580,6 +670,9 @@ def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, 
     is_job = agent.get("job") is True
     if not is_asset and not is_job and "job" not in errors:
         errors["job"] = "the agent must be an asset, a job, or both."
+
+    # produces.checks — a list of pass/fail check objects (contract check-model §2/§3, FR-010).
+    _validate_checks(agent, is_asset, errors)
 
     # Trigger crons: five-field shape, and each applies only to its kind (contract §3 rules 3/4).
     for sid, kind_on, kind_msg in (

@@ -37,8 +37,8 @@ import glob, os, logging, yaml
 from dagster import Definitions
 from factory import (
     build_job, build_schedule, build_asset, build_materializing_job,
-    build_asset_automation_sensor, validate_asset_key, partition_on_cron_supported,
-    RejectAgent,
+    build_asset_automation_sensor, validate_asset_key, validate_checks,
+    partition_on_cron_supported, RejectAgent,
 )
 
 log = logging.getLogger("agentbox.definitions")
@@ -87,6 +87,9 @@ def discover(agents_glob: str = AGENTS_GLOB) -> dict:
         file = "agents/" + os.path.basename(path)
         asset_schedule, job_schedule = _triggers(cfg)
         try:
+            # produces.checks are rejected here — without a valid asset, or malformed — before
+            # any nature routing, so one bad checks file is skipped by name (FR-010, contract §6).
+            validate_checks(cfg, file)
             is_asset = "produces" in cfg
             is_job = cfg.get("job") is True
             if not is_asset and not is_job:
