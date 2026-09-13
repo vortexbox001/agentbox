@@ -590,10 +590,38 @@ def run_checks(cfg: dict, context: OpExecutionContext, checks: list, pipes_dir: 
     agentbox reads only the exit code; it attaches no meaning to what the command does
     (Constitution II).
     """
+    # the partition key labels each check result on a partitioned materialize (FR-014, R10);
+    # None for an unpartitioned asset, in which case no `partition` metadata key is set.
+    partition = context.partition_key if getattr(context, "has_partition_key", False) else None
     results = []
     for check in checks:
         name = check["name"]
+        blocking = bool(check.get("blocking", True))
+        severity = AssetCheckSeverity.ERROR if blocking else AssetCheckSeverity.WARN
         image = check.get("image") or HARNESS_IMAGE.get(cfg["harness"])
+        if not image:
+            # the check's image could not be resolved (unknown harness, no explicit image) —
+            # report THIS check failed with the resolution error and move on; a bad image never
+            # aborts the materialization or the remaining checks (FR-015, contract §3).
+            err = (
+                f'could not resolve a check image: check "{name}" set no image and harness '
+                f'"{cfg.get("harness")}" has no default image'
+            )
+            context.log.error(f"check {name}: {err}")
+            metadata = {
+                "output": MetadataValue.text(err),
+                "exit_code": MetadataValue.text(NULL_NUMERIC_PLACEHOLDER),
+                "timed_out": False,
+                "blocking": blocking,
+                "image": MetadataValue.text(str(check.get("image") or "")),
+            }
+            if partition is not None:
+                metadata["partition"] = MetadataValue.text(partition)
+            results.append(
+                AssetCheckResult(check_name=name, passed=False, severity=severity,
+                                 metadata=metadata)
+            )
+            continue
         argv = _check_argv(cfg, context, check, image, pipes_dir, ws)
         # each check is bounded by its own timeout_seconds — default 300, never unbounded (FR-008).
         timeout_seconds = int(check.get("timeout_seconds") or 300)
@@ -617,7 +645,6 @@ def run_checks(cfg: dict, context: OpExecutionContext, checks: list, pipes_dir: 
             context.log.error(f"check {name}: timeout after {timeout_seconds}s; killed {cname}")
         # keep only the tail: the end (usually the failure) within 4 KB (FR-007/SC-006).
         tail = combined.encode("utf-8", "replace")[-4096:].decode("utf-8", "replace")
-        blocking = bool(check.get("blocking", True))
         passed = (exit_code == 0) and not timed_out
         metadata = {
             "output": MetadataValue.text(tail),
@@ -626,6 +653,9 @@ def run_checks(cfg: dict, context: OpExecutionContext, checks: list, pipes_dir: 
             "blocking": blocking,
             "image": MetadataValue.text(str(image)),
         }
+        # label the check with the producing run's partition when partitioned (FR-014, R10).
+        if partition is not None:
+            metadata["partition"] = MetadataValue.text(partition)
         context.log.info(f"check {name}: exit={exit_code} timed_out={timed_out} passed={passed}")
         # A blocking check is an ERROR (gates downstream automation), a non-blocking
         # one a WARN (advisory only) — the asset materializes either way (FR-006, R3).
@@ -633,7 +663,7 @@ def run_checks(cfg: dict, context: OpExecutionContext, checks: list, pipes_dir: 
             AssetCheckResult(
                 check_name=name,
                 passed=passed,
-                severity=AssetCheckSeverity.ERROR if blocking else AssetCheckSeverity.WARN,
+                severity=severity,
                 metadata=metadata,
             )
         )
@@ -860,9 +890,22 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
                         asset_key=key, metadata=pr.metadata, check_results=results
                     )
                     return
-                # Producer failed/timed out: the full failed-producer emission path (yield each
-                # check result, log an AssetObservation, keep the partition red) is added in T026;
-                # for now fail the run so no materialization is recorded on a bad producer.
+                # Producer FAILED / TIMEOUT (contract §4, edge case): the checks already ran, so
+                # yield every check verdict, then record the failed run as an OBSERVATION rather
+                # than a materialization — an AssetObservation attaches the spec-007 report WITHOUT
+                # greening the partition, so the partition stays red WITH its report (spec 007,
+                # dagster-materialization-greens-partition). log_event / an explicit yield both emit
+                # immediately, so they survive the raise below (asserted against the run's event log,
+                # not all_events — quickstart §0 test lens).
+                for r in results:
+                    yield r
+                context.log_event(
+                    AssetObservation(
+                        asset_key=key,
+                        partition=context.partition_key if context.has_partition_key else None,
+                        metadata=pr.metadata,
+                    )
+                )
                 if pr.stderr:
                     context.log.error(pr.stderr[-4000:])
                 raise Exception(

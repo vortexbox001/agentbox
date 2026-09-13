@@ -37,6 +37,13 @@ job: true                       # this agent has a launchable/schedulable job ag
 #produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)
 #  asset: repo-review/agentbox   # asset key: kebab segments joined by / for grouping
 #  partition: none               # none | daily — daily exposes a per-day partition (a tracking label only)
+#  checks:                       # optional pass/fail asset checks on this asset (asset kind only)
+#    - name: has-output          # required, kebab-case, unique; names the Dagster asset check
+#      command: test -n "$(ls /output)"   # required; run as sh -c in a read-only container — exit 0 passes (last 4 KB of output attached)
+#      blocking: true            # true gates downstream automation on failure (ERROR); false is advisory (WARN). Default true
+#      timeout_seconds: 300      # killed and failed after this long (1..86400; default 300)
+#    # image: agentbox/agent-python:latest   # optional; default is the agent's harness image
+#    # network: agentnet         # optional; default is no network (agentnet-isolated | agentnet | bridge)
 
 # --- Container resources ---
 network: bridge                 # needs internet to reach OpenAI directly

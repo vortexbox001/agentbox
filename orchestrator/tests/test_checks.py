@@ -8,7 +8,7 @@ verdict from the exit code, and the captured-output / exit-code metadata.
 import os
 
 import pytest
-from dagster import materialize
+from dagster import DagsterInstance, materialize
 
 import factory
 
@@ -373,3 +373,83 @@ def test_check_explicit_timeout_is_passed_through(tmp_path, stub_launch):
     factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
                        str(tmp_path / "ws"))
     assert stub_launch.check_timeouts[0] == 5
+
+
+# --- Polish: unresolvable check image (T028, FR-015, contract §3) -------------
+# A check whose image cannot be resolved (no explicit image and the harness has no
+# default) is reported failed with the resolution error in its metadata; it never
+# launches a container and never aborts the remaining checks or the materialization.
+
+def test_check_unresolvable_image_fails_and_continues(tmp_path, stub_launch):
+    checks = [
+        {"name": "noimg", "command": "true"},                                   # unresolvable
+        {"name": "after", "command": "true", "image": "agentbox/agent-python:latest"},
+    ]
+    cfg = _api_cfg(tmp_path, checks, harness="mystery")  # no HARNESS_IMAGE entry
+    stub_launch.check_outcomes = [{"returncode": 0}]     # only the resolvable check launches
+    results = factory.run_checks(cfg, _Ctx(), checks, str(tmp_path / "pipes"), str(tmp_path / "ws"))
+    # both checks produce a result, in declared order; the bad image did not abort the rest
+    assert [r.check_name for r in results] == ["noimg", "after"]
+    assert results[0].passed is False
+    assert "resolve" in results[0].metadata["output"].value
+    assert results[1].passed is True
+    # the unresolvable check launched no container; only the second one did
+    assert len(stub_launch.check_calls) == 1
+
+
+def test_unresolvable_image_result_keeps_blocking_severity(tmp_path, stub_launch):
+    # a non-blocking unresolvable check stays advisory (WARN), like any other failure
+    cfg = _api_cfg(tmp_path, [{"name": "noimg", "command": "true", "blocking": False}],
+                   harness="mystery")
+    results = factory.run_checks(cfg, _Ctx(), cfg["produces"]["checks"], str(tmp_path / "pipes"),
+                                 str(tmp_path / "ws"))
+    assert results[0].passed is False
+    assert results[0].severity == factory.AssetCheckSeverity.WARN
+
+
+# --- Polish: failed-producer path (T026/T027, contract §4, quickstart §0) -----
+# When the producer is non-`ok`, the checks still run, every verdict is recorded as an
+# ASSET_CHECK_EVALUATION, and the run is recorded as an ASSET_OBSERVATION (red, report
+# attached) — NOT a materialization. Events emitted right before the raise are absent from
+# result.all_events, so assert against the run's event-log storage (quickstart §0 test lens).
+
+def test_failed_producer_records_observation_not_materialization(tmp_path, stub_launch, monkeypatch):
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    os.makedirs(str(tmp_path / "out"), exist_ok=True)
+    stub_launch.report = {**stub_launch.report, "status": "failed", "error": "boom"}
+    stub_launch.check_outcomes = [{"returncode": 0}, {"returncode": 1}]
+    cfg = _api_cfg(tmp_path, [{"name": "has-output", "command": "true"},
+                              {"name": "advisory", "command": "false", "blocking": False}])
+    instance = DagsterInstance.ephemeral()
+    result = materialize([factory.build_asset(cfg)], instance=instance, raise_on_error=False)
+    assert not result.success
+    logs = instance.event_log_storage.get_logs_for_run(result.run_id)
+    types = [e.dagster_event.event_type_value for e in logs if e.dagster_event]
+    # no materialization on a failed producer, exactly one observation carrying the report,
+    # and every check still evaluated
+    assert "ASSET_MATERIALIZATION" not in types
+    assert types.count("ASSET_OBSERVATION") == 1
+    assert types.count("ASSET_CHECK_EVALUATION") == 2
+
+
+# --- Polish: partition key on check metadata (T029, FR-014, R10) --------------
+
+def test_check_records_partition_key_on_partitioned_materialize(tmp_path, stub_launch, monkeypatch):
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    os.makedirs(str(tmp_path / "out"), exist_ok=True)
+    cfg = _api_cfg(tmp_path, [{"name": "c", "command": "true"}])
+    cfg["produces"]["partition"] = "daily"
+    result = materialize([factory.build_asset(cfg)], partition_key="2026-09-10")
+    assert result.success
+    evals = result.get_asset_check_evaluations()
+    assert evals[0].metadata["partition"].value == "2026-09-10"
+
+
+def test_check_metadata_omits_partition_when_unpartitioned(tmp_path, stub_launch, monkeypatch):
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    os.makedirs(str(tmp_path / "out"), exist_ok=True)
+    cfg = _api_cfg(tmp_path, [{"name": "c", "command": "true"}])
+    result = materialize([factory.build_asset(cfg)])
+    assert result.success
+    evals = result.get_asset_check_evaluations()
+    assert "partition" not in evals[0].metadata
