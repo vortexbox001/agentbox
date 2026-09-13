@@ -91,11 +91,14 @@ function getValue(fid) {
 
 function isEmptyValue(f, v) {
   if (v === null || v === undefined) return true;
-  if (f.type === "list") return !Array.isArray(v) || v.length === 0;
+  if (f.type === "list" || f.type === "checks") return !Array.isArray(v) || v.length === 0;
   if (f.type === "map") return !v || Object.keys(v).length === 0;
   if (typeof v === "string" && v === "") return true;
   return false;
 }
+
+// The three networks a check may opt into (mirrors schema.CHECK_NETWORKS); blank ⇒ no network.
+const CHECK_NETWORKS = ["agentnet-isolated", "agentnet", "bridge"];
 
 function coerce(f, v) {
   if (f.type === "int") { const n = parseInt(v, 10); return Number.isNaN(n) ? v : n; }
@@ -129,6 +132,7 @@ function collect() {
     delete agent.asset;
     delete agent.partition;
     delete agent.asset_schedule;
+    delete agent.checks;   // checks are children of the asset; drop them with the produces block
   }
   if (agent.job !== true) delete agent.job_schedule;
   // Carry the file's unmanaged keys through edit saves and the preview untouched.
@@ -724,6 +728,108 @@ function renderMap(id, f) {
   return box;
 }
 
+// ── Checks editor (spec 008) ────────────────────────────
+// A repeatable-object-rows control (modeled on renderMap) editing produces.checks: a list of
+// {name, command, image?, blocking?, timeout_seconds?, network?}. It writes clean objects into
+// values.checks — only fields the user actually set, blocking recorded only when unticked (default
+// is true) — so a UI-authored check matches a hand-written one. Rendered inside the Asset card
+// (buildAssetCard), so a job-only agent never sees it (FR-011).
+function renderChecks() {
+  const box = document.createElement("div");
+  box.className = "ax-checks";
+  const arr = Array.isArray(getValue("checks")) ? getValue("checks").map((c) => ({ ...c })) : [];
+
+  const sync = () => {
+    const out = [];
+    for (const c of arr) {
+      const name = (c.name || "").trim();
+      const command = (c.command || "").trim();
+      if (!name && !command) continue;   // drop a wholly-blank row
+      const obj = {};
+      if (name) obj.name = name;
+      if (command) obj.command = command;
+      if (c.image && String(c.image).trim()) obj.image = String(c.image).trim();
+      if (c.blocking === false) obj.blocking = false;   // default true; record only a false
+      if (c.timeout_seconds !== "" && c.timeout_seconds !== null && c.timeout_seconds !== undefined) {
+        const n = parseInt(c.timeout_seconds, 10);
+        if (!Number.isNaN(n)) obj.timeout_seconds = n;
+      }
+      if (c.network) obj.network = c.network;
+      out.push(obj);
+    }
+    setControlValue("checks", out);
+  };
+
+  const render = () => {
+    box.replaceChildren();
+    arr.forEach((c, i) => {
+      const row = document.createElement("div");
+      row.className = "ax-check-row";
+
+      const name = document.createElement("input");
+      name.type = "text"; name.className = "ax-input ax-check-name";
+      name.placeholder = "name (kebab)"; name.value = c.name || "";
+      name.addEventListener("input", () => { c.name = name.value; sync(); });
+
+      const cmd = document.createElement("input");
+      cmd.type = "text"; cmd.className = "ax-input ax-check-command";
+      cmd.placeholder = "command — run as sh -c"; cmd.value = c.command || "";
+      cmd.addEventListener("input", () => { c.command = cmd.value; sync(); });
+
+      const image = document.createElement("input");
+      image.type = "text"; image.className = "ax-input ax-check-image";
+      image.placeholder = "image (blank = harness image)"; image.value = c.image || "";
+      image.addEventListener("input", () => { c.image = image.value; sync(); });
+
+      const blockingLabel = document.createElement("label");
+      blockingLabel.className = "ax-toggle ax-check-blocking";
+      const blocking = document.createElement("input");
+      blocking.type = "checkbox"; blocking.checked = c.blocking !== false;
+      const track = document.createElement("span");
+      track.className = "ax-toggle-track"; track.setAttribute("aria-hidden", "true");
+      const btext = document.createElement("span"); btext.textContent = "blocking";
+      blocking.addEventListener("change", () => { c.blocking = blocking.checked; sync(); });
+      blockingLabel.append(blocking, track, btext);
+
+      const timeout = document.createElement("input");
+      timeout.type = "number"; timeout.className = "ax-input ax-check-timeout";
+      timeout.min = 1; timeout.max = 86400; timeout.placeholder = "timeout s (300)";
+      timeout.value = c.timeout_seconds === undefined || c.timeout_seconds === null ? "" : c.timeout_seconds;
+      timeout.addEventListener("input", () => { c.timeout_seconds = timeout.value; sync(); });
+
+      const net = document.createElement("select");
+      net.className = "ax-select ax-check-network";
+      const blank = document.createElement("option");
+      blank.value = ""; blank.textContent = "no network"; net.appendChild(blank);
+      for (const n of CHECK_NETWORKS) {
+        const o = document.createElement("option");
+        o.value = n; o.textContent = n; if (c.network === n) o.selected = true;
+        net.appendChild(o);
+      }
+      net.addEventListener("change", () => { c.network = net.value || undefined; sync(); });
+
+      const rm = document.createElement("button");
+      rm.type = "button"; rm.className = "ax-kv-remove ax-btn ax-btn--ghost";
+      rm.setAttribute("aria-label", "Remove check"); rm.textContent = "×";
+      rm.addEventListener("click", () => { arr.splice(i, 1); sync(); render(); });
+
+      row.append(name, cmd, image, blockingLabel, timeout, net, rm);
+      box.appendChild(row);
+    });
+    const add = document.createElement("button");
+    add.type = "button"; add.className = "ax-kv-add ax-btn ax-btn--ghost";
+    add.textContent = "+ Add check";
+    add.addEventListener("click", () => { arr.push({ blocking: true }); render(); sync(); });
+    box.appendChild(add);
+    // enhance the per-row network <select>s (idempotent) so dynamically added rows match the
+    // shared custom-dropdown path, not just the ones present at first form render.
+    enhanceSelects(box);
+  };
+
+  render();
+  return box;
+}
+
 // ── Nature cards (Asset / Job) ──────────────────────────
 // Enable/disable every control inside a container and dim it when gated off.
 function setCardEnabled(container, enabled) {
@@ -767,6 +873,25 @@ function buildAssetCard() {
   for (const fid of ["asset", "partition", "asset_schedule"]) {
     const w = fieldWrapIfApplicable(fid);
     if (w) grid.appendChild(w);
+  }
+
+  // The Checks editor (spec 008): a wide, full-row control inside the Asset card so it is present
+  // only for an asset and gated off with the rest of the produces fields (FR-011).
+  const checksField = fieldById("checks");
+  if (checksField && harnessFieldIds(currentHarness).includes("checks")) {
+    const wrap = document.createElement("div");
+    wrap.className = "ax-field ax-field--wide";
+    wrap.dataset.field = "checks";
+    const cl = document.createElement("label");
+    cl.textContent = "Checks";
+    const help = document.createElement("span");
+    help.className = "ax-help";
+    help.textContent = checksField.help;
+    const err = document.createElement("span");
+    err.className = "ax-field-error";
+    err.hidden = true;
+    wrap.append(cl, renderChecks(), help, err);
+    grid.appendChild(wrap);
   }
 
   card.append(h, toggle, grid);

@@ -166,7 +166,7 @@ def test_partition_field_shape():
 
 def test_public_payload_exposes_produces():
     pub = schema.to_public()
-    assert pub["schema_version"] == 4
+    assert pub["schema_version"] == 5
     assert {"id": "produces", "label": "Produces", "group": "runs"} in pub["sections"]
     by_id = {f["id"]: f for f in pub["fields"]}
     assert by_id["asset"]["pattern"] == schema.ASSET_KEY_RE
@@ -205,6 +205,62 @@ def test_validate_no_asset_key_is_not_an_error():
     # A plain agent (job) has no produces error on the asset field.
     a = _base("api", job=True)
     assert "asset" not in schema.validate(a, prompt_exists=ALWAYS_TRUE)
+
+
+# ── produces.checks validation (spec 008, contract check-model §2/§3) ──
+def _with_checks(checks, **over):
+    return _base("api", asset="verify/checks", checks=checks, **over)
+
+
+def test_checks_field_shape():
+    f = schema.FIELDS_BY_ID["checks"]
+    assert f.section == "produces" and f.block == "produces" and f.type == "checks"
+
+
+def test_validate_accepts_valid_checks():
+    a = _with_checks([
+        {"name": "has-output", "command": "test -n \"$(ls /output)\""},
+        {"name": "advisory", "command": "false", "blocking": False},
+        {"name": "slow", "command": "sleep 1", "timeout_seconds": 2, "network": "agentnet"},
+    ])
+    assert schema.validate(a, prompt_exists=ALWAYS_TRUE) == {}
+
+
+def test_validate_rejects_checks_without_asset():
+    a = _base("api", job=True, checks=[{"name": "c", "command": "true"}])
+    assert "checks" in schema.validate(a, prompt_exists=ALWAYS_TRUE)
+
+
+def test_validate_rejects_check_missing_name_or_command():
+    assert "checks" in schema.validate(_with_checks([{"command": "true"}]), prompt_exists=ALWAYS_TRUE)
+    assert "checks" in schema.validate(_with_checks([{"name": "c"}]), prompt_exists=ALWAYS_TRUE)
+    assert "checks" in schema.validate(_with_checks([{"name": "c", "command": "  "}]), prompt_exists=ALWAYS_TRUE)
+
+
+def test_validate_rejects_bad_check_name():
+    assert "checks" in schema.validate(_with_checks([{"name": "Bad Name", "command": "true"}]),
+                                       prompt_exists=ALWAYS_TRUE)
+
+
+def test_validate_rejects_duplicate_check_names():
+    a = _with_checks([{"name": "c", "command": "true"}, {"name": "c", "command": "false"}])
+    assert "checks" in schema.validate(a, prompt_exists=ALWAYS_TRUE)
+
+
+def test_validate_rejects_bad_check_optional_fields():
+    assert "checks" in schema.validate(
+        _with_checks([{"name": "c", "command": "true", "timeout_seconds": 0}]), prompt_exists=ALWAYS_TRUE)
+    assert "checks" in schema.validate(
+        _with_checks([{"name": "c", "command": "true", "timeout_seconds": 999999}]), prompt_exists=ALWAYS_TRUE)
+    assert "checks" in schema.validate(
+        _with_checks([{"name": "c", "command": "true", "network": "wan"}]), prompt_exists=ALWAYS_TRUE)
+    assert "checks" in schema.validate(
+        _with_checks([{"name": "c", "command": "true", "blocking": "yes"}]), prompt_exists=ALWAYS_TRUE)
+
+
+def test_validate_empty_checks_list_is_fine():
+    a = _base("api", asset="verify/checks", checks=[])
+    assert schema.validate(a, prompt_exists=ALWAYS_TRUE) == {}
 
 
 # ── Job flag + triggers block (spec 006, contract agent-model §1/§2/§3) ──
@@ -271,8 +327,14 @@ def test_job_schedule_on_non_job_is_rejected():
 
 
 # ── Migrations ──────────────────────────────────────────
-def test_schema_version_is_four():
-    assert schema.SCHEMA_VERSION == 4
+def test_schema_version_is_five():
+    assert schema.SCHEMA_VERSION == 5
+
+
+def test_migrate_4_to_5_is_identity():
+    # spec 008: produces.checks is additive, so 4->5 leaves a schema-4 file untouched.
+    data = {"name": "x", "harness": "api", "produces": {"asset": "a/b"}}
+    assert schema.migrate_4_to_5(dict(data)) == data
 
 
 def test_migrate_2_to_3_drops_schedule(settings):
@@ -370,6 +432,7 @@ _FIELD_SECTION = {
     "max_turns": "limits",
     "asset": "produces",
     "partition": "produces",
+    "checks": "produces",
     "asset_schedule": "triggers",
     "job_schedule": "triggers",
     "job": "run_as_job",

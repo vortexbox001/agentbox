@@ -14,13 +14,18 @@ finishes, sees the run's `/output` and `/workspace` (read-only) and its spec-007
 failed **blocking** check gates downstream automation while a **non-blocking** one is advisory.
 agentbox attaches no meaning to what a check's command does — only to its exit code.
 
-**Technical approach**: A check-bearing asset is built with `@multi_asset(specs=[AssetSpec…],
-check_specs=[AssetCheckSpec…])` instead of `AssetsDefinition.from_op` — because `from_op` **cannot
-declare check specs** (verified) and a standalone `@asset_check` op is **skipped when the producer
-step fails** (Dagster downstream-skip), which would break "checks run even when the producer is
-non-`ok`". The multi_asset body is a **generator op** that reuses the existing container-launch +
-report core (extracted from `make_run_op`), then runs each check container sequentially and emits
-one `AssetCheckResult` per check. On producer success it yields
+**Technical approach**: A check-bearing asset is built from a plain generator `@op` wired into an
+`AssetsDefinition` via `AssetsDefinition.dagster_internal_init(check_specs_by_output_name=…)`
+instead of `AssetsDefinition.from_op` — because `from_op` **cannot declare check specs** (verified)
+and a standalone `@asset_check` op is **skipped when the producer step fails** (Dagster
+downstream-skip), which would break "checks run even when the producer is non-`ok`". (The
+`@multi_asset` decorator was the original plan but **cannot build with kebab check names** on
+Dagster 1.13.21 — it derives the op output name from the check name and Dagster rejects the hyphen;
+the manual construction maps each check to a valid `check_<i>` output while its `AssetCheckSpec`
+keeps the kebab name, so the Dagster label matches the YAML — see research R1 / Complexity Tracking.)
+The op body is a **generator** that reuses the existing container-launch + report core (extracted
+from `make_run_op`), then runs each check container sequentially and emits one `AssetCheckResult`
+per check. On producer success it yields
 `MaterializeResult(metadata=…, check_results=[…])`; on producer failure/timeout it *yields* the
 check results (which persist through the subsequent raise — verified) plus an `AssetObservation`
 carrying the report (keeping the partition red, per spec 007), then raises. **Checkless** asset
@@ -32,9 +37,13 @@ agents keep the `from_op` path untouched (FR-013).
 orchestrator Python (`docker run` a check container) — no new language surface in the agent images.
 
 **Primary Dependencies**: Dagster 1.13.21 (pinned, running). New symbols used, all **verified
-present**: `multi_asset`, `AssetSpec`, `AssetCheckSpec` (`blocking`, `partitions_def`),
+present**: `AssetsDefinition.dagster_internal_init` (`check_specs_by_output_name=`, `specs=`),
+`AssetSpec` (`partitions_def`, `automation_condition`), `AssetCheckSpec` (`blocking`; kebab
+`name` kept while the op output name is a separate valid `check_<i>` — see research R1),
 `AssetCheckResult` (`passed`, `check_name`, `severity`, `metadata`), `AssetCheckSeverity`
-(`ERROR`/`WARN`), `MaterializeResult` (`check_results=`), `Definitions(asset_checks=…)`. Docker
+(`ERROR`/`WARN`), `MaterializeResult` (`check_results=`), `Out`/`Nothing` for the op's check
+outputs. (`@multi_asset` was verified to accept `check_specs` but is not used — it cannot build
+with kebab check names on this version; research R1.) Docker
 CLI (already available Docker-outside-of-Docker) launches check containers exactly as it launches
 agent containers.
 
@@ -74,7 +83,7 @@ new verification fixture agent carrying pass/non-blocking-fail/timeout/read-only
 | Principle | Assessment |
 |-----------|------------|
 | **I. Agent Isolation** | **PASS — strengthened.** Each check runs in a *fresh, short-lived* container with **no network by default** (`--network none`), `/output` and `/workspace` mounted **read-only**, its own `timeout_seconds`, and is killed + `--rm`'d on timeout. A check opts into a network only via an explicit `network:` field using the same choices as an agent (FR-016). |
-| **II. Configuration over Code** | **PASS.** Checks are pure declarative YAML; the orchestrator runs them generically by exit code with **zero** per-check-type logic (no test/lint presets). One new *construction* path (multi_asset for check-bearing assets) is added, but no per-agent branching — see Complexity Tracking. |
+| **II. Configuration over Code** | **PASS.** Checks are pure declarative YAML; the orchestrator runs them generically by exit code with **zero** per-check-type logic (no test/lint presets). One new *construction* path (a manual `AssetsDefinition` for check-bearing assets) is added, but no per-agent branching — see Complexity Tracking. |
 | **III. Secrets Never in the Open** | **PASS.** Check containers receive no `env`, no `env_file`, and no credentials mounts — only the three read-only inspection mounts. With no network by default, a check cannot exfiltrate even if a command tried. |
 | **IV. Uniform Interface, Diverse Runtimes** | **PASS.** Checks present one surface regardless of harness; the default check image is the producing agent's harness image (already on the host). Adding a harness does not change the check schema or runner. |
 | **V. Ephemeral Runs, Immutable Outputs** | **PASS — strengthened.** Read-only `/output` makes it *impossible* for a check to add/remove/modify a produced file (US3/FR-009). The `/report.json` file is per-run scratch under `PIPES_ROOT`, never `/output`. |
@@ -105,8 +114,8 @@ orchestrator/
 ├── factory.py                 # CHANGED:
 │                              #  - extract a shared launch+report core from make_run_op
 │                              #    (Popen/stream/timeout/report-extract/build_metadata) reused by both paths
-│                              #  - build_asset: when produces.checks present, construct via @multi_asset
-│                              #    (AssetSpec + one AssetCheckSpec per check) instead of from_op; else unchanged
+│                              #  - build_asset: when produces.checks present, construct a manual
+│                              #    AssetsDefinition (op + AssetCheckSpec per check, kebab name kept) instead of from_op; else unchanged
 │                              #  - run_checks(): sequential check-container launcher → [AssetCheckResult]
 │                              #  - HARNESS_IMAGE map (default check image = harness image)
 │                              #  - validate_checks(): reject checks-without-asset + duplicate names (RejectAgent)
@@ -139,11 +148,11 @@ agents/_template-*.yaml        # CHANGED: produces block template comments menti
 
 **Structure Decision**: Single-project layout unchanged. The producing container launch and report
 handling stay defined **once** — extracted into a shared core so both the unchanged `from_op`
-(checkless) path and the new `@multi_asset` (check-bearing) path reuse it. Checks are interpreted
-generically by exit code; no check-type logic enters the orchestrator (Constitution II).
+(checkless) path and the new manual-`AssetsDefinition` (check-bearing) path reuse it. Checks are
+interpreted generically by exit code; no check-type logic enters the orchestrator (Constitution II).
 
 ## Complexity Tracking
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|--------------------------------------|
-| A **second asset-construction path**: check-bearing assets use `@multi_asset` (generator) instead of the established `AssetsDefinition.from_op`. | `from_op` **cannot declare `check_specs`** (verified — no such parameter), so an asset built with it can carry no asset checks at all. `@multi_asset` is the only construction in Dagster 1.13.21 that lets one op declare checks *and* emit both the materialization and the check results. | (a) **Standalone `@asset_check` op** — rejected: a check op downstream of the producing op is **skipped when the producer step fails** (Dagster's default downstream-skip), directly violating the clarified requirement that checks run even when the producer is non-`ok`; it also cannot guarantee sequential order or share the producer's report in-process. (b) **Yield `AssetCheckResult` from the existing `from_op` op** — impossible: an op may only emit check results for checks the asset *declares*, and `from_op` cannot declare them. Divergence is mitigated by extracting the launch+report core so it is written once; checkless assets keep `from_op` verbatim (FR-013). |
+| A **second asset-construction path**: check-bearing assets use a manual `AssetsDefinition.dagster_internal_init` (a plain generator op + `check_specs_by_output_name`) instead of the established `AssetsDefinition.from_op`. | `from_op` **cannot declare `check_specs`** (verified — no such parameter), so an asset built with it can carry no asset checks at all. A manual `AssetsDefinition` lets one op declare checks *and* emit both the materialization and the check results, **and** keeps the operator's kebab check name as the Dagster asset-check label. | (a) **`@multi_asset(check_specs=…)`** — the original plan, rejected at implementation: on Dagster 1.13.21 it derives the op **output name** from the check via `get_python_identifier()` (`verify__checks_has-output`) and Dagster rejects the hyphen (`^[A-Za-z0-9_]+$`), so a **kebab** check name (required by check-model §2.1) raises `DagsterInvalidDefinitionError` at build. `dagster_internal_init` decouples the valid `check_<i>` op output from the kebab `AssetCheckSpec.name` (verified in-process). (b) **Standalone `@asset_check` op** — rejected: a check op downstream of the producing op is **skipped when the producer step fails** (Dagster's default downstream-skip), directly violating the clarified requirement that checks run even when the producer is non-`ok`; it also cannot guarantee sequential order or share the producer's report in-process. (c) **Yield `AssetCheckResult` from the existing `from_op` op** — impossible: an op may only emit check results for checks the asset *declares*, and `from_op` cannot declare them. Divergence is mitigated by extracting the launch+report core so it is written once; checkless assets keep `from_op` verbatim (FR-013). |

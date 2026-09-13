@@ -85,6 +85,12 @@ class LaunchStub:
         #: the op's timeout kill + fallback authoring. The follow-up ``docker kill`` (via
         #: the ``subprocess.run`` stub) still returns normally so the op can clean up.
         self.timeout = False
+        #: Per-check outcomes for the check-container ``docker run``s (spec 008), in declared
+        #: order: a list of dicts ``{"returncode": int, "stdout": str, "stderr": str}``. Missing
+        #: entries (or missing keys) fall back to exit 0 / empty output, so a check passes by
+        #: default. ``check_calls`` records each check-container argv in launch order.
+        self.check_outcomes: list[dict] = []
+        self.check_calls: list[list[str]] = []
 
     def popen(self, cmd, *args, **kwargs):
         # stand in for subprocess.Popen: record the launch, return a fake process
@@ -92,8 +98,18 @@ class LaunchStub:
         return LaunchStub._FakeProc(self, list(cmd))
 
     def __call__(self, cmd, *args, **kwargs):
-        # stand in for subprocess.run — used only for the timeout `docker kill`
+        # stand in for subprocess.run. Two callers reach it: the producer's timeout
+        # ``docker kill`` (``docker kill <name>``) and each check container (``docker run …``).
         self.calls.append(list(cmd))
+        if list(cmd[:2]) == ["docker", "run"]:
+            i = len(self.check_calls)
+            self.check_calls.append(list(cmd))
+            spec = self.check_outcomes[i] if i < len(self.check_outcomes) else {}
+            return subprocess.CompletedProcess(
+                cmd, spec.get("returncode", 0),
+                stdout=spec.get("stdout", ""), stderr=spec.get("stderr", ""),
+            )
+        # a `docker kill` (or any other run) — succeed quietly.
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     def extract_report(self, session, is_asset):
@@ -109,6 +125,16 @@ class LaunchStub:
             if c[:2] == ["docker", "run"]:
                 return c
         return self.calls[-1]
+
+    @property
+    def producer_cmd(self) -> list[str]:
+        """The producer's launch argv — the FIRST ``docker run`` (the producer is Popen'd
+        before any check container). Use this on a check-bearing materialize, where ``cmd``
+        would otherwise return the last check container."""
+        for c in self.calls:
+            if c[:2] == ["docker", "run"]:
+                return c
+        return self.calls[0] if self.calls else []
 
 
 @pytest.fixture

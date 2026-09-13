@@ -8,20 +8,45 @@ Governs the orchestrator runtime. The declarative model is in
 
 - **Checkless** asset agent ⇒ built with `AssetsDefinition.from_op(make_run_op(cfg), …)` exactly as
   today (FR-013). No change.
-- **Check-bearing** asset agent ⇒ built with:
+- **Check-bearing** asset agent ⇒ built from a plain generator `@op` plus
+  `AssetsDefinition.dagster_internal_init` (NOT the `@multi_asset` decorator — see the note
+  below):
   ```python
-  @multi_asset(
+  # check i -> a Dagster-valid op output name; its AssetCheckSpec keeps the kebab check name.
+  check_specs_by_output_name = {
+      f"check_{i}": AssetCheckSpec(name=c.name, asset=<asset key>, blocking=c.blocking)
+      for i, c in enumerate(checks)
+  }
+  outs = {"result": Out(is_required=False)}
+  outs.update({name: Out(Nothing, is_required=False) for name in check_specs_by_output_name})
+
+  @op(name=f"run_{name}", out=outs, config_schema={"env": ...})
+  def run_agent_checked(context): ...          # the generator op (below)
+
+  AssetsDefinition.dagster_internal_init(
+      keys_by_output_name={"result": <asset key>},
+      node_def=run_agent_checked,
+      selected_asset_keys={<asset key>},
+      check_specs_by_output_name=check_specs_by_output_name,
       specs=[AssetSpec(key=<asset key>, partitions_def=<daily|None>,
                        automation_condition=<on_cron|None>)],
-      check_specs=[AssetCheckSpec(name=c.name, asset=<asset key>, blocking=c.blocking)
-                   for c in checks],
-      name=f"run_{name}",
+      ...,
   )
   ```
   The body is a **generator op** (below). `build_asset_automation_sensor`,
   `build_materializing_job` (`define_asset_job(selection=AssetSelection.assets(asset_def))`, which
   includes the asset's checks by default), schedules, and the daily partition all operate on the
   produced `AssetsDefinition` unchanged.
+
+  > **Why not `@multi_asset`** (discovered at implementation, verified on 1.13.21): the
+  > `@multi_asset` decorator derives each check's op **output name** from the check via
+  > `AssetCheckSpec.get_python_identifier()` — e.g. `verify__checks_has-output` — and Dagster
+  > rejects a name outside `^[A-Za-z0-9_]+$`, so a **kebab** check name (which the model requires,
+  > check-model §2.1) makes `@multi_asset` raise `DagsterInvalidDefinitionError` at build. Building
+  > the `AssetsDefinition` directly lets the op output be a valid `check_<i>` while the
+  > `AssetCheckSpec` keeps the operator's kebab `name`, so the asset check shows in Dagster exactly
+  > as written in YAML. Everything else (one op that emits both the materialization and the check
+  > results; `from_op` untouched for checkless assets) is unchanged from the original design.
 
 ## §2 Op body (generator)
 

@@ -7,23 +7,39 @@ instance event log.
 
 ---
 
-## R1 — Asset construction for a check-bearing asset: `@multi_asset`, not `from_op`
+## R1 — Asset construction for a check-bearing asset: a manual `AssetsDefinition`, not `from_op`
 
-**Decision**: When an asset agent declares `produces.checks`, build the asset with
-`@multi_asset(specs=[AssetSpec(key, partitions_def, automation_condition)],
-check_specs=[AssetCheckSpec(name, asset, blocking) …])`. When it declares no checks, keep the
-existing `AssetsDefinition.from_op(make_run_op(cfg), …)` path **unchanged** (FR-013).
+**Decision**: When an asset agent declares `produces.checks`, build the asset from a plain
+generator `@op` plus `AssetsDefinition.dagster_internal_init(...)`, mapping each check to a
+Dagster-valid op output name (`check_<i>`) whose `AssetCheckSpec` keeps the operator's kebab
+`name`. When it declares no checks, keep the existing `AssetsDefinition.from_op(make_run_op(cfg),
+…)` path **unchanged** (FR-013).
+
+> **Revised at implementation** (verified on 1.13.21). The original decision here was
+> `@multi_asset(specs=…, check_specs=…)`. That **does not build** with the kebab check names the
+> model requires (check-model §2.1): `@multi_asset` derives each check's op **output name** from
+> `AssetCheckSpec.get_python_identifier()` (e.g. `verify__checks_has-output`), and Dagster rejects
+> any name outside `^[A-Za-z0-9_]+$`, so a hyphenated check name raises `DagsterInvalidDefinitionError`
+> at build. `AssetsDefinition.dagster_internal_init` (the factory the decorator itself calls) lets
+> the op output be a valid `check_<i>` while the `AssetCheckSpec.name` stays kebab, so the Dagster
+> asset-check label is exactly what the operator wrote in YAML. The op-and-emission design below is
+> otherwise unchanged.
 
 **Rationale**:
 - `AssetsDefinition.from_op` has **no `check_specs` parameter** *(verified — full signature has
   `keys_by_output_name`, `partitions_def`, `automation_conditions_by_output_name`, … but nothing
   for checks)*. An asset built with `from_op` therefore cannot carry asset checks at all.
-- `multi_asset` **does** accept `check_specs` *(verified: `'check_specs' in signature(multi_asset)`
-  is `True`)*, and its body may emit both the materialization and the check results.
-- `AssetSpec` carries `partitions_def` and `automation_condition` *(verified)*, so the daily
-  partition (spec 004/006) and the `on_cron` auto-condition (spec 006) reattach with no loss —
-  `build_asset_automation_sensor` and `build_materializing_job` operate on the produced
-  `AssetsDefinition` unchanged.
+- `AssetsDefinition.dagster_internal_init` **does** take `check_specs_by_output_name` *(verified:
+  a manual build + in-process `materialize()` records the materialization and one
+  `ASSET_CHECK_EVALUATION` per check, each labeled with its kebab name)*, and one op may emit both
+  the materialization and the check results.
+- `AssetSpec` carries `partitions_def` and `automation_condition` *(verified)*, so passing
+  `specs=[AssetSpec(...)]` reattaches the daily partition (spec 004/006) and the `on_cron`
+  auto-condition (spec 006) with no loss — `build_asset_automation_sensor` and
+  `build_materializing_job` operate on the produced `AssetsDefinition` unchanged.
+- `@multi_asset` accepts `check_specs` *(verified)* but is **rejected** here for the kebab
+  output-name reason above; `dagster_internal_init` is the minimal construction that keeps kebab
+  labels.
 
 **Alternatives considered**:
 - *Standalone `@asset_check` / `@multi_asset_check` op targeting the `from_op` asset* — **rejected**.
@@ -38,7 +54,8 @@ existing `AssetsDefinition.from_op(make_run_op(cfg), …)` path **unchanged** (F
 
 ## R2 — One generator op runs producer **and** checks (checks always run)
 
-**Decision**: The `multi_asset` body is a **generator op** that: (1) launches the producing
+**Decision**: The asset's op (see R1 — a plain `@op` wired into the `AssetsDefinition`) is a
+**generator op** that: (1) launches the producing
 container through the shared launch+report core, (2) writes the report to `/report.json`, (3) runs
 each declared check container sequentially, then (4) emits results. Because the checks run **inside
 the same op** after the producer, they are never a skippable downstream step.

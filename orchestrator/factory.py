@@ -1,11 +1,14 @@
 """Turns an agent YAML dict into a Dagster job that docker-runs the agent."""
-import os, re, uuid, shutil, tempfile, threading, datetime, subprocess
+import os, re, json, uuid, shutil, tempfile, threading, datetime, subprocess
+from collections import namedtuple
 from dagster import (
     job, op, Output, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive,
     AssetKey, AssetMaterialization, AssetObservation, AssetsDefinition, DailyPartitionsDefinition,
     MetadataValue,
     AutomationCondition, AutomationConditionSensorDefinition, AssetSelection,
     DefaultSensorStatus, define_asset_job,
+    Out, Nothing,
+    AssetSpec, AssetCheckSpec, AssetCheckResult, AssetCheckSeverity, MaterializeResult,
     open_pipes_session, PipesEnvContextInjector, PipesFileMessageReader,
 )
 from dagster_pipes import (
@@ -89,6 +92,16 @@ PIPES_ROOT = "/data/dagster/pipes"
 WORKSPACE_HARNESSES = {"claude-code", "pi", "codex"}
 # harnesses whose runner reads /config/prompt.md; the others get the prompt on the command line
 PROMPT_MOUNT_HARNESSES = {"api"}
+# Default check image = the producing agent's harness image (research R6): guaranteed present on
+# the host (the agent just ran in it), so common shell checks need nothing built or pulled. The
+# same image refs `_build_agent_cmd` launches, named here so `run_checks` can resolve a check's
+# default image — a small, acknowledged duplication in the spirit of the ASSET_KEY_RE twin.
+HARNESS_IMAGE = {
+    "api": "agentbox/agent-python:latest",
+    "claude-code": "agentbox/agent-claude:latest",
+    "codex": "agentbox/agent-codex:latest",
+    "pi": "agentbox/agent-pi:latest",
+}
 
 def output_convention(stamp: str, session_id: str) -> str:
     """System-prompt addition every tool-using harness gets, word for word."""
@@ -374,6 +387,191 @@ def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
     return cmd
 
 
+# What a producer launch hands back to the emission logic (the caller decides whether to
+# materialize, observe-and-raise, or run checks). ``report`` is the spec-007 report dict,
+# ``metadata`` the built metadata union, ``log_path`` the transcript path.
+_ProducerResult = namedtuple(
+    "_ProducerResult", "report metadata returncode timed_out stderr log_path"
+)
+
+
+def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str],
+                  pipes_dir: str, msg_path: str, stamp: str, session_id: str,
+                  is_asset: bool) -> "_ProducerResult":
+    """Launch the producing container and hand back its report + metadata union.
+
+    The shared launch+report core (spec 008 FR-013), extracted from ``make_run_op`` so both the
+    checkless ``from_op`` op and the check-bearing ``@multi_asset`` op launch the producer the
+    exact same way. Runs INSIDE an already-open Dagster Pipes ``session`` with ``cmd`` already
+    built by ``_build_agent_cmd``: it layers the Pipes flags onto the launch, snapshots ``/output``,
+    Popens and streams stdout live while draining stderr, enforces the agent ``timeout_seconds``
+    (killing the container by name on expiry), recovers the spec-007 report over Pipes (data
+    channel only — never re-emitted) or authors a fallback on timeout/missing report, and builds
+    the metadata union. Emission and the per-run pipes-dir cleanup stay with the caller (checks
+    must run before the dir is removed)."""
+    name = cfg["name"]
+    # PipesFileMessageReader.read_messages() has already created `msg_path` root-owned
+    # 0644 (synchronously, before the session yielded); a non-root container cannot append to
+    # that, so widen it to 0666 or claude-code/codex/pi emit() hit PermissionError on
+    # /pipes/messages even though the dir is world-writable.
+    os.chmod(msg_path, 0o666)
+    boot = dict(session.get_bootstrap_env_vars())
+    # the container writes messages at the mount path, not the host path
+    msg_params = decode_env_var(boot[DAGSTER_PIPES_MESSAGES_ENV_VAR])
+    msg_params["path"] = "/pipes/messages"
+    pipes_flags = [
+        "-v", f"{pipes_dir}:/pipes",
+        "-e", f"{DAGSTER_PIPES_CONTEXT_ENV_VAR}={boot[DAGSTER_PIPES_CONTEXT_ENV_VAR]}",
+        "-e", f"{DAGSTER_PIPES_MESSAGES_ENV_VAR}={encode_env_var(msg_params)}",
+    ]
+    # insert the Pipes flags immediately before the image name, so they are
+    # docker-run flags (never container args) and every prior flag is untouched.
+    img_idx = next(i for i, a in enumerate(cmd) if str(a).startswith("agentbox/"))
+    cmd[img_idx:img_idx] = pipes_flags
+
+    # snapshot /output before launch so we can report which files this run
+    # produced (FR-005). The partition key is never used here: the launch is
+    # identical regardless of partition (FR-008b) — it is a metadata label only.
+    output_before = _snapshot_dir(cfg["output_dir"])
+
+    context.log.info(f"launching: {' '.join(cmd[:12])} ...")
+    timeout_seconds = cfg.get("timeout_seconds", 900)
+    container = f"agent-{name}-{context.run_id[:8]}"
+    log_dir = os.path.join(AGENT_LOG_ROOT, name, stamp[:10])
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, f"{context.run_id}.jsonl")
+
+    # Popen + line-by-line draining: each stdout line streams live into the
+    # Dagster run log (FR-003) while being written to the transcript unchanged
+    # (FR-006). stderr drains on a second thread so a chatty run cannot deadlock
+    # on a full stderr pipe buffer (R5).
+    timed_out = False
+    stderr_chunks: list[str] = []
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, bufsize=1)
+    with open(log_path, "w") as tf:
+        stdout_thread = threading.Thread(
+            target=_stream_output, args=(proc.stdout, tf, context.log.info),
+            daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=stderr_chunks.extend, args=(proc.stderr,), daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
+        try:
+            proc.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            # kill the container by its deterministic name so `docker run` exits
+            # (its stdout closes and the drain ends); `--rm` removes it (SC-004).
+            timed_out = True
+            subprocess.run(["docker", "kill", container], capture_output=True, text=True)
+            context.log.error(f"{name}: timeout after {timeout_seconds}s; killed {container}")
+            proc.wait()
+        stdout_thread.join()
+        stderr_thread.join()
+    returncode = proc.returncode
+    stderr = "".join(stderr_chunks)
+    context.log.info(f"transcript: {log_path}")
+
+    output_files = _changed_files(output_before, _snapshot_dir(cfg["output_dir"]))
+    if timed_out:
+        # the container was killed before it could report — the orchestrator
+        # authors the report itself (FR-009/R8).
+        report = _authored_report(
+            "timeout",
+            f"timeout_seconds ({timeout_seconds}) elapsed; container "
+            f"agent-{name}-{context.run_id[:8]} was killed before it could report",
+            len(output_files),
+        )
+    else:
+        # Recover the structured report the container emitted over Pipes — as a
+        # DATA channel only (contract §3): read for its fields, never re-emitted,
+        # so an asset's happy path records exactly one materialization. All
+        # per-harness event parsing lives in the images now; the orchestrator holds
+        # none (SC-002).
+        report = _extract_report(session, is_asset)
+        if report is None:
+            # normal exit but no readable/well-formed report — record the absence
+            report = _authored_report(
+                "failed", "run report was missing or malformed", len(output_files),
+            )
+    # the orchestrator owns the host transcript path (the container leaves it
+    # null); it surfaces through the existing `transcript` metadata key.
+    report["transcript_path"] = log_path
+
+    metadata = build_metadata(cfg, report, output_files, log_path, stamp, session_id, context)
+    context.log.info(
+        f"result: status={report.get('status')} turns={report.get('turns')}"
+        f" tokens_in/out={report.get('tokens_in')}/{report.get('tokens_out')}"
+        f" cost_usd={report.get('cost_usd')} files_written={report.get('files_written')}"
+    )
+    if report.get("notes"):
+        context.log.info(str(report["notes"])[:4000])
+    return _ProducerResult(report, metadata, returncode, timed_out, stderr, log_path)
+
+
+def _check_argv(cfg: dict, context: OpExecutionContext, check: dict, image: str,
+                pipes_dir: str, ws: str) -> list[str]:
+    """The full ``docker run`` argv for one check container (contract check-execution §3).
+
+    ``/output`` and (when the agent has a workspace) ``/workspace`` are mounted **read-only**,
+    the spec-007 report is mounted read-only at ``/report.json``, the command runs as
+    ``sh -c "<command>"``, and the network is the check's ``network`` or ``none`` (no network,
+    no env, no creds — Constitution I/III/V). The container is named deterministically and
+    ``--rm``'d so no check container survives the run.
+    """
+    name = check["name"]
+    network = check.get("network") or "none"
+    cname = f"check-{cfg['name']}-{name}-{context.run_id[:8]}"
+    argv = [
+        "docker", "run", "--rm", "--name", cname,
+        "--network", network,
+        "-v", f"{cfg['output_dir']}:/output:ro",
+    ]
+    if cfg["harness"] in WORKSPACE_HARNESSES:
+        argv += ["-v", f"{ws}:/workspace:ro"]
+    argv += [
+        "-v", f"{os.path.join(pipes_dir, 'report.json')}:/report.json:ro",
+        "--entrypoint", "sh", image, "-c", check["command"],
+    ]
+    return argv
+
+
+def run_checks(cfg: dict, context: OpExecutionContext, checks: list, pipes_dir: str,
+               ws: str) -> list:
+    """Run each declared check in a fresh container, in declared order → [AssetCheckResult].
+
+    For each check: resolve its image (``check.image`` or the harness default, R6), launch one
+    ``--rm`` check container (``_check_argv``), capture combined stdout+stderr, and record one
+    ``AssetCheckResult`` — ``passed`` on exit 0, else failed — carrying the last 4 KB of output,
+    the exit code, and the check's ``blocking``/``image`` for legibility (contract §3). agentbox
+    reads only the exit code; it attaches no meaning to what the command does (Constitution II).
+    """
+    results = []
+    for check in checks:
+        name = check["name"]
+        image = check.get("image") or HARNESS_IMAGE.get(cfg["harness"])
+        argv = _check_argv(cfg, context, check, image, pipes_dir, ws)
+        context.log.info(f"check {name}: {' '.join(argv[:8])} ...")
+        proc = subprocess.run(argv, capture_output=True, text=True)
+        exit_code = proc.returncode
+        combined = (proc.stdout or "") + (proc.stderr or "")
+        # keep only the tail: the end (usually the failure) within 4 KB (FR-007/SC-006).
+        tail = combined.encode("utf-8", "replace")[-4096:].decode("utf-8", "replace")
+        metadata = {
+            "output": MetadataValue.text(tail),
+            "exit_code": MetadataValue.int(exit_code),
+            "blocking": bool(check.get("blocking", True)),
+            "image": MetadataValue.text(str(image)),
+        }
+        context.log.info(f"check {name}: exit={exit_code} passed={exit_code == 0}")
+        results.append(
+            AssetCheckResult(check_name=name, passed=(exit_code == 0), metadata=metadata)
+        )
+    return results
+
+
 def make_run_op(cfg: dict):
     @op(
         name=f"run_{cfg['name'].replace('-', '_')}",
@@ -428,117 +626,20 @@ def make_run_op(cfg: dict):
                 context_injector=PipesEnvContextInjector(),
                 message_reader=PipesFileMessageReader(path=msg_path),
             ) as session:
-                # PipesFileMessageReader.read_messages() has already created `msg_path` root-owned
-                # 0644 (synchronously, before this yield); a non-root container cannot append to
-                # that, so widen it to 0666 or claude-code/codex/pi emit() hit PermissionError on
-                # /pipes/messages even though the dir is world-writable.
-                os.chmod(msg_path, 0o666)
-                boot = dict(session.get_bootstrap_env_vars())
-                # the container writes messages at the mount path, not the host path
-                msg_params = decode_env_var(boot[DAGSTER_PIPES_MESSAGES_ENV_VAR])
-                msg_params["path"] = "/pipes/messages"
-                pipes_flags = [
-                    "-v", f"{pipes_dir}:/pipes",
-                    "-e", f"{DAGSTER_PIPES_CONTEXT_ENV_VAR}={boot[DAGSTER_PIPES_CONTEXT_ENV_VAR]}",
-                    "-e", f"{DAGSTER_PIPES_MESSAGES_ENV_VAR}={encode_env_var(msg_params)}",
-                ]
-                # insert the Pipes flags immediately before the image name, so they are
-                # docker-run flags (never container args) and every prior flag is untouched.
-                img_idx = next(i for i, a in enumerate(cmd) if str(a).startswith("agentbox/"))
-                cmd[img_idx:img_idx] = pipes_flags
-
-                # snapshot /output before launch so we can report which files this run
-                # produced (FR-005). The partition key is never used here: the launch is
-                # identical regardless of partition (FR-008b) — it is a metadata label only.
-                output_before = _snapshot_dir(cfg["output_dir"])
-
-                context.log.info(f"launching: {' '.join(cmd[:12])} ...")
-                timeout_seconds = cfg.get("timeout_seconds", 900)
-                container = f"agent-{name}-{context.run_id[:8]}"
-                log_dir = os.path.join(AGENT_LOG_ROOT, name, stamp[:10])
-                os.makedirs(log_dir, exist_ok=True)
-                log_path = os.path.join(log_dir, f"{context.run_id}.jsonl")
-
-                # Popen + line-by-line draining: each stdout line streams live into the
-                # Dagster run log (FR-003) while being written to the transcript unchanged
-                # (FR-006). stderr drains on a second thread so a chatty run cannot deadlock
-                # on a full stderr pipe buffer (R5).
-                timed_out = False
-                stderr_chunks: list[str] = []
-                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                        text=True, bufsize=1)
-                with open(log_path, "w") as tf:
-                    stdout_thread = threading.Thread(
-                        target=_stream_output, args=(proc.stdout, tf, context.log.info),
-                        daemon=True,
-                    )
-                    stderr_thread = threading.Thread(
-                        target=stderr_chunks.extend, args=(proc.stderr,), daemon=True,
-                    )
-                    stdout_thread.start()
-                    stderr_thread.start()
-                    try:
-                        proc.wait(timeout=timeout_seconds)
-                    except subprocess.TimeoutExpired:
-                        # kill the container by its deterministic name so `docker run` exits
-                        # (its stdout closes and the drain ends); `--rm` removes it (SC-004).
-                        timed_out = True
-                        subprocess.run(["docker", "kill", container], capture_output=True, text=True)
-                        context.log.error(f"{name}: timeout after {timeout_seconds}s; killed {container}")
-                        proc.wait()
-                    stdout_thread.join()
-                    stderr_thread.join()
-                returncode = proc.returncode
-                stderr = "".join(stderr_chunks)
-                context.log.info(f"transcript: {log_path}")
-
-                output_files = _changed_files(output_before, _snapshot_dir(cfg["output_dir"]))
-                if timed_out:
-                    # the container was killed before it could report — the orchestrator
-                    # authors the report itself (FR-009/R8).
-                    report = _authored_report(
-                        "timeout",
-                        f"timeout_seconds ({timeout_seconds}) elapsed; container "
-                        f"agent-{name}-{context.run_id[:8]} was killed before it could report",
-                        len(output_files),
-                    )
-                else:
-                    # Recover the structured report the container emitted over Pipes — as a
-                    # DATA channel only (contract §3): read for its fields, never re-emitted,
-                    # so an asset's happy path records exactly one materialization (the from_op
-                    # output). All per-harness event parsing lives in the images now; the
-                    # orchestrator holds none (SC-002).
-                    report = _extract_report(session, is_asset)
-                    if report is None:
-                        # normal exit but no readable/well-formed report — record the absence
-                        report = _authored_report(
-                            "failed", "run report was missing or malformed", len(output_files),
-                        )
-                # the orchestrator owns the host transcript path (the container leaves it
-                # null); it surfaces through the existing `transcript` metadata key.
-                report["transcript_path"] = log_path
-
-                metadata = build_metadata(
-                    cfg, report, output_files, log_path, stamp, session_id, context
+                pr = _run_producer(
+                    context, cfg, session, cmd, pipes_dir, msg_path, stamp, session_id, is_asset
                 )
-                context.log.info(
-                    f"result: status={report.get('status')} turns={report.get('turns')}"
-                    f" tokens_in/out={report.get('tokens_in')}/{report.get('tokens_out')}"
-                    f" cost_usd={report.get('cost_usd')} files_written={report.get('files_written')}"
-                )
-                if report.get("notes"):
-                    context.log.info(str(report["notes"])[:4000])
 
-                if not timed_out and report.get("status") == "ok" and returncode == 0:
+                if not pr.timed_out and pr.report.get("status") == "ok" and pr.returncode == 0:
                     # success: return the op's single output carrying the metadata union.
                     # from_op records the one materialization in asset-mode (harmless in
                     # job-mode). open_pipes_session puts the op in typed-event-stream mode,
                     # so the output must be produced explicitly rather than falling through.
-                    return Output(value=None, metadata=metadata)
+                    return Output(value=None, metadata=pr.metadata)
 
                 # failure (status != ok, non-zero exit, or timeout) — FR-007/FR-008, contract §3.
-                if stderr:
-                    context.log.error(stderr[-4000:])
+                if pr.stderr:
+                    context.log.error(pr.stderr[-4000:])
                 if is_asset:
                     # record the failed run as an OBSERVATION, not a materialization, then raise
                     # to mark the run failed. A materialization event is Dagster's positive signal
@@ -551,15 +652,15 @@ def make_run_op(cfg: dict):
                         AssetObservation(
                             asset_key=AssetKey(cfg["produces"]["asset"].split("/")),
                             partition=context.partition_key if context.has_partition_key else None,
-                            metadata=metadata,
+                            metadata=pr.metadata,
                         )
                     )
                 else:
                     # job-only: attach the report to the run/output path (also visible as the
                     # logged Pipes custom message + transcript), then raise (FR-008).
-                    context.add_output_metadata(metadata)
+                    context.add_output_metadata(pr.metadata)
                 raise Exception(
-                    f"{name}: run failed (status={report.get('status')}, exit={returncode})"
+                    f"{name}: run failed (status={pr.report.get('status')}, exit={pr.returncode})"
                 )
         finally:
             shutil.rmtree(pipes_dir, ignore_errors=True)
@@ -587,6 +688,11 @@ def build_asset(cfg: dict, file: str | None = None, cron: str | None = None):
     partitions_def = (
         DailyPartitionsDefinition(start_date=PARTITION_START_DATE) if partition == "daily" else None
     )
+    checks = (cfg["produces"] or {}).get("checks") or []
+    if checks:
+        # Check-bearing asset: a @multi_asset whose generator op runs the producer AND its checks
+        # (from_op cannot declare check_specs — research R1). Checkless assets keep from_op (FR-013).
+        return _build_checked_asset(cfg, key, partitions_def, cron, checks)
     the_op = make_run_op(cfg)  # the same op object job-mode would use
     automation_conditions = (
         {"result": AutomationCondition.on_cron(cron, cron_timezone=cron_timezone())} if cron else None
@@ -596,6 +702,118 @@ def build_asset(cfg: dict, file: str | None = None, cron: str | None = None):
         keys_by_output_name={"result": key},
         partitions_def=partitions_def,
         automation_conditions_by_output_name=automation_conditions,
+    )
+
+
+def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | None,
+                         checks: list):
+    """A check-bearing asset whose one op runs the producer AND its checks (contract §1–§4).
+
+    ``from_op`` cannot declare check specs (research R1), and ``@multi_asset`` derives each check's
+    op-output name from the check name — which Dagster 1.13.21 rejects for a kebab name (a hyphen
+    is not in ``^[A-Za-z0-9_]+$``). So the asset is assembled from a plain generator ``@op`` plus
+    ``AssetsDefinition.dagster_internal_init``: check *i* is the op output ``check_<i>`` (a valid
+    name) while its ``AssetCheckSpec`` keeps the operator's kebab ``name`` — so the asset check
+    shows in Dagster exactly as written in YAML. One ``AssetSpec`` reattaches the daily partition
+    and any ``on_cron`` condition unchanged.
+
+    The op body launches the producer via the shared launch+report core (``_run_producer``), writes
+    the report to ``<pipes_dir>/report.json`` for the checks to read, runs every check
+    (``run_checks``), and — on producer success — yields one ``MaterializeResult`` carrying the
+    metadata union and all the check results (R3). The per-run pipes dir is ``rmtree``d in
+    ``finally``, after the checks have run.
+    """
+    name = cfg["name"]
+    automation_condition = (
+        AutomationCondition.on_cron(cron, cron_timezone=cron_timezone()) if cron else None
+    )
+    # check i -> output "check_<i>" (Dagster-valid) mapped to an AssetCheckSpec keeping the kebab name.
+    check_specs_by_output_name = {
+        f"check_{i}": AssetCheckSpec(name=c["name"], asset=key) for i, c in enumerate(checks)
+    }
+    outs = {"result": Out(is_required=False)}
+    for out_name in check_specs_by_output_name:
+        outs[out_name] = Out(Nothing, is_required=False)
+
+    @op(
+        name=f"run_{name.replace('-', '_')}",
+        out=outs,
+        config_schema={"env": Field(Permissive(), default_value={}, is_required=False)},
+    )
+    def run_agent_checked(context: OpExecutionContext):
+        runtime_env = context.op_config.get("env", {})
+        stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+        session_id = str(uuid.uuid4())
+        context.log.info(f"session_id={session_id} stamp={stamp}")
+        ws = cfg.get("workspace", "/data/workspaces/" + name)
+        if cfg.get("wipe_workspace") and cfg["harness"] in WORKSPACE_HARNESSES:
+            os.makedirs(ws, exist_ok=True)
+            for entry in os.scandir(ws):
+                if entry.is_dir(follow_symlinks=False):
+                    shutil.rmtree(entry.path)
+                else:
+                    os.remove(entry.path)
+            context.log.info(f"wiped workspace {ws}")
+        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, runtime_env)
+
+        os.makedirs(PIPES_ROOT, exist_ok=True)
+        pipes_dir = tempfile.mkdtemp(prefix=f"agentbox-pipes-{context.run_id[:8]}-", dir=PIPES_ROOT)
+        msg_path = os.path.join(pipes_dir, "messages")
+        os.chmod(pipes_dir, 0o777)
+        try:
+            with open_pipes_session(
+                context,
+                context_injector=PipesEnvContextInjector(),
+                message_reader=PipesFileMessageReader(path=msg_path),
+            ) as session:
+                pr = _run_producer(
+                    context, cfg, session, cmd, pipes_dir, msg_path, stamp, session_id,
+                    is_asset=True,
+                )
+                # Write the report where the checks can read it: a per-run file under PIPES_ROOT
+                # (host==container shared), bind-mounted read-only at /report.json (R5). 0644 so a
+                # non-root check container can read it; it is removed with the pipes dir below.
+                report_path = os.path.join(pipes_dir, "report.json")
+                with open(report_path, "w") as rf:
+                    json.dump(pr.report, rf)
+                os.chmod(report_path, 0o644)
+
+                # Checks run regardless of the producer's outcome (clarification / R2/R4).
+                results = run_checks(cfg, context, checks, pipes_dir, ws)
+
+                if not pr.timed_out and pr.report.get("status") == "ok" and pr.returncode == 0:
+                    # Producer OK: record the materialization with the metadata union and every
+                    # check result in one step (R3, contract §4).
+                    yield MaterializeResult(
+                        asset_key=key, metadata=pr.metadata, check_results=results
+                    )
+                    return
+                # Producer failed/timed out: the full failed-producer emission path (yield each
+                # check result, log an AssetObservation, keep the partition red) is added in T026;
+                # for now fail the run so no materialization is recorded on a bad producer.
+                if pr.stderr:
+                    context.log.error(pr.stderr[-4000:])
+                raise Exception(
+                    f"{name}: run failed (status={pr.report.get('status')}, exit={pr.returncode})"
+                )
+        finally:
+            shutil.rmtree(pipes_dir, ignore_errors=True)
+
+    return AssetsDefinition.dagster_internal_init(
+        keys_by_input_name={},
+        keys_by_output_name={"result": key},
+        node_def=run_agent_checked,
+        selected_asset_keys={key},
+        can_subset=False,
+        resource_defs=None,
+        backfill_policy=None,
+        check_specs_by_output_name=check_specs_by_output_name,
+        selected_asset_check_keys=None,
+        is_subset=False,
+        specs=[AssetSpec(key=key, partitions_def=partitions_def,
+                         automation_condition=automation_condition)],
+        execution_type=None,
+        hook_defs=None,
     )
 
 

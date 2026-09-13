@@ -29,7 +29,7 @@ Single project. Orchestrator code location at `orchestrator/`, agent container i
 
 **Purpose**: Confirm the existing test environments run before changing anything (baseline).
 
-- [ ] T001 Confirm baseline test suites are green before changes: run `cd orchestrator && ../.venv/bin/python -m pytest -q` and `cd ui && ../.venv/bin/python -m pytest -q` (both suites share the Python 3.12 `.venv/` that carries Dagster 1.13.21 — the PEP 668 host's system `python` has no Dagster; recreate `.venv/` per `CLAUDE.local.md` only if missing)
+- [X] T001 Confirm baseline test suites are green before changes: run `cd orchestrator && ../.venv/bin/python -m pytest -q` and `cd ui && ../.venv/bin/python -m pytest -q` (both suites share the Python 3.12 `.venv/` that carries Dagster 1.13.21 — the PEP 668 host's system `python` has no Dagster; recreate `.venv/` per `CLAUDE.local.md` only if missing)
 
 ---
 
@@ -39,11 +39,11 @@ Single project. Orchestrator code location at `orchestrator/`, agent container i
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Bump `SCHEMA_VERSION` 4 → 5 and add identity `migrate_4_to_5` in [ui/schema.py](../../ui/schema.py) (per data-model.md "Schema evolution")
-- [ ] T003 Add the `produces.checks` list-of-objects field and per-item validation in [ui/schema.py](../../ui/schema.py): `name` (required, `^[a-z0-9]+(-[a-z0-9]+)*$`, unique within agent), `command` (required, non-empty), optional `image`, `blocking` (bool, default `true`), `timeout_seconds` (`1..86400`, default `300` when omitted), `network` (enum `agentnet-isolated|agentnet|bridge`); reject `checks` present without a valid `produces.asset` and duplicate check names (contracts/check-model.md §2–§3)
-- [ ] T004 [P] Add the checks help/comment text constant beside `PRODUCES_BLOCK_HELP` in [ui/schema.py](../../ui/schema.py) (authoritative wording for FR-012; emitted verbatim by the YAML writer)
-- [ ] T005 [P] Extract the shared launch+report core (Popen / live stdout stream / stderr drain / agent `timeout_seconds` / spec-007 report extraction / fallback report / `build_metadata`) out of `make_run_op` into a reusable helper in [orchestrator/factory.py](../../orchestrator/factory.py); the unchanged checkless `AssetsDefinition.from_op` path calls it and behaves byte-for-byte as before (FR-013, contracts/check-execution.md §1–§2)
-- [ ] T006 Add the `HARNESS_IMAGE` harness→default-check-image map in [orchestrator/factory.py](../../orchestrator/factory.py) (used to resolve a check's default image, R6)
+- [X] T002 Bump `SCHEMA_VERSION` 4 → 5 and add identity `migrate_4_to_5` in [ui/schema.py](../../ui/schema.py) (per data-model.md "Schema evolution")
+- [X] T003 Add the `produces.checks` list-of-objects field and per-item validation in [ui/schema.py](../../ui/schema.py): `name` (required, `^[a-z0-9]+(-[a-z0-9]+)*$`, unique within agent), `command` (required, non-empty), optional `image`, `blocking` (bool, default `true`), `timeout_seconds` (`1..86400`, default `300` when omitted), `network` (enum `agentnet-isolated|agentnet|bridge`); reject `checks` present without a valid `produces.asset` and duplicate check names (contracts/check-model.md §2–§3)
+- [X] T004 [P] Add the checks help/comment text constant beside `PRODUCES_BLOCK_HELP` in [ui/schema.py](../../ui/schema.py) (authoritative wording for FR-012; emitted verbatim by the YAML writer)
+- [X] T005 [P] Extract the shared launch+report core (Popen / live stdout stream / stderr drain / agent `timeout_seconds` / spec-007 report extraction / fallback report / `build_metadata`) out of `make_run_op` into a reusable helper in [orchestrator/factory.py](../../orchestrator/factory.py); the unchanged checkless `AssetsDefinition.from_op` path calls it and behaves byte-for-byte as before (FR-013, contracts/check-execution.md §1–§2)
+- [X] T006 Add the `HARNESS_IMAGE` harness→default-check-image map in [orchestrator/factory.py](../../orchestrator/factory.py) (used to resolve a check's default image, R6)
 
 **Checkpoint**: Schema v5 accepts/validates `checks`; the producer launch core is reusable by both asset paths.
 
@@ -57,18 +57,18 @@ Single project. Orchestrator code location at `orchestrator/`, agent container i
 
 ### Tests for User Story 1 ⚠️ (write first, ensure they fail)
 
-- [ ] T007 [P] [US1] Add a check-container docker-run stub (alongside the existing agent-launch stub) in [orchestrator/tests/conftest.py](../../orchestrator/tests/conftest.py)
-- [ ] T008 [US1] Create [orchestrator/tests/test_checks.py](../../orchestrator/tests/test_checks.py) with US1 tests: check argv (`-v <out>:/output:ro`, `[-v <ws>:/workspace:ro]`, `-v …/report.json:/report.json:ro`, `--network none`, `--entrypoint sh <image> -c "<command>"`); exit 0 ⇒ `passed=True`, non-zero ⇒ `passed=False`; `metadata.output` = last 4 KB tail; `metadata.exit_code` recorded (contracts/check-execution.md §3, quickstart §0)
+- [X] T007 [P] [US1] Add a check-container docker-run stub (alongside the existing agent-launch stub) in [orchestrator/tests/conftest.py](../../orchestrator/tests/conftest.py)
+- [X] T008 [US1] Create [orchestrator/tests/test_checks.py](../../orchestrator/tests/test_checks.py) with US1 tests: check argv (`-v <out>:/output:ro`, `[-v <ws>:/workspace:ro]`, `-v …/report.json:/report.json:ro`, `--network none`, `--entrypoint sh <image> -c "<command>"`); exit 0 ⇒ `passed=True`, non-zero ⇒ `passed=False`; `metadata.output` = last 4 KB tail; `metadata.exit_code` recorded (contracts/check-execution.md §3, quickstart §0)
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Implement `run_checks(...)` in [orchestrator/factory.py](../../orchestrator/factory.py): resolve image (`check.image` or `HARNESS_IMAGE[harness]`), build the check argv, launch one `--rm` container per check in declared order, capture combined stdout/stderr, and return one `AssetCheckResult(check_name, passed=(exit==0), metadata={output: last-4KB tail, exit_code, blocking, image})` per check (contracts/check-execution.md §3)
-- [ ] T010 [US1] Add the `@multi_asset(specs=[AssetSpec…], check_specs=[AssetCheckSpec…])` construction path for check-bearing asset agents in `build_asset` in [orchestrator/factory.py](../../orchestrator/factory.py); generator-op body launches the producer via the shared core (T005), writes the report dict to `<pipes_dir>/report.json`, calls `run_checks`, and `finally` `rmtree`s the per-run pipes dir after checks run (R1/R2, contracts/check-execution.md §1–§2)
-- [ ] T011 [US1] On producer OK, `yield MaterializeResult(asset_key, metadata=<spec-007 metadata union>, check_results=<all results>)` in [orchestrator/factory.py](../../orchestrator/factory.py) (R3, contracts/check-execution.md §4)
-- [ ] T012 [P] [US1] Add the repeatable-object-rows **Checks card** control inside `buildAssetCard()` (each row: `name`, `command`, `image`, `blocking`, `timeout_seconds`, `network`) plus its collect logic in [ui/static/agent-form.js](../../ui/static/agent-form.js) (contracts/check-model.md §4)
-- [ ] T013 [P] [US1] Lift `produces.checks` in `read_agent` and add the `_produces_block_lines` branch that emits a nested `checks:` sequence-of-mappings (with header comment, only set fields) in [ui/agents_store.py](../../ui/agents_store.py) (contracts/check-model.md §5)
-- [ ] T014 [P] [US1] Add a UI round-trip test in [ui/tests/](../../ui/tests/) — `produces.checks` validates, emits, and reads back unchanged
-- [ ] T015 [P] [US1] Create the verification fixture [agents/verify-checks.yaml](../../agents/verify-checks.yaml) with the four checks from quickstart §1 (`has-output`, `advisory-fail`, `readonly-guard`, `slow`) — exercises US1–US4 for manual quickstart validation
+- [X] T009 [US1] Implement `run_checks(...)` in [orchestrator/factory.py](../../orchestrator/factory.py): resolve image (`check.image` or `HARNESS_IMAGE[harness]`), build the check argv, launch one `--rm` container per check in declared order, capture combined stdout/stderr, and return one `AssetCheckResult(check_name, passed=(exit==0), metadata={output: last-4KB tail, exit_code, blocking, image})` per check (contracts/check-execution.md §3)
+- [X] T010 [US1] Add the `@multi_asset(specs=[AssetSpec…], check_specs=[AssetCheckSpec…])` construction path for check-bearing asset agents in `build_asset` in [orchestrator/factory.py](../../orchestrator/factory.py); generator-op body launches the producer via the shared core (T005), writes the report dict to `<pipes_dir>/report.json`, calls `run_checks`, and `finally` `rmtree`s the per-run pipes dir after checks run (R1/R2, contracts/check-execution.md §1–§2)
+- [X] T011 [US1] On producer OK, `yield MaterializeResult(asset_key, metadata=<spec-007 metadata union>, check_results=<all results>)` in [orchestrator/factory.py](../../orchestrator/factory.py) (R3, contracts/check-execution.md §4)
+- [X] T012 [P] [US1] Add the repeatable-object-rows **Checks card** control inside `buildAssetCard()` (each row: `name`, `command`, `image`, `blocking`, `timeout_seconds`, `network`) plus its collect logic in [ui/static/agent-form.js](../../ui/static/agent-form.js) (contracts/check-model.md §4)
+- [X] T013 [P] [US1] Lift `produces.checks` in `read_agent` and add the `_produces_block_lines` branch that emits a nested `checks:` sequence-of-mappings (with header comment, only set fields) in [ui/agents_store.py](../../ui/agents_store.py) (contracts/check-model.md §5)
+- [X] T014 [P] [US1] Add a UI round-trip test in [ui/tests/](../../ui/tests/) — `produces.checks` validates, emits, and reads back unchanged
+- [X] T015 [P] [US1] Create the verification fixture [agents/verify-checks.yaml](../../agents/verify-checks.yaml) with the four checks from quickstart §1 (`has-output`, `advisory-fail`, `readonly-guard`, `slow`) — exercises US1–US4 for manual quickstart validation
 
 **Checkpoint**: A single check materializes green/red on its asset with output attached — MVP delivered.
 
