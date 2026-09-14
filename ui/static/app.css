@@ -27,7 +27,9 @@ html[data-sidebar="collapsed"] .ax-app {
 .ax-sidebar {
   display: flex;
   flex-direction: column;
-  background: var(--color-nav-background);
+  /* Sidebar and content share one ground (T032) — the sidebar is no longer a dark
+     navy rail. The right-edge keyline is the only thing separating the two panes. */
+  background: var(--color-background-default);
   border-right: thin solid var(--color-keyline-default);
   padding: var(--space-8) var(--space-6);
   gap: var(--space-8);
@@ -51,8 +53,13 @@ html[data-sidebar="collapsed"] .ax-app {
   padding: 0 var(--space-4);
   min-height: var(--space-12);
 }
-.ax-brand-mark { width: var(--icon-lg); height: var(--icon-lg); flex: none; }
-.ax-brand-name { height: var(--icon-md); width: auto; }
+/* Expanded rail shows the horizontal lockup; the standalone mark is for the
+   collapsed rail only (revealed in the collapsed block below). */
+.ax-brand-mark { width: var(--icon-lg); height: var(--icon-lg); flex: none; display: none; }
+.ax-brand-lockup { width: var(--brand-lockup-width); height: auto; flex: none; }
+.ax-brand-lockup--dark { display: none; }                       /* light ground → light lockup */
+html[data-theme="dark"] .ax-brand-lockup--light { display: none; }
+html[data-theme="dark"] .ax-brand-lockup--dark { display: block; }
 
 /* ── Navigation ───────────────────────────────────────── */
 .ax-nav { display: flex; flex-direction: column; gap: var(--space-1); flex: 1; overflow-y: auto; min-height: 0; }
@@ -63,15 +70,15 @@ html[data-sidebar="collapsed"] .ax-app {
   min-height: var(--space-12);      /* 32px */
   padding: 0 var(--space-6);
   border-radius: var(--radius-lg);  /* 8px */
-  color: var(--color-nav-text);
+  color: var(--color-text-light);
   font: var(--type-body-md);
   transition: background var(--transition-fast), color var(--transition-fast);
 }
-/* Hover/active read against the fixed navy sidebar in BOTH themes, so they use the
-   nav-surface + translucent-teal tokens (see T008 audit), not theme-flipping
-   opaque background tokens which fail AA on navy in light mode. */
-.ax-nav-item:hover { background: var(--color-nav-button-hover); color: var(--color-nav-text-hover); }
-.ax-nav-item.is-active { background: var(--color-background-blue); color: var(--color-nav-text-selected); font-weight: 500; }
+/* Now that the rail shares the content ground (T032), hover/active read against the
+   flat surface in both themes: hover = one level lighter (readme Navigation), active
+   = translucent-teal fill with default-strength text (both AA in light and dark). */
+.ax-nav-item:hover { background: var(--color-background-lighter); color: var(--color-text-default); }
+.ax-nav-item.is-active { background: var(--color-background-blue); color: var(--color-text-default); font-weight: 500; }
 .ax-icon { width: var(--icon-sm); height: var(--icon-sm); stroke: currentColor; fill: none; flex: none; }
 
 /* ── Sidebar foot: Dagster status, theme control, collapse ── */
@@ -89,11 +96,11 @@ html[data-sidebar="collapsed"] .ax-app {
   gap: var(--space-5);
   padding: var(--space-5) var(--space-6);
   border-radius: var(--radius-lg);
-  color: var(--color-nav-text);
-  background: var(--color-nav-button);
+  color: var(--color-text-light);
+  background: var(--color-background-light);
   transition: background var(--transition-fast), color var(--transition-fast);
 }
-.ax-dagster:hover { background: var(--color-nav-button-hover); color: var(--color-nav-text-hover); }
+.ax-dagster:hover { background: var(--color-background-lighter); color: var(--color-text-default); }
 .ax-dagster-dot {
   width: var(--space-4);
   height: var(--space-4);
@@ -105,9 +112,9 @@ html[data-sidebar="collapsed"] .ax-app {
 .ax-dagster-dot[data-state="down"] { background: var(--color-accent-red); }
 .ax-dagster-dot[data-state="unknown"] { background: var(--color-accent-gray); animation: ab-pulse 1.4s ease-in-out infinite; }
 .ax-dagster-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; flex: 1; }
-.ax-dagster-label { font: var(--type-label-sm); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-nav-text); }
-.ax-dagster-status { font: var(--type-body-sm); color: var(--color-nav-text-hover); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ax-dagster-open { color: var(--color-nav-text); flex: none; }
+.ax-dagster-label { font: var(--type-label-sm); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-light); }
+.ax-dagster-status { font: var(--type-body-sm); color: var(--color-text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-dagster-open { color: var(--color-text-lighter); flex: none; }
 
 /* Theme control: a compact segmented control of three icon-only buttons that fits
    the narrow sidebar column (bug theme-control-overflow). The option name is the
@@ -127,10 +134,10 @@ html[data-sidebar="collapsed"] .ax-app {
   padding: var(--space-3);
   background: none;
   border-color: transparent;
-  color: var(--color-nav-text);
+  color: var(--color-text-light);
 }
-.ax-theme-control .ax-theme-option:hover:not(:disabled) { background: var(--color-nav-button-hover); border-color: transparent; color: var(--color-nav-text-hover); }
-.ax-theme-control .ax-theme-option[aria-checked="true"] { background: var(--color-background-blue); color: var(--color-nav-text-selected); }
+.ax-theme-control .ax-theme-option:hover:not(:disabled) { background: var(--color-background-lighter); border-color: transparent; color: var(--color-text-default); }
+.ax-theme-control .ax-theme-option[aria-checked="true"] { background: var(--color-background-blue); color: var(--color-text-default); }
 
 /* Scoped to the sidebar foot so this chrome styling outranks the .ax-btn base the
    collapse toggle also carries (every <button> carries the design-system class, FR-024). */
@@ -142,20 +149,22 @@ html[data-sidebar="collapsed"] .ax-app {
   border: none;
   background: none;
   border-radius: var(--radius-lg);
-  color: var(--color-nav-text);
+  color: var(--color-text-light);
   font: var(--type-body-sm);
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
-.ax-sidebar-foot .ax-collapse-toggle:hover { background: var(--color-nav-button-hover); color: var(--color-nav-text-hover); }
+.ax-sidebar-foot .ax-collapse-toggle:hover { background: var(--color-background-lighter); color: var(--color-text-default); }
 .ax-collapse-label { flex: 1; min-width: 0; text-align: left; }
 
 /* ── Collapsed sidebar (68px) ─────────────────────────── */
 html[data-sidebar="collapsed"] .ax-nav-label,
-html[data-sidebar="collapsed"] .ax-brand-name,
+html[data-sidebar="collapsed"] .ax-brand-lockup,
 html[data-sidebar="collapsed"] .ax-collapse-label,
 html[data-sidebar="collapsed"] .ax-dagster-text,
 html[data-sidebar="collapsed"] .ax-dagster-open { display: none; }
+/* The collapsed rail is too narrow for the 130px lockup — show the mark instead. */
+html[data-sidebar="collapsed"] .ax-brand-mark { display: block; }
 html[data-sidebar="collapsed"] .ax-sidebar { padding-left: var(--space-3); padding-right: var(--space-3); }
 html[data-sidebar="collapsed"] .ax-brand,
 html[data-sidebar="collapsed"] .ax-nav-item,
@@ -293,6 +302,10 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 .ax-btn--ghost:hover:not(:disabled) { background: var(--color-background-lighter-hover); border-color: var(--color-border-hover); }
 .ax-btn--danger { background: var(--color-background-red); color: var(--color-text-red); border-color: var(--color-accent-red); }
 .ax-btn--danger:hover:not(:disabled) { background: var(--color-accent-red); color: var(--color-always-white); }
+/* Outlined modifier (readme Button variants): transparent fill + teal keyline, combines
+   with any intent. Placed last so it outranks the intent fill above (equal specificity). */
+.ax-btn--outlined { background: none; color: var(--color-accent-teal); border-color: var(--color-border-default); }
+.ax-btn--outlined:hover:not(:disabled) { background: var(--color-background-blue); border-color: var(--color-accent-teal); }
 
 /* ── Spinner (Spinner.d.ts) ───────────────────────────── */
 /* A token-sized ring spinning on ab-spin (animations.css); shown by `button loading`. */
@@ -334,6 +347,41 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 .ax-toggle input:checked + .ax-toggle-track::after { transform: translateX(var(--space-8)); }
 .ax-toggle input:focus-visible + .ax-toggle-track { outline: thin solid var(--color-focus-ring); outline-offset: var(--space-1); }
 
+/* ── Checkbox (Checkbox.d.ts) ─────────────────────────── */
+/* Native input tinted to the brand via accent-color; token box + gap. */
+.ax-checkbox { display: inline-flex; align-items: center; gap: var(--space-4); cursor: pointer; font: var(--type-body-md); color: var(--color-text-default); }
+.ax-checkbox input { width: var(--icon-sm); height: var(--icon-sm); margin: 0; accent-color: var(--color-checkbox-checked); flex: none; cursor: pointer; }
+.ax-checkbox input:focus-visible { outline: thin solid var(--color-focus-ring); outline-offset: var(--space-1); }
+.ax-checkbox input:disabled { cursor: default; }
+
+/* ── StatusDot (StatusDot.d.ts) ───────────────────────── */
+/* An 8px dot coloured from the status accents; state = data-state on the span. */
+.ax-status-dot { display: inline-block; width: var(--space-4); height: var(--space-4); border-radius: var(--radius-round); background: var(--color-accent-gray); flex: none; }
+.ax-status-dot[data-state="running"] { background: var(--color-accent-teal); }
+.ax-status-dot[data-state="success"] { background: var(--color-accent-green); }
+.ax-status-dot[data-state="error"] { background: var(--color-accent-red); }
+.ax-status-dot[data-state="warning"] { background: var(--color-accent-yellow); }
+.ax-status-dot[data-state="scheduled"] { background: var(--color-accent-lime); }
+.ax-status-dot[data-state="idle"] { background: var(--color-accent-gray); }
+
+/* ── Tabs (Tabs.d.ts) ─────────────────────────────────── */
+/* Bottom-border indicator (Dagster style). Each tab also carries .ax-btn, so these
+   descendant rules override the button base to a borderless, inset-underline tab. */
+.ax-tabs { display: flex; gap: var(--space-8); border-bottom: thin solid var(--color-keyline-default); }
+.ax-tabs .ax-tab {
+  background: none; border: none; border-radius: 0;
+  padding: var(--space-6) 0;
+  font: var(--type-body-md); font-weight: 600;
+  color: var(--color-text-light);
+  box-shadow: transparent 0 calc(-1 * var(--space-1)) 0 inset;
+  cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-3);
+  transition: color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.ax-tabs .ax-tab:hover:not(:disabled) { background: none; color: var(--color-text-default); }
+.ax-tabs .ax-tab.is-active { color: var(--color-text-default); box-shadow: var(--color-text-default) 0 calc(-1 * var(--space-1)) 0 inset; }
+.ax-tabs .ax-tab:disabled { opacity: 0.5; cursor: default; }
+.ax-tab-count { font: var(--type-mono-sm); padding: 0 var(--space-3); background: var(--color-background-gray); border-radius: var(--radius-sm); color: var(--color-text-default); }
+
 /* ── Form sections & help text ────────────────────────── */
 .ax-form-section { margin-bottom: var(--space-12); }
 .ax-form-section > h2 {
@@ -347,6 +395,7 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 }
 .ax-field { margin-bottom: var(--space-8); }
 .ax-field > label { display: block; margin-bottom: var(--space-3); font: var(--type-body-md); color: var(--color-text-default); }
+.ax-field-label { display: block; margin-bottom: var(--space-3); font: var(--type-body-md); color: var(--color-text-default); }  /* text_input macro label */
 .ax-field > label.ax-toggle { display: inline-flex; }   /* a toggle field keeps the pill + text row */
 .ax-help { display: block; margin-top: var(--space-3); font: var(--type-body-sm); color: var(--color-text-light); overflow-wrap: anywhere; }
 .ax-field-error { margin-top: var(--space-3); font: var(--type-body-sm); color: var(--color-text-red); overflow-wrap: anywhere; }

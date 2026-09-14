@@ -250,7 +250,17 @@ so files it writes into `agents/` and `prompts/` stay owned by you rather than r
 read-only (the source of the model aliases the form offers). Every field on the form carries the
 same explanation the YAML comments and this README's key table come from — they all read
 `ui/schema.py`. The form flags env values that look like secrets and asks for confirmation before
-writing them, and never logs env values. A built-in component reference lives at
+writing them, and never logs env values.
+
+The UI is built on the **AgentBox design system**, which lives in the repo at
+[`ui/design-system/`](ui/design-system/) and is the single source of truth for how the management
+UI looks — `ui/design-system/readme.md` is the authoritative guide, and the token stylesheets under
+`ui/design-system/tokens/` are the machine-readable source. The design system makes AgentBox a
+**sibling of Dagster**: same layout, fonts, and surfaces, only the brand differs. Two rules follow
+from it and are enforced by the UI test suite — style only through design-system **tokens**
+(`var(--…)`; no literal colours, fonts, or pixel values in `ui/templates/` or `ui/static/`), and
+build every screen from the shared component **macros** in `ui/templates/components/macros.html`
+rather than bespoke markup. A served developer reference of the whole system lives at
 [`/design-system`](http://localhost:8080/design-system) (a developer aid, not linked from the app
 navigation).
 
@@ -372,7 +382,8 @@ ui/              management UI (FastAPI + Jinja2): main.py (routes), schema.py (
                  model that drives the form, YAML comments, and this README's key table),
                  agents_store.py / prompts_store.py (read + atomic write), dagster.py (workspace
                  reload), secret_scan.py (secret heuristic), templates/, static/, tests/,
-                 design-system/ (the Archon component reference served at /design-system)
+                 design-system/ (the AgentBox design system — source of truth in
+                 design-system/readme.md; developer reference served at /design-system)
 litellm/         LiteLLM proxy config (model aliases)
 scripts/         bootstrap.sh — idempotent host setup
 docker-compose.yml

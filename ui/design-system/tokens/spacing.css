@@ -31,6 +31,7 @@
   --nav-width: 240px; /* @kind spacing */
   --nav-width-collapsed: 68px; /* @kind spacing */
   --topbar-height: 48px; /* @kind spacing */
+  --brand-lockup-width: 130px; /* @kind spacing — expanded-sidebar brand lockup width */
 
   /* ── Z-index ── */
   --z-dropdown: 50; /* @kind other */

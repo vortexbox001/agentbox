@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentBox Design System</title>
+  <script>
+    // Mirror the app's pre-paint theme model so the gallery renders in the reader's
+    // chosen theme with no wrong-theme flash.
+    (function () {
+      try {
+        var pref = localStorage.getItem("agentbox.theme") || "system";
+        var dark = pref === "dark" ||
+          (pref !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.setAttribute("data-theme", "dark");
+      } catch (e) { /* storage unavailable → default light */ }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { margin: 0; background: var(--color-background-light); color: var(--color-text-default); font-family: var(--font-default); font: var(--type-body-md); }
+    header.top {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap;
+      padding: var(--space-8) var(--space-10);
+      background: var(--color-background-default);
+      border-bottom: thin solid var(--color-border-default);
+    }
+    header.top img { width: var(--brand-lockup-width); height: auto; }
+    header.top .lockup-dark { display: none; }
+    [data-theme="dark"] header.top .lockup-light { display: none; }
+    [data-theme="dark"] header.top .lockup-dark { display: inline; }
+    header.top nav { display: flex; gap: var(--space-8); margin-left: auto; align-items: center; }
+    a { color: var(--color-link-default); text-decoration: none; }
+    a:hover { color: var(--color-link-hover); text-decoration: underline; }
+    .theme-toggle {
+      font: var(--type-body-sm); font-family: var(--font-default);
+      color: var(--color-text-light); background: var(--color-background-light);
+      border: thin solid var(--color-border-default); border-radius: var(--radius-md);
+      padding: var(--space-3) var(--space-6); cursor: pointer;
+    }
+    main { padding: var(--space-10); max-width: 60rem; margin: 0 auto; }
+    .lede { color: var(--color-text-light); max-width: 44rem; margin: 0 0 var(--space-12); }
+    section.group { margin-bottom: var(--space-14); }
+    section.group > h2 {
+      font: var(--type-display-md); margin: 0 0 var(--space-8);
+      padding-bottom: var(--space-4); border-bottom: thin solid var(--color-keyline-default);
+    }
+    figure.specimen { margin: 0 0 var(--space-10); }
+    figure.specimen figcaption { display: flex; align-items: baseline; gap: var(--space-6); margin-bottom: var(--space-4); flex-wrap: wrap; }
+    figcaption .name { font: var(--type-display-sm); }
+    figcaption .sub { font: var(--type-body-sm); color: var(--color-text-light); }
+    .frame {
+      background: var(--color-background-default);
+      border: thin solid var(--color-border-default);
+      border-radius: var(--radius-lg);
+      overflow: auto;
+    }
+    .frame iframe { border: 0; display: block; max-width: none; }
+    .status { color: var(--color-text-light); }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <img class="lockup-light" src="assets/logo-light.svg" alt="AgentBox">
+    <img class="lockup-dark" src="assets/logo-dark.svg" alt="AgentBox">
+    <nav>
+      <a href="readme.md">readme.md</a>
+      <a href="tokens/theme.css">tokens</a>
+      <a href="_ds_manifest.json">manifest</a>
+      <button class="theme-toggle" type="button" id="theme-toggle">Toggle theme</button>
+    </nav>
+  </header>
+  <main>
+    <p class="lede">The in-repo source of truth for the AgentBox management UI — a sibling of Dagster.
+      Every specimen below renders from the served bundle on the current design, in light and dark.
+      Read <a href="readme.md">readme.md</a> for the full guide.</p>
+    <div id="gallery"><p class="status">Loading specimens…</p></div>
+  </main>
+
+  <script>
+    document.getElementById("theme-toggle").addEventListener("click", function () {
+      var root = document.documentElement;
+      var dark = root.getAttribute("data-theme") === "dark";
+      if (dark) { root.removeAttribute("data-theme"); try { localStorage.setItem("agentbox.theme", "light"); } catch (e) {} }
+      else { root.setAttribute("data-theme", "dark"); try { localStorage.setItem("agentbox.theme", "dark"); } catch (e) {} }
+    });
+
+    var GROUP_ORDER = ["Brand", "Colors", "Type", "Spacing", "Components", "AgentBox App"];
+
+    function parseViewport(v) {
+      var m = /^(\d+)x(\d+)$/.exec(v || "");
+      return m ? { w: parseInt(m[1], 10), h: parseInt(m[2], 10) } : { w: 700, h: 160 };
+    }
+
+    fetch("_ds_manifest.json").then(function (r) { return r.json(); }).then(function (manifest) {
+      var gallery = document.getElementById("gallery");
+      gallery.textContent = "";
+      var cards = (manifest.cards || []).slice();
+
+      // Group cards, ordering groups by GROUP_ORDER (unknown groups appended).
+      var groups = {};
+      cards.forEach(function (c) { (groups[c.group] = groups[c.group] || []).push(c); });
+      var names = Object.keys(groups).sort(function (a, b) {
+        var ia = GROUP_ORDER.indexOf(a), ib = GROUP_ORDER.indexOf(b);
+        if (ia === -1) ia = 99; if (ib === -1) ib = 99;
+        return ia - ib || a.localeCompare(b);
+      });
+
+      names.forEach(function (group) {
+        var section = document.createElement("section");
+        section.className = "group";
+        var h2 = document.createElement("h2");
+        h2.textContent = group;
+        section.appendChild(h2);
+
+        groups[group].forEach(function (card) {
+          var vp = parseViewport(card.viewport);
+          var fig = document.createElement("figure");
+          fig.className = "specimen";
+
+          var cap = document.createElement("figcaption");
+          var name = document.createElement("span");
+          name.className = "name";
+          name.textContent = card.name || card.path;
+          cap.appendChild(name);
+          if (card.subtitle) {
+            var sub = document.createElement("span");
+            sub.className = "sub";
+            sub.textContent = card.subtitle;
+            cap.appendChild(sub);
+          }
+          fig.appendChild(cap);
+
+          var frame = document.createElement("div");
+          frame.className = "frame";
+          frame.style.height = vp.h + "px";
+          var iframe = document.createElement("iframe");
+          iframe.src = card.path;
+          iframe.width = vp.w;
+          iframe.height = vp.h;
+          iframe.loading = "lazy";
+          iframe.setAttribute("sandbox", "allow-same-origin allow-scripts");
+          iframe.title = (card.name || card.path) + " specimen";
+          frame.appendChild(iframe);
+          fig.appendChild(frame);
+
+          section.appendChild(fig);
+        });
+
+        gallery.appendChild(section);
+      });
+    }).catch(function (e) {
+      document.getElementById("gallery").innerHTML =
+        '<p class="status">Could not load <code>_ds_manifest.json</code>: ' + String(e) + "</p>";
+    });
+  </script>
+</body>
+</html>

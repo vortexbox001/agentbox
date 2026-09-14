@@ -29,21 +29,44 @@ def test_design_system_index_is_html(client):
     resp = client.get("/design-system/")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
-    # The document loads its assets by relative path so they resolve under the mount.
-    assert "./support.js" in resp.text
-    assert "./archon-tokens.css" in resp.text
+    # /design-system/ opens the developer reference app (index.html), not the old
+    # dark-theme reference doc (spec 009 FR-003). It loads the bundle stylesheet by
+    # relative path so assets resolve under the mount, and names the design system.
+    assert "Design System" in resp.text
+    assert 'href="styles.css"' in resp.text
 
 
 def test_design_system_assets_served(client):
-    for path in ("/design-system/support.js", "/design-system/archon-tokens.css"):
+    # Real bundle assets resolve through the mount, including nested token files.
+    for path in ("/design-system/styles.css", "/design-system/tokens/colors.css"):
         assert client.get(path).status_code == 200
 
 
-def test_design_system_prototype_served_with_space_in_name(client):
-    # A filename containing a space must resolve through the static mount (US7).
-    resp = client.get("/design-system/Archon%20Prototype.dc.html")
+def test_design_system_nested_specimen_served(client):
+    # A nested guideline specimen resolves through the static mount.
+    resp = client.get("/design-system/guidelines/brand-logo.html")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
+
+
+def test_design_system_gallery_renders_manifest(client):
+    # The gallery (index.html) reads _ds_manifest.json and groups the specimens; the
+    # served page names the manifest and the group order it renders (spec 009 T034).
+    html = client.get("/design-system/").text
+    assert "_ds_manifest.json" in html
+    assert "Components" in html and "Colors" in html
+
+
+def test_design_system_specimen_cards_all_served(client):
+    # Every specimen the gallery iframes must resolve under the mount (T034/T036).
+    import json as _json
+
+    manifest = _json.loads(
+        open(os.path.join(UI_DIR, "design-system", "_ds_manifest.json"), encoding="utf-8").read()
+    )
+    for card in manifest["cards"]:
+        resp = client.get("/design-system/" + card["path"])
+        assert resp.status_code == 200, f"specimen not served: {card['path']}"
 
 
 def test_agents_page_has_no_design_system_nav_anchor(client):

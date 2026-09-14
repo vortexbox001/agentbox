@@ -95,14 +95,38 @@ Single project — server-rendered UI under `ui/`. Design-system bundle authorit
 
 **Independent Test**: Open `/design-system` → the developer reference app (not the old Archon doc). List skills in a repo Claude Code session → the design skill appears pointing at `ui/design-system/readme.md`; asked to add a card it produces markup using the shared `card` macro. README, AGENTS.md, and the constitution describe the new location and rule.
 
-- [ ] T017 [US3] Wire the design skill under `.claude/skills/agentbox-design/` (FR-019) from `ui/design-system/SKILL.md`, with instructions pointing at `ui/design-system/readme.md`, so a repo Claude Code session auto-discovers it; then validate SC-007 (per quickstart §5.2) — in a repo Claude Code session confirm the design skill is listed and, asked to add a card, it produces markup using the shared `card` macro from `ui/templates/components/macros.html` (requires T009). If session validation is not runnable in the working environment, record it as the manual acceptance step for SC-007.
-- [ ] T018 [P] [US3] Confirm `ui/main.py` serves the design-system bundle at `/design-system/` and that the path opens the developer reference app rather than the old Archon doc (FR-003); adjust the mount/entry if it still targets a retired file.
-- [ ] T019 [P] [US3] Update `README.md` and `AGENTS.md` (FR-020) to describe the design-system location (`ui/design-system/`), name `ui/design-system/readme.md` as the source of truth, and state the "sibling of Dagster / use tokens and macros" rule.
-- [ ] T020 [P] [US3] Add a "Design" principle to `.specify/memory/constitution.md` (FR-021) requiring every screen to use design-system tokens and component macros, forbidding literal colours/fonts/pixel values in app styling and templates, and requiring new components to land in the design system first and the shared macro set second — with a MINOR version bump per governance rules.
-- [ ] T021 [US3] Rewrite `ui/tests/test_design_system_docs.py` (FR-023) to replace the stale Archon-file assertions: parse `ui/design-system/_ds_manifest.json` and assert each `components[].name` has a corresponding macro in `ui/templates/components/macros.html` (`Tab` covered by `tabs`); assert `README.md` and `AGENTS.md` reference `ui/design-system/readme.md`; and assert no test or served file references the retired Archon artefacts.
-- [ ] T022 [P] [US3] Apply the design system's content rules to UI text across `ui/templates/**` (FR-018): sentence case, no emoji, lowercase status text, numeric counts in mono, relative timestamps under a day, and page titles of one or two words.
+### Brand lockup & nav-surface refinements (do before T017–T022)
 
-**Checkpoint**: The bundle is served and discoverable; skill, docs, and constitution record the system — US3 independently testable.
+These three refine the US1 shell (T004–T006) that US3 documents, so land them before the rest of
+User Story 3 so the served bundle, docs, and constitution record the final look. They depend on the
+shell/tokens (T004–T005) already in place.
+
+- [X] T031 Replace the split logo mark + wordmark with the theme-aware horizontal lockups: in `ui/templates/base.html` (lines 37–39) swap the two `<img>` (`/design-system/assets/logo.svg` + `wordmark.svg`) for the combined lockup, showing `/design-system/assets/logo-dark.svg` under the dark theme and `/design-system/assets/logo-light.svg` under light (theme-toggled via `[data-theme]`/`prefers-color-scheme` CSS on `.ax-brand`, matching the pre-paint theme model so there is no wrong-theme flash), sized to **130px wide** (auto height, expressed via the spacing/size tokens per FR-013 — add a `--brand-lockup-width: 130px` token to the design system rather than a literal in `app.css`); update `.ax-brand-mark`/`.ax-brand-name` in `ui/static/app.css` (lines 54–55, 155–160) accordingly, and preserve a sensible collapsed-sidebar (68px) state by keeping the standalone `logo.svg` mark for the collapsed rail while the 130px lockup shows only when expanded.
+- [X] T032 Make the left-hand nav background match the main window: in `ui/static/app.css` change `.ax-sidebar` (line 30) from `var(--color-nav-background)` to the main content surface token (`--color-background-default`) so the sidebar and content area share one ground in both themes, and remove/restyle the navy-specific chrome that assumed a dark rail — revisit the nav-item hover/active fills and nav text/icon colours (the `--color-nav-*` tokens at `app.css:70–74`, plus the sidebar-foot Dagster/theme/collapse controls and the `--color-keyline-default` right-edge inset) so they read correctly against the flat surface and keep WCAG AA in light and dark (re-run the T008 contrast pairs for any pair that changed).
+- [X] T033 [US3] Update the design system to reflect T031–T032: in `ui/design-system/readme.md` revise the brand-assets line (line 11) and the assets tree (lines 175–178) to name `assets/logo-dark.svg`/`assets/logo-light.svg` as the theme lockups (130px) and note their usage, and revise the Sidebar layout line (line 150) so it no longer says "dark background (`--color-nav-background`)" but "same surface as the content area (`--color-background-default`)"; mirror the change in `ui/design-system/guidelines/brand-logo.html` and `ui/design-system/SKILL.md` if either states the old brand/nav treatment, and add the `--brand-lockup-width` token from T031 to the token docs.
+
+- [X] T017 [US3] Wire the design skill under `.claude/skills/agentbox-design/` (FR-019) from `ui/design-system/SKILL.md`, with instructions pointing at `ui/design-system/readme.md`, so a repo Claude Code session auto-discovers it; then validate SC-007 (per quickstart §5.2) — in a repo Claude Code session confirm the design skill is listed and, asked to add a card, it produces markup using the shared `card` macro from `ui/templates/components/macros.html` (requires T009). If session validation is not runnable in the working environment, record it as the manual acceptance step for SC-007.
+- [X] T018 [P] [US3] Confirm `ui/main.py` serves the design-system bundle at `/design-system/` and that the path opens the developer reference app rather than the old Archon doc (FR-003); adjust the mount/entry if it still targets a retired file.
+- [X] T019 [P] [US3] Update `README.md` and `AGENTS.md` (FR-020) to describe the design-system location (`ui/design-system/`), name `ui/design-system/readme.md` as the source of truth, and state the "sibling of Dagster / use tokens and macros" rule.
+- [X] T020 [P] [US3] Add a "Design" principle to `.specify/memory/constitution.md` (FR-021) requiring every screen to use design-system tokens and component macros, forbidding literal colours/fonts/pixel values in app styling and templates, and requiring new components to land in the design system first and the shared macro set second — with a MINOR version bump per governance rules.
+- [X] T021 [US3] Rewrite `ui/tests/test_design_system_docs.py` (FR-023) to replace the stale Archon-file assertions: parse `ui/design-system/_ds_manifest.json` and assert each `components[].name` has a corresponding macro in `ui/templates/components/macros.html` (`Tab` covered by `tabs`); assert `README.md` and `AGENTS.md` reference `ui/design-system/readme.md`; and assert no test or served file references the retired Archon artefacts.
+- [X] T022 [P] [US3] Apply the design system's content rules to UI text across `ui/templates/**` (FR-018): sentence case, no emoji, lowercase status text, numeric counts in mono, relative timestamps under a day, and page titles of one or two words.
+
+### Served specimen gallery (rebuild the `/design-system` reference page on the new design)
+
+The retired Archon doc rendered a scrollable gallery of specimen cards at `/design-system`; T018
+replaced it with a plain links landing. These tasks rebuild the full specimen gallery on the new
+AgentBox design — the manifest already carries every specimen (`_ds_manifest.json` `cards[]`, 23
+entries: Brand, Colors, Type, Spacing, Components, AgentBox App), and all preview files exist. They
+depend on the final shell/tokens (T004–T005) and the brand/nav refinements (T031–T033), and on the
+served mount (T018); they must obey the US4 no-egress rule (T023–T025), so the gallery and its
+previews carry no external/CDN reference.
+
+- [X] T034 [US3] Rebuild the served **specimen gallery** at `ui/design-system/index.html`, replacing the T018 placeholder landing with a rendered gallery like the retired `/design-system` doc: `fetch('_ds_manifest.json')` and render every `cards[]` entry as a labelled specimen (card `name` + `subtitle`) inside a same-origin **sandboxed `<iframe src="<card.path>">`** sized to its `viewport`, grouped and ordered by `group` (Brand → Colors → Type → Spacing → Components → AgentBox App). Page chrome resolves entirely from the design-system tokens (`styles.css`), mirrors the app's pre-paint light/dark model with a theme toggle (write `agentbox.theme`, stamp `data-theme` before first paint), and uses **inline JS/CSS only — no external or CDN `<script>`/`<link>`** (FR-017/US4). Keep the readme + token links from the placeholder as a header or footer so the page stays a reference entry point.
+- [X] T035 [P] [US3] Make the component specimens render on the production design **offline**: the seven preview cards `components/{buttons,data,feedback,forms,layout,navigation}/*.card.html` and `ui_kits/agentbox-app/index.html` currently render the React reference kit (`_ds_bundle.js`) via **unpkg** (`react`, `react-dom`, `@babel/standalone` — 3 CDN `<script>` each). Rebuild each as static HTML showing the same controls the running app renders, using the design-system component classes (`ax-btn`, `ax-input`, `ax-select`, `ax-checkbox`, `ax-toggle`, `ax-badge`, `ax-status-dot`, `ax-alert`, `ax-spinner`, `ax-tabs`, `ax-card`, `ax-table`) with `styles.css` plus the single source of the component styles at `/static/app.css` — so each card needs no CDN, works with egress blocked, and matches the live UI. Preserve each file's leading `@dsCard` comment (the manifest is parsed from it) and remove the last `unpkg`/CDN references from the bundle.
+- [X] T036 [US3] Serve and guard the gallery: confirm `/design-system/` opens the rebuilt gallery (the `html=True` mount from T018 already serves `index.html`); update the T018 comment in `ui/main.py` and the File Structure section of `ui/design-system/readme.md` to name `index.html` as the served specimen gallery; and extend the UI tests (`ui/tests/test_api.py` and/or `ui/tests/test_design_system_docs.py`) to assert the gallery lists the manifest groups (e.g. its text contains `Components` and `Colors`), that every `cards[].path` in `_ds_manifest.json` resolves under the mount (HTTP 200), and that no served specimen file references `unpkg`/`cdn`/an external `http(s)://` asset URL (locking in the offline guarantee alongside US4/T025).
+
+**Checkpoint**: The bundle is served and discoverable — the `/design-system` specimen gallery renders every component and foundation on the new design and works offline; skill, docs, and constitution record the system — US3 independently testable.
 
 ---
 
@@ -148,14 +172,14 @@ Single project — server-rendered UI under `ui/`. Design-system bundle authorit
 
 - **US1 (P1)**: After Foundational — no dependency on other stories.
 - **US2 (P1)**: Macros independent; page recomposition (T010–T014) consumes US1's shell/tokens.
-- **US3 (P2)**: `test_design_system_docs.py` (T021) needs the macro set (T009) to assert coverage, and the SC-007 validation in T017 needs T009 for the card-macro check; docs/skill-wiring/constitution otherwise independent.
+- **US3 (P2)**: `test_design_system_docs.py` (T021) needs the macro set (T009) to assert coverage, and the SC-007 validation in T017 needs T009 for the card-macro check; docs/skill-wiring/constitution otherwise independent. The brand-lockup/nav-surface refinements (T031–T033) come first: they retune the US1 shell (depend on T004–T005; T032's token changes re-touch the T008 contrast work) and T033 records them in the bundle the rest of US3 documents.
 - **US4 (P2)**: Independent; T025 authors the external-URL assertion onto `test_conformance.py` (started by T007), completing FR-022. US1's T007 is fully green on its own before this.
 
 ### Within Each Story
 
 - US1: base.html shell (T004) and app.css (T005) before shell.js wiring (T006); conformance check (T007) after the token migration exists; contrast audit (T008) last.
 - US2: macros (T009) before page recomposition (T010–T013) and JS restyle (T014); consistency check (T015) and behaviour check (T016) after.
-- US3: docs edits (T019) before the docs-reference assertion in T021; macros (T009) before the T021 coverage assertion and the T017 SC-007 card-macro validation; mount/constitution independent.
+- US3: brand-lockup/nav-surface refinements (T031 → T032 → T033) before the rest of US3 (T017–T022), so docs record the final shell; docs edits (T019) before the docs-reference assertion in T021; macros (T009) before the T021 coverage assertion and the T017 SC-007 card-macro validation; mount/constitution independent. The specimen gallery (T034–T036) comes after the refinements (T031–T033) and the mount (T018): T034 (gallery shell) and T035 (offline component cards) are independent files and run in parallel; T036 (serve/guard) after both.
 - US4: fonts (T023) and sprite (T024) before the URL scrub/verify (T025).
 
 ### Parallel Opportunities
@@ -163,7 +187,7 @@ Single project — server-rendered UI under `ui/`. Design-system bundle authorit
 - Setup: T002 [P].
 - Foundational: T003 [P].
 - US2: T010, T012, T013 [P] (different page files) once macros (T009) exist.
-- US3: T018, T019, T020, T022 [P] (different files); T017 skill-wiring is file-independent but its SC-007 validation needs T009; T021 after T009 + T019.
+- US3: T018, T019, T020, T022 [P] (different files); T017 skill-wiring is file-independent but its SC-007 validation needs T009; T021 after T009 + T019. Gallery: T034, T035 [P] (different files).
 - US4: T024 [P] alongside T023.
 - Polish: T028 [P].
 

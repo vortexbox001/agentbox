@@ -35,8 +35,13 @@
   <div class="ax-app">
     <aside class="ax-sidebar">
       <div class="ax-brand">
+        <!-- Expanded: the theme-aware 130px horizontal lockup (mark + wordmark in one
+             SVG); the light variant shows on the light ground, the dark variant under
+             [data-theme="dark"] — toggled by CSS on the pre-painted theme attribute so
+             there is no wrong-theme flash. Collapsed (68px): only the standalone mark. -->
         <img class="ax-brand-mark" src="/design-system/assets/logo.svg" alt="" aria-hidden="true" width="24" height="24">
-        <img class="ax-brand-name" src="/design-system/assets/wordmark.svg" alt="agentbox">
+        <img class="ax-brand-lockup ax-brand-lockup--light" src="/design-system/assets/logo-light.svg" alt="agentbox">
+        <img class="ax-brand-lockup ax-brand-lockup--dark" src="/design-system/assets/logo-dark.svg" alt="agentbox">
       </div>
       <nav class="ax-nav" aria-label="Primary">
         <a class="ax-nav-item" href="/agents" data-nav="/agents">

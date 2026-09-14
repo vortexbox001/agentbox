@@ -111,17 +111,18 @@ async def _validation_error(request: Request, exc: RequestValidationError):
 
 
 # --- Design system (registered before the static mount so the exact paths win) ---
-# The retired Archon document and its ./support.js / ./archon-tokens.css assets are
-# gone (spec 009 FR-001); the in-repo design-system bundle stays served here at
-# /design-system/. The developer-reference entry for /design-system/ is wired in
-# US3 (T018) — until then only the bundle's own files resolve through the mount.
+# The old dark-theme reference doc and its inline assets are gone (spec 009 FR-001);
+# the in-repo design-system bundle is served here at /design-system/. With html=True
+# the mount serves the bundle's own index.html — the specimen gallery that renders every
+# component and foundation from _ds_manifest.json on the current design — at
+# /design-system/ (FR-003, US3/T018, T034).
 @app.get("/design-system")
 async def _design_root_redirect():
     # Trailing slash so the bundle's relative asset paths resolve under the mount.
     return RedirectResponse("/design-system/", status_code=302)
 
 
-app.mount("/design-system", StaticFiles(directory=config.DESIGN_SYSTEM_DIR, html=False), name="design-system")
+app.mount("/design-system", StaticFiles(directory=config.DESIGN_SYSTEM_DIR, html=True), name="design-system")
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 

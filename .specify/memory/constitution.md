@@ -1,17 +1,11 @@
 <!--
 Sync Impact Report
-  Version change: 1.0.0 → 1.1.0 (generalised all principles — removed implementation specifics)
-  Modified principles:
-    - I. Container Isolation → I. Agent Isolation (broader; no longer names specific networks)
-    - II. Declarative Agent Definitions → II. Configuration over Code (broader)
-    - III. Credential Hygiene → III. Secrets Never in the Open (broader)
-    - IV. Harness Abstraction → IV. Uniform Interface, Diverse Runtimes (broader)
-    - V. Ephemeral Runs, Persistent Outputs → V. Ephemeral Runs, Immutable Outputs (broader)
-    - VI. Documentation Accuracy → VI. Docs Track Reality (broader)
-  Removed sections:
-    - Operational Constraints (implementation-specific details)
-    - Development Workflow (derivable from repo)
-  Added sections: none
+  Version change: 1.1.0 → 1.2.0 (added Principle VII. One Design System — spec 009)
+  Modified principles: none
+  Removed sections: none
+  Added sections:
+    - VII. One Design System (design-system tokens + shared component macros; no literal
+      colours/fonts/pixel values in app styling; new components land in the design system first)
   Deferred TODOs: none
 -->
 
@@ -74,6 +68,18 @@ is preferred over manual review alone.
 **Rationale:** The system runs headless and unattended. When docs are wrong, operators
 misconfigure agents and failures surface hours later.
 
+### VII. One Design System
+
+Every user-facing screen MUST be built from the shared design system: styling MUST resolve
+from design-system tokens, and controls MUST be composed from the shared component macros.
+Literal colours, typefaces, and pixel values MUST NOT appear in application styling or
+templates. A new component MUST land in the design system first and the shared component set
+second, so a single change to a token or a component updates the whole interface.
+
+**Rationale:** AgentBox is meant to feel like a sibling of the tools it lives beside. One
+authoritative design system keeps every screen consistent, makes visual change a single edit,
+and lets both humans and agents build correct UI by reusing the same parts.
+
 ## Governance
 
 This constitution captures the guiding principles for Agentbox's architecture and
@@ -86,4 +92,4 @@ platform targets — live in the README and code, not here.
 - **Compliance** is verified through automated documentation review and human review on
   pull requests.
 
-**Version**: 1.1.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08
+**Version**: 1.2.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-13

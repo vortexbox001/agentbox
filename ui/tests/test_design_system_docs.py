@@ -1,6 +1,17 @@
-"""Constitution VI (Docs Track Reality): ARCHON-DESIGN-SYSTEM.md must describe the
-reference files it documents. These checks read the guide and the reference canvas
-and assert the guide's component and grid claims are present and not contradicted."""
+"""Docs-track-reality checks for the design system (spec 009 FR-023).
+
+The retired Archon guide and its reference canvases are gone (FR-001); these checks
+replace the stale assertions that read them. They verify the in-repo design system is
+the source of truth and is described where it should be:
+
+1. Every component in ``ui/design-system/_ds_manifest.json`` has a corresponding shared
+   Jinja2 macro in ``ui/templates/components/macros.html`` (``Tab`` is covered by
+   ``tabs``).
+2. ``README.md`` and ``AGENTS.md`` name ``ui/design-system/readme.md`` as the source of
+   truth.
+3. No test or served file references a retired Archon artefact.
+"""
+import json
 import os
 import re
 
@@ -8,18 +19,10 @@ import pytest
 
 
 UI_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_DIR = os.path.dirname(UI_DIR)
 DESIGN_DIR = os.path.join(UI_DIR, "design-system")
-GUIDE = os.path.join(DESIGN_DIR, "ARCHON-DESIGN-SYSTEM.md")
-REFERENCE = os.path.join(DESIGN_DIR, "Archon Design System.dc.html")
-
-GRID_PATTERNS = [
-    "ax-grid-stats",
-    "ax-grid-cards",
-    "ax-grid-cards-lg",
-    "ax-grid-detail",
-    "ax-grid-split",
-    "ax-grid-form",
-]
+MANIFEST = os.path.join(DESIGN_DIR, "_ds_manifest.json")
+MACROS = os.path.join(UI_DIR, "templates", "components", "macros.html")
 
 
 def _read(path):
@@ -27,90 +30,125 @@ def _read(path):
         return f.read()
 
 
-def _squash(s):
-    return re.sub(r"\s+", "", s)
+# ── 1. Manifest components ↔ shared macros ──────────────
+def _manifest_component_names():
+    data = json.loads(_read(MANIFEST))
+    return [c["name"] for c in data["components"]]
 
 
-def _section(text, heading):
-    """Body of a `### heading` section up to the next heading of any level."""
-    m = re.search(r"^### " + re.escape(heading) + r"\s*$(.*?)(?=^#{1,3} |\Z)", text, re.M | re.S)
-    assert m, f"guide has no '### {heading}' section"
-    return m.group(1)
+def _macro_names():
+    # `{% macro name(` — the shared component macros.
+    return set(re.findall(r"{%-?\s*macro\s+([a-z_][\w]*)\s*\(", _read(MACROS)))
 
 
-def _grid_row(text, pattern):
-    """(columns, gap) from the named-grid table row for `pattern`."""
-    m = re.search(r"^\|\s*`" + re.escape(pattern) + r"`\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|", text, re.M)
-    assert m, f"guide's grid table has no row for {pattern}"
-    return m.group(1), m.group(2)
+# CamelCase component name → snake_case macro name; `Tab` is rendered by `tabs`.
+_MACRO_OVERRIDES = {"Tab": "tabs"}
 
 
-@pytest.mark.parametrize("pattern", GRID_PATTERNS)
-def test_guide_lists_each_named_grid_pattern(pattern):
-    columns, gap = _grid_row(_read(GUIDE), pattern)
-    assert columns and gap
+def _expected_macro(component_name):
+    if component_name in _MACRO_OVERRIDES:
+        return _MACRO_OVERRIDES[component_name]
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", component_name).lower()
 
 
-@pytest.mark.parametrize("pattern", [p for p in GRID_PATTERNS if p != "ax-grid-cards-lg"])
-def test_guide_grid_rules_match_reference_specimens(pattern):
-    # The reference canvas renders each pattern with inline styles; the guide's
-    # column rule and gap must appear there verbatim (whitespace-insensitive).
-    columns, gap = _grid_row(_read(GUIDE), pattern)
-    reference = _squash(_read(REFERENCE))
-    assert f"grid-template-columns:{_squash(columns)};gap:{_squash(gap)}" in reference, (
-        f"{pattern}: guide says {columns!r} / {gap!r} but the reference has no such specimen"
+def test_manifest_lists_components():
+    names = _manifest_component_names()
+    assert names, "manifest lists no components"
+
+
+@pytest.mark.parametrize("component", _manifest_component_names())
+def test_each_manifest_component_has_a_macro(component):
+    macros = _macro_names()
+    expected = _expected_macro(component)
+    assert expected in macros, (
+        f"manifest component {component!r} has no shared macro {expected!r} in "
+        f"templates/components/macros.html (have: {sorted(macros)})"
     )
 
 
-def test_guide_large_card_grid_matches_reference_note():
-    columns, _gap = _grid_row(_read(GUIDE), "ax-grid-cards-lg")
-    assert "minmax(360px" in _squash(columns)
-    assert "minmax(360px,1fr)" in _squash(_read(REFERENCE))
+# ── 2. Docs name the source of truth ────────────────────
+@pytest.mark.parametrize("doc", ["README.md", "AGENTS.md"])
+def test_docs_reference_design_system_source_of_truth(doc):
+    text = _read(os.path.join(REPO_DIR, doc))
+    assert "design-system/readme.md" in text, (
+        f"{doc} does not name ui/design-system/readme.md as the design-system source of truth"
+    )
 
 
-def test_guide_documents_select_dropdown_component():
-    body = _section(_read(GUIDE), "Select / Dropdown")
-    # Native styled select: appearance-none with a custom chevron on bg-input.
-    assert "appearance" in body and "chevron" in body.lower()
-    assert "--ax-bg-input" in body
-    # Custom dropdown component: elevated panel with accent-highlighted selection.
-    assert "--ax-bg-card" in body
-    assert "--ax-border-strong" in body
-    assert "--ax-shadow-lg" in body
-    assert "--ax-cyan-bg" in body
-    assert "--ax-radius-sm" in body
+# ── 3. No retired Archon artefact is referenced ─────────
+# The files removed by FR-001; a live reference to any is a broken link or a stale claim.
+_RETIRED_ARTEFACTS = [
+    "archon-tokens.css",
+    "ARCHON-DESIGN-SYSTEM.md",
+    "Archon Design System.dc.html",
+    "Archon Prototype.dc.html",
+    "support.js",
+]
+_SCAN_EXTS = (".py", ".html", ".css", ".js", ".md", ".json")
+_THIS_FILE = os.path.abspath(__file__)
 
 
-def test_guide_dropdown_tokens_match_reference():
-    reference = _read(REFERENCE)
-    assert "Custom Dropdown (open)" in reference
-    for token in ("--ax-bg-card", "--ax-border-strong", "--ax-shadow-lg", "--ax-cyan-bg", "--ax-radius-sm"):
-        assert token in reference
+def _served_and_test_files():
+    roots = [
+        os.path.join(UI_DIR, "templates"),
+        os.path.join(UI_DIR, "static"),
+        DESIGN_DIR,
+        os.path.join(UI_DIR, "tests"),
+    ]
+    for root in roots:
+        for dirpath, _, names in os.walk(root):
+            for n in names:
+                if not n.endswith(_SCAN_EXTS):
+                    continue
+                path = os.path.join(dirpath, n)
+                if os.path.abspath(path) == _THIS_FILE:
+                    continue  # the scanner names the artefacts it forbids
+                yield path
 
 
-def test_guide_toggle_matches_reference():
-    body = _section(_read(GUIDE), "Toggle")
-    reference = _squash(_read(REFERENCE))
-    assert "36px" in body and "20px" in body and "16px" in body
-    assert "width:36px;height:20px" in reference
-    assert "width:16px;height:16px" in reference
-    assert "cyan" in body and "background:var(--ax-cyan)" in reference
+def test_no_retired_archon_artefact_referenced():
+    needles = [a.lower() for a in _RETIRED_ARTEFACTS]
+    offenders = []
+    for path in _served_and_test_files():
+        text = _read(path).lower()
+        hit = [a for a in needles if a in text]
+        if hit:
+            offenders.append(f"{os.path.relpath(path, REPO_DIR)}: {hit}")
+    assert not offenders, f"retired Archon artefact(s) referenced in: {offenders}"
 
 
-APP_CSS = os.path.join(UI_DIR, "static", "app.css")
+# ── Served specimen gallery renders offline (spec 009 T034–T036) ──
+# Every HTML the /design-system gallery serves and iframes (the gallery page, the
+# component preview cards, the guideline specimens, and the ui-kit) must load with egress
+# blocked: no CDN or external asset URL. (Token/font egress is US4's separate concern and
+# is scoped out here — this guards the gallery itself.)
+_EXTERNAL_ASSET = re.compile(r"unpkg|cdnjs|jsdelivr|cdn\.|googleapis|https?://\S+\.(?:js|css|woff2?)")
 
 
-# ── 003 Agent form layout: the guide's thresholds match the stylesheet ──
-def test_guide_agent_form_layout_matches_stylesheet():
-    css = _read(APP_CSS)
-    thresholds = re.findall(r"@container ax-content \(min-width:\s*(\d+)px\)", css)
-    assert len(thresholds) >= 2, "expected two ax-content container-query thresholds"
-    body = _section(_read(GUIDE), "Agent form layout")
-    assert "ax-grid-agent" in body
-    for n in sorted(set(thresholds)):
-        assert n in body, f"guide's 'Agent form layout' omits the {n}px threshold"
+def _served_bundle_html():
+    roots = [
+        os.path.join(DESIGN_DIR, "components"),
+        os.path.join(DESIGN_DIR, "ui_kits"),
+        os.path.join(DESIGN_DIR, "guidelines"),
+    ]
+    files = [os.path.join(DESIGN_DIR, "index.html")]
+    for root in roots:
+        for dirpath, _, names in os.walk(root):
+            for n in names:
+                if n.endswith(".html"):
+                    files.append(os.path.join(dirpath, n))
+    return files
 
 
-def test_guide_grid_rule_1_notes_the_agent_form_exception():
-    rules = _section(_read(GUIDE), "Grid Rules")
-    assert "ax-grid-agent" in rules or "Agent form layout" in rules
+def test_specimen_gallery_has_no_external_assets():
+    offenders = []
+    for path in _served_bundle_html():
+        if _EXTERNAL_ASSET.search(_read(path)):
+            offenders.append(os.path.relpath(path, REPO_DIR))
+    assert not offenders, f"served specimen file(s) reference an external/CDN asset: {offenders}"
+
+
+def test_every_manifest_card_preview_exists():
+    manifest = json.loads(_read(MANIFEST))
+    missing = [c["path"] for c in manifest["cards"] if not os.path.exists(os.path.join(DESIGN_DIR, c["path"]))]
+    assert not missing, f"manifest card preview file(s) missing: {missing}"
