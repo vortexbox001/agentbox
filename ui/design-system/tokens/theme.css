@@ -70,12 +70,6 @@
   --color-checkbox-unchecked: var(--color-core-gray400);
   --color-checkbox-checked: var(--color-core-teal600);
   --color-checkbox-disabled: var(--color-core-gray700);
-  --color-nav-background: var(--color-core-navy990);
-  --color-nav-text: var(--color-core-gray400);
-  --color-nav-text-hover: var(--color-core-gray300);
-  --color-nav-text-selected: var(--color-core-white);
-  --color-nav-button: var(--color-core-navy900);
-  --color-nav-button-hover: var(--color-core-navy800);
   --color-brand-gradient: linear-gradient(135deg, var(--color-core-teal600), var(--color-core-lime500));
 }
 
@@ -147,11 +141,5 @@
   --color-checkbox-unchecked: var(--color-core-gray500);
   --color-checkbox-checked: var(--color-core-teal400);
   --color-checkbox-disabled: var(--color-core-gray700);
-  --color-nav-background: var(--color-core-navy990);
-  --color-nav-text: var(--color-core-gray400);
-  --color-nav-text-hover: var(--color-core-gray300);
-  --color-nav-text-selected: var(--color-core-white);
-  --color-nav-button: var(--color-core-navy900);
-  --color-nav-button-hover: var(--color-core-navy800);
   --color-brand-gradient: linear-gradient(135deg, var(--color-core-teal500), var(--color-core-lime400));
 }
