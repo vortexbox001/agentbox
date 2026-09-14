@@ -5,28 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AgentBox Design System</title>
   <script>
-    // Mirror the app's pre-paint theme model so the gallery renders in the reader's
-    // chosen theme with no wrong-theme flash.
+    // Pre-paint theme so the page opens in the reader's chosen theme with no flash.
     (function () {
       try {
         var pref = localStorage.getItem("agentbox.theme") || "system";
         var dark = pref === "dark" ||
           (pref !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
         if (dark) document.documentElement.setAttribute("data-theme", "dark");
-      } catch (e) { /* storage unavailable → default light */ }
+      } catch (e) {}
     })();
   </script>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/static/app.css">
   <style>
     body { margin: 0; background: var(--color-background-light); color: var(--color-text-default); font-family: var(--font-default); font: var(--type-body-md); }
     header.top {
       position: sticky; top: 0; z-index: 10;
       display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap;
-      padding: var(--space-8) var(--space-10);
+      padding: var(--space-7) var(--space-10);
       background: var(--color-background-default);
       border-bottom: thin solid var(--color-border-default);
     }
-    header.top img { width: var(--brand-lockup-width); height: auto; }
+    header.top img { height: 26px; width: auto; }
     header.top .lockup-dark { display: none; }
     [data-theme="dark"] header.top .lockup-light { display: none; }
     [data-theme="dark"] header.top .lockup-dark { display: inline; }
@@ -39,25 +39,31 @@
       border: thin solid var(--color-border-default); border-radius: var(--radius-md);
       padding: var(--space-3) var(--space-6); cursor: pointer;
     }
-    main { padding: var(--space-10); max-width: 60rem; margin: 0 auto; }
-    .lede { color: var(--color-text-light); max-width: 44rem; margin: 0 0 var(--space-12); }
+    .theme-toggle:hover { background: var(--color-background-lighter); color: var(--color-text-default); }
+    main { padding: var(--space-10); max-width: 64rem; margin: 0 auto; }
+    .lede { color: var(--color-text-light); max-width: 44rem; margin: 0 0 var(--space-12); font: var(--type-body-lg); }
     section.group { margin-bottom: var(--space-14); }
     section.group > h2 {
       font: var(--type-display-md); margin: 0 0 var(--space-8);
       padding-bottom: var(--space-4); border-bottom: thin solid var(--color-keyline-default);
     }
-    figure.specimen { margin: 0 0 var(--space-10); }
+    figure.specimen { margin: 0 0 var(--space-9); }
     figure.specimen figcaption { display: flex; align-items: baseline; gap: var(--space-6); margin-bottom: var(--space-4); flex-wrap: wrap; }
-    figcaption .name { font: var(--type-display-sm); }
+    figcaption .name { font: var(--type-display-sm); color: var(--color-text-default); }
     figcaption .sub { font: var(--type-body-sm); color: var(--color-text-light); }
     .frame {
       background: var(--color-background-default);
       border: thin solid var(--color-border-default);
       border-radius: var(--radius-lg);
-      overflow: auto;
+      padding: 16px 20px; overflow: hidden;
     }
-    .frame iframe { border: 0; display: block; max-width: none; }
-    .status { color: var(--color-text-light); }
+    .frame--flush { padding: 0; }
+    .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); gap: var(--space-7); }
+    .strip { display: flex; height: 76px; }
+    .strip .s { flex: 1; display: flex; align-items: flex-end; padding: 8px; font-size: 9px; font-weight: 500; }
+    .col-row { display: flex; flex-direction: column; gap: 8px; }
+    .col-row .stack { display: flex; }
+    .col-row .stack .s { flex: 1; display: flex; align-items: center; justify-content: center; height: 34px; font-size: 9px; font-weight: 500; }
   </style>
 </head>
 <body>
@@ -72,10 +78,275 @@
     </nav>
   </header>
   <main>
-    <p class="lede">The in-repo source of truth for the AgentBox management UI — a sibling of Dagster.
-      Every specimen below renders from the served bundle on the current design, in light and dark.
-      Read <a href="readme.md">readme.md</a> for the full guide.</p>
-    <div id="gallery"><p class="status">Loading specimens…</p></div>
+    <p class="lede">The in-repo source of truth for the AgentBox management UI — a sibling of Dagster. Read <a href="readme.md">readme.md</a> for the full guide.</p>
+
+    <section class="group">
+      <h2>Brand</h2>
+      <div class="grid2">
+        <figure class="specimen"><figcaption><span class="name">Lockup</span><span class="sub">Mark + wordmark on light</span></figcaption>
+          <div class="frame" style="background:#fff;display:flex;align-items:center;justify-content:center;min-height:120px"><img src="assets/logo-light.svg" alt="agentbox" style="width:280px;height:auto"></div></figure>
+        <figure class="specimen"><figcaption><span class="name">Lockup on Dark</span><span class="sub">Mark + white wordmark on navy</span></figcaption>
+          <div class="frame" style="background:var(--color-core-navy900);display:flex;align-items:center;justify-content:center;min-height:120px"><img src="assets/logo-dark.svg" alt="agentbox" style="width:280px;height:auto"></div></figure>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>Colors</h2>
+      <figure class="specimen"><figcaption><span class="name">Brand Colors</span><span class="sub">Navy, Teal, Lime — the three logo-derived brand colors</span></figcaption>
+        <div class="frame frame--flush"><div class="strip" style="height:120px">
+          <div class="s" style="background:var(--color-core-navy800);color:#fff">Navy #183040</div>
+          <div class="s" style="background:var(--color-core-teal600);color:#fff">Teal #308888</div>
+          <div class="s" style="background:var(--color-core-lime500);color:#183040">Lime #c8d850</div>
+        </div></div></figure>
+      <div class="grid2">
+        <figure class="specimen"><figcaption><span class="name">Navy Scale</span><span class="sub">Text, nav, deep backgrounds</span></figcaption>
+          <div class="frame frame--flush"><div class="strip">
+            <div class="s" style="background:var(--color-core-navy990);color:#fff">990</div><div class="s" style="background:var(--color-core-navy900);color:#fff">900</div><div class="s" style="background:var(--color-core-navy800);color:#fff">800</div><div class="s" style="background:var(--color-core-navy700);color:#fff">700</div><div class="s" style="background:var(--color-core-navy600);color:#fff">600</div><div class="s" style="background:var(--color-core-navy500);color:#fff">500</div><div class="s" style="background:var(--color-core-navy400);color:#183040">400</div><div class="s" style="background:var(--color-core-navy300);color:#183040">300</div><div class="s" style="background:var(--color-core-navy200);color:#183040">200</div><div class="s" style="background:var(--color-core-navy100);color:#183040">100</div><div class="s" style="background:var(--color-core-navy50);color:#183040">50</div>
+          </div></div></figure>
+        <figure class="specimen"><figcaption><span class="name">Teal Scale</span><span class="sub">Primary accent — links, active, focus</span></figcaption>
+          <div class="frame frame--flush"><div class="strip">
+            <div class="s" style="background:var(--color-core-teal950);color:#fff">950</div><div class="s" style="background:var(--color-core-teal900);color:#fff">900</div><div class="s" style="background:var(--color-core-teal800);color:#fff">800</div><div class="s" style="background:var(--color-core-teal700);color:#fff">700</div><div class="s" style="background:var(--color-core-teal600);color:#fff">600</div><div class="s" style="background:var(--color-core-teal500);color:#fff">500</div><div class="s" style="background:var(--color-core-teal400);color:#183040">400</div><div class="s" style="background:var(--color-core-teal300);color:#183040">300</div><div class="s" style="background:var(--color-core-teal200);color:#183040">200</div><div class="s" style="background:var(--color-core-teal100);color:#183040">100</div><div class="s" style="background:var(--color-core-teal50);color:#183040">50</div>
+          </div></div></figure>
+        <figure class="specimen"><figcaption><span class="name">Lime Scale</span><span class="sub">Secondary accent — agent identity</span></figcaption>
+          <div class="frame frame--flush"><div class="strip">
+            <div class="s" style="background:var(--color-core-lime900);color:#fff">900</div><div class="s" style="background:var(--color-core-lime800);color:#fff">800</div><div class="s" style="background:var(--color-core-lime700);color:#fff">700</div><div class="s" style="background:var(--color-core-lime600);color:#fff">600</div><div class="s" style="background:var(--color-core-lime500);color:#183040">500</div><div class="s" style="background:var(--color-core-lime400);color:#183040">400</div><div class="s" style="background:var(--color-core-lime300);color:#183040">300</div><div class="s" style="background:var(--color-core-lime200);color:#183040">200</div><div class="s" style="background:var(--color-core-lime100);color:#183040">100</div><div class="s" style="background:var(--color-core-lime50);color:#183040">50</div>
+          </div></div></figure>
+        <figure class="specimen"><figcaption><span class="name">Gray Scale</span><span class="sub">Structural neutrals — shared with Dagster</span></figcaption>
+          <div class="frame frame--flush"><div class="strip">
+            <div class="s" style="background:var(--color-core-gray990);color:#fff">990</div><div class="s" style="background:var(--color-core-gray900);color:#fff">900</div><div class="s" style="background:var(--color-core-gray800);color:#fff">800</div><div class="s" style="background:var(--color-core-gray700);color:#fff">700</div><div class="s" style="background:var(--color-core-gray600);color:#fff">600</div><div class="s" style="background:var(--color-core-gray500);color:#fff">500</div><div class="s" style="background:var(--color-core-gray400);color:#030615">400</div><div class="s" style="background:var(--color-core-gray300);color:#030615">300</div><div class="s" style="background:var(--color-core-gray200);color:#030615">200</div><div class="s" style="background:var(--color-core-gray100);color:#030615">100</div><div class="s" style="background:var(--color-core-gray50);color:#030615">50</div><div class="s" style="background:var(--color-core-gray10);color:#030615">10</div>
+          </div></div></figure>
+      </div>
+      <div class="grid2" style="margin-top:var(--space-7)">
+        <figure class="specimen"><figcaption><span class="name">Status Colors</span><span class="sub">Red, Yellow, Green — identical to Dagster</span></figcaption>
+          <div class="frame frame--flush"><div class="col-row" style="gap:0">
+            <div class="stack"><div class="s" style="background:var(--color-core-red700);color:#fff">Red 700</div><div class="s" style="background:var(--color-core-yellow700);color:#fff">Yellow 700</div><div class="s" style="background:var(--color-core-green700);color:#fff">Green 700</div></div>
+            <div class="stack"><div class="s" style="background:var(--color-core-red500);color:#fff">500</div><div class="s" style="background:var(--color-core-yellow500);color:#333">500</div><div class="s" style="background:var(--color-core-green500);color:#fff">500</div></div>
+            <div class="stack"><div class="s" style="background:var(--color-core-red200);color:#333">200</div><div class="s" style="background:var(--color-core-yellow200);color:#333">200</div><div class="s" style="background:var(--color-core-green200);color:#333">200</div></div>
+          </div></div></figure>
+        <figure class="specimen"><figcaption><span class="name">Semantic Surfaces</span><span class="sub">Background levels</span></figcaption>
+          <div class="frame" style="display:flex;gap:8px;min-height:120px">
+            <div style="flex:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:10px;color:var(--color-text-light);border:1px solid var(--color-border-default);background:var(--color-background-default)"><b style="color:var(--color-text-default)">Default</b></div>
+            <div style="flex:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:10px;color:var(--color-text-light);border:1px solid var(--color-border-default);background:var(--color-background-light)"><b style="color:var(--color-text-default)">Light</b></div>
+            <div style="flex:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:10px;color:var(--color-text-light);border:1px solid var(--color-border-default);background:var(--color-background-lighter)"><b style="color:var(--color-text-default)">Lighter</b></div>
+            <div style="flex:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:10px;color:var(--color-text-light);border:1px solid var(--color-border-default);background:var(--color-background-blue)"><b style="color:var(--color-text-default)">Active</b></div>
+            <div style="flex:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:10px;color:var(--color-text-light);border:1px solid var(--color-border-default);background:var(--color-background-gray)"><b style="color:var(--color-text-default)">Muted</b></div>
+          </div></figure>
+      </div>
+      <figure class="specimen" style="margin-top:var(--space-7)"><figcaption><span class="name">Text Levels</span><span class="sub">Semantic text colors</span></figcaption>
+        <div class="frame" style="display:flex;flex-direction:column;gap:4px;font-size:13px">
+          <div style="color:var(--color-text-default);font-weight:500">Text Default — primary headings and content</div>
+          <div style="color:var(--color-text-light)">Text Light — secondary content, descriptions</div>
+          <div style="color:var(--color-text-lighter)">Text Lighter — tertiary, auxiliary info</div>
+          <div style="color:var(--color-text-disabled)">Text Disabled — inactive, placeholder</div>
+          <div><span style="color:var(--color-text-red);margin-right:16px">Error</span><span style="color:var(--color-text-yellow);margin-right:16px">Warning</span><span style="color:var(--color-text-green)">Success</span></div>
+        </div></figure>
+    </section>
+
+    <section class="group">
+      <h2>Type</h2>
+      <div class="grid2">
+        <figure class="specimen"><figcaption><span class="name">Display</span><span class="sub">Inter 600 · 32/24/20/16px</span></figcaption>
+          <div class="frame" style="display:flex;flex-direction:column;gap:6px">
+            <div style="font:var(--type-display-xl)">Display XL — 32px</div><div style="font:var(--type-display-lg)">Display LG — 24px</div><div style="font:var(--type-display-md)">Display MD — 20px</div><div style="font:var(--type-display-sm)">Display SM — 16px</div>
+          </div></figure>
+        <figure class="specimen"><figcaption><span class="name">Body</span><span class="sub">Inter 400 · 16/14/12/11px</span></figcaption>
+          <div class="frame" style="display:flex;flex-direction:column;gap:8px">
+            <div style="font:var(--type-body-lg)">Body LG — 16px. Primary body text.</div><div style="font:var(--type-body-md)">Body MD — 14px. Default body, nav labels.</div><div style="font:var(--type-body-sm)">Body SM — 12px. Secondary text, metadata.</div><div style="font:var(--type-body-xs)">Body XS — 11px. Fine print.</div>
+          </div></figure>
+        <figure class="specimen"><figcaption><span class="name">Labels</span><span class="sub">Uppercase tracked · 12/11px</span></figcaption>
+          <div class="frame" style="display:flex;flex-direction:column;gap:12px;color:var(--color-text-light)">
+            <div style="font:var(--type-label);text-transform:uppercase;letter-spacing:var(--tracking-label)">Agent Name · Status · Last Run</div><div style="font:var(--type-label-sm);text-transform:uppercase;letter-spacing:var(--tracking-label)">Model · Tokens · Duration · Cost</div>
+          </div></figure>
+        <figure class="specimen"><figcaption><span class="name">Mono</span><span class="sub">Source Code Pro · 14/12/11/10px</span></figcaption>
+          <div class="frame" style="display:flex;flex-direction:column;gap:8px">
+            <div style="font:var(--type-mono-lg)">agent-summarizer-v2 — 14px</div><div style="font:var(--type-mono-md)">run_abc123def456 — 12px</div><div style="font:var(--type-mono-sm)">gpt-4o-mini · 2,340 tokens — 11px</div><div style="font:var(--type-mono-xs)">2026-09-12T14:30:00Z — 10px</div>
+          </div></figure>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>Spacing</h2>
+      <div class="grid2">
+        <figure class="specimen"><figcaption><span class="name">Spacing Scale</span><span class="sub">2px-based, 0 → 48px</span></figcaption>
+          <div class="frame" style="display:flex;align-items:flex-end;gap:6px;min-height:96px">
+            <div style="background:var(--color-core-teal500);border-radius:3px;height:4px;width:20px"></div>
+            <div style="background:var(--color-core-teal500);border-radius:3px;height:8px;min-width:16px;color:#fff;font-size:9px;text-align:center">4</div>
+            <div style="background:var(--color-core-teal500);border-radius:3px;height:12px;min-width:16px;color:#fff;font-size:9px;text-align:center">6</div>
+            <div style="background:var(--color-core-teal500);border-radius:3px;height:16px;min-width:16px;color:#fff;font-size:9px;text-align:center">8</div>
+            <div style="background:var(--color-core-teal500);border-radius:3px;height:20px;min-width:16px;color:#fff;font-size:9px;text-align:center">9</div>
+            <div style="background:var(--color-core-teal500);border-radius:3px;height:24px;min-width:16px;color:#fff;font-size:9px;text-align:center">10</div>
+            <div style="background:var(--color-core-teal500);border-radius:3px;height:28px;min-width:16px;color:#fff;font-size:9px;text-align:center">11</div>
+            <div style="background:var(--color-core-teal500);border-radius:3px;height:32px;min-width:16px;color:#fff;font-size:9px;text-align:center">12</div>
+            <div style="background:var(--color-core-teal500);border-radius:3px;height:40px;min-width:16px;color:#fff;font-size:9px;text-align:center">13</div>
+            <div style="background:var(--color-core-teal500);border-radius:3px;height:48px;min-width:16px;color:#fff;font-size:9px;text-align:center">14</div>
+          </div></figure>
+        <figure class="specimen"><figcaption><span class="name">Border Radii</span><span class="sub">4 → 6 → 8 → 10 → 12 → pill</span></figcaption>
+          <div class="frame" style="display:flex;align-items:center;gap:12px;min-height:96px;flex-wrap:wrap">
+            <div style="width:52px;height:52px;border:2px solid var(--color-core-teal500);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--color-text-light)">4</div>
+            <div style="width:52px;height:52px;border:2px solid var(--color-core-teal500);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--color-text-light)">6</div>
+            <div style="width:52px;height:52px;border:2px solid var(--color-core-teal500);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--color-text-light)">8</div>
+            <div style="width:52px;height:52px;border:2px solid var(--color-core-teal500);border-radius:var(--radius-xl);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--color-text-light)">10</div>
+            <div style="width:52px;height:52px;border:2px solid var(--color-core-teal500);border-radius:var(--radius-2xl);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--color-text-light)">12</div>
+            <div style="width:74px;height:52px;border:2px solid var(--color-core-teal500);border-radius:var(--radius-pill);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--color-text-light)">pill</div>
+          </div></figure>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>Components</h2>
+<figure class="specimen">
+        <figcaption><span class="name">Button</span><span class="sub">Primary, outlined, danger, ghost, and disabled variants</span></figcaption>
+        <div class="frame">
+<div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
+            <button type="button" class="ax-btn ax-btn--primary"><span>Primary</span></button>
+            <button type="button" class="ax-btn ax-btn--primary ax-btn--outlined"><span>Outlined</span></button>
+            <button type="button" class="ax-btn ax-btn--danger ax-btn--outlined"><span>Danger</span></button>
+            <button type="button" class="ax-btn ax-btn--ghost"><span>Ghost</span></button>
+            <button type="button" class="ax-btn ax-btn--primary" disabled><span>Disabled</span></button>
+          </div>
+        </div>
+      </figure>
+<figure class="specimen">
+        <figcaption><span class="name">Badge, StatusDot, Spinner, RunStatusTag, SchedulePill, Alert</span><span class="sub">Status feedback</span></figcaption>
+        <div class="frame">
+<div style="display:flex;flex-direction:column;gap:var(--space-6)">
+            <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
+              <span class="ax-badge ax-badge--enabled">enabled</span>
+              <span class="ax-badge ax-badge--error">error</span>
+              <span class="ax-badge ax-badge--queued">queued</span>
+              <span class="ax-badge ax-badge--scheduled">scheduled</span>
+              <span class="ax-badge ax-badge--harness">claude-code</span>
+              <span class="ax-badge ax-badge--disabled">disabled</span>
+            </div>
+            <div style="display:flex;gap:var(--space-6);align-items:center;flex-wrap:wrap;font:var(--type-body-sm);color:var(--color-text-light)">
+              <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="running" aria-hidden="true"></span>running</span>
+              <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="success" aria-hidden="true"></span>success</span>
+              <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="error" aria-hidden="true"></span>error</span>
+              <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="idle" aria-hidden="true"></span>idle</span>
+              <span class="ax-spinner" role="status" aria-label="Loading"></span>
+            </div>
+            <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
+              <span class="ax-run-status-tag" data-status="success">
+  <span class="ax-status-dot" data-state="success" aria-hidden="true"></span>
+  <span>2 hours ago</span>
+</span>
+              <span class="ax-run-status-tag" data-status="started">
+  <span class="ax-status-dot" data-state="running" aria-hidden="true"></span>
+  <span>running now</span>
+</span>
+              <span class="ax-run-status-tag" data-status="failure">
+  <span class="ax-status-dot" data-state="error" aria-hidden="true"></span>
+  <span>5 days ago</span>
+</span>
+            </div>
+            <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
+              <span class="ax-schedule-pill" data-type="schedule">
+  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#automation"></use></svg>
+  <span class="ax-schedule-pill-label">Every day at 7:00 AM</span>
+  <label class="ax-toggle">
+    <input type="checkbox" checked>
+    <span class="ax-toggle-track" aria-hidden="true"></span>
+  </label>
+</span>
+              <span class="ax-schedule-pill" data-type="sensor">
+  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#automation"></use></svg>
+  <span class="ax-schedule-pill-label">Every Monday at 6:00 AM</span>
+  <label class="ax-toggle">
+    <input type="checkbox">
+    <span class="ax-toggle-track" aria-hidden="true"></span>
+  </label>
+</span>
+            </div>
+            <div class="ax-alert ax-alert--info" role="alert"><p class="ax-alert-title">Agent deployed</p><p>summarizer-v2 is now running on schedule.</p>
+</div>
+          </div>
+        </div>
+      </figure>
+<figure class="specimen">
+        <figcaption><span class="name">TextInput, Select, Checkbox, Toggle</span><span class="sub">Form controls</span></figcaption>
+        <div class="frame">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-6)">
+            <div class="ax-field"><label class="ax-field-label" for="demo-name">Agent name</label><input class="ax-input" type="text" value="" id="demo-name" placeholder="e.g. summarizer-v2"></div>
+            <div class="ax-field"><label class="ax-field-label" for="demo-model">Model</label><select class="ax-select" id="demo-model">
+  <option value="gpt-4o">gpt-4o</option>
+  <option value="gpt-4o-mini">gpt-4o-mini</option>
+  <option value="claude-3.5-sonnet">claude-3.5-sonnet</option>
+</select></div>
+            <div class="ax-field"><label class="ax-checkbox" for="demo-retry">
+  <input type="checkbox" id="demo-retry" checked><span>Enable auto-retry</span>
+</label></div>
+            <div class="ax-field"><label class="ax-toggle" for="demo-active">
+  <input type="checkbox" id="demo-active" checked>
+  <span class="ax-toggle-track" aria-hidden="true"></span><span>Active</span>
+</label></div>
+          </div>
+        </div>
+      </figure>
+<figure class="specimen">
+        <figcaption><span class="name">Tabs, Tab</span><span class="sub">Bottom-border indicator with count badges</span></figcaption>
+        <div class="frame">
+<div class="ax-tabs" role="tablist">
+  <button type="button" class="ax-btn ax-tab is-active" role="tab" aria-selected="true" data-tab="runs">Runs <span class="ax-tab-count">24</span></button>
+  <button type="button" class="ax-btn ax-tab" role="tab" aria-selected="false" data-tab="config">Configuration</button>
+  <button type="button" class="ax-btn ax-tab" role="tab" aria-selected="false" data-tab="logs">Logs</button>
+  <button type="button" class="ax-btn ax-tab" role="tab" aria-selected="false" data-tab="history">History</button>
+</div>
+        </div>
+      </figure>
+<figure class="specimen">
+        <figcaption><span class="name">Card</span><span class="sub">Bordered content cards, no shadow</span></figcaption>
+        <div class="frame">
+<div style="display:flex;gap:var(--space-6);flex-wrap:wrap">
+            <div class="ax-card ax-demo-card"><div style="font:var(--type-display-sm);color:var(--color-text-default);margin-bottom:var(--space-4)">Agent summary</div><div style="font:var(--type-body-sm);color:var(--color-text-light)">3 runs today · 2 success · 1 error</div>
+</div>
+            <div class="ax-card ax-demo-card"><div style="font:var(--type-display-sm);color:var(--color-text-default);margin-bottom:var(--space-4)">Quick actions</div><div style="font:var(--type-body-sm);color:var(--color-text-light)">Trigger a manual run from the agent detail page.</div>
+</div>
+          </div>
+        </div>
+      </figure>
+<figure class="specimen">
+        <figcaption><span class="name">Table — detail</span><span class="sub">Inset from edges (single-object pages)</span></figcaption>
+        <div class="frame">
+<table class="ax-table">
+            <thead><tr><th scope="col">Agent</th><th scope="col">Status</th><th scope="col">Runs</th><th scope="col">Last run</th></tr></thead>
+            <tbody>
+              <tr><td>summarizer-v2</td><td><span class="ax-run-status-tag" data-status="running">
+  <span class="ax-status-dot" data-state="running" aria-hidden="true"></span>
+  <span>running</span>
+</span></td><td><span class="ax-mono">124</span></td><td>2m ago</td></tr>
+              <tr><td>code-reviewer</td><td><span class="ax-run-status-tag" data-status="success">
+  <span class="ax-status-dot" data-state="success" aria-hidden="true"></span>
+  <span>success</span>
+</span></td><td><span class="ax-mono">89</span></td><td>1h ago</td></tr>
+              <tr><td>data-cleaner</td><td><span class="ax-run-status-tag" data-status="failure">
+  <span class="ax-status-dot" data-state="error" aria-hidden="true"></span>
+  <span>error</span>
+</span></td><td><span class="ax-mono">45</span></td><td>3h ago</td></tr>
+            </tbody>
+
+</table>
+        </div>
+      </figure>
+<figure class="specimen">
+        <figcaption><span class="name">Table — full bleed</span><span class="sub">Vertical column rules, double rule above the first row (object-overview lists)</span></figcaption>
+        <div class="frame frame--flush">
+<table class="ax-table ax-table--full-bleed">
+            <thead><tr><th scope="col">Agent</th><th scope="col">Status</th><th scope="col">Runs</th><th scope="col">Last run</th></tr></thead>
+            <tbody>
+              <tr><td>summarizer-v2</td><td><span class="ax-run-status-tag" data-status="running">
+  <span class="ax-status-dot" data-state="running" aria-hidden="true"></span>
+  <span>running</span>
+</span></td><td><span class="ax-mono">124</span></td><td>2m ago</td></tr>
+              <tr><td>code-reviewer</td><td><span class="ax-run-status-tag" data-status="success">
+  <span class="ax-status-dot" data-state="success" aria-hidden="true"></span>
+  <span>success</span>
+</span></td><td><span class="ax-mono">89</span></td><td>1h ago</td></tr>
+            </tbody>
+
+</table>
+        </div>
+      </figure>
+    </section>
   </main>
 
   <script>
@@ -85,75 +356,7 @@
       if (dark) { root.removeAttribute("data-theme"); try { localStorage.setItem("agentbox.theme", "light"); } catch (e) {} }
       else { root.setAttribute("data-theme", "dark"); try { localStorage.setItem("agentbox.theme", "dark"); } catch (e) {} }
     });
-
-    var GROUP_ORDER = ["Brand", "Colors", "Type", "Spacing", "Components", "AgentBox App"];
-
-    function parseViewport(v) {
-      var m = /^(\d+)x(\d+)$/.exec(v || "");
-      return m ? { w: parseInt(m[1], 10), h: parseInt(m[2], 10) } : { w: 700, h: 160 };
-    }
-
-    fetch("_ds_manifest.json").then(function (r) { return r.json(); }).then(function (manifest) {
-      var gallery = document.getElementById("gallery");
-      gallery.textContent = "";
-      var cards = (manifest.cards || []).slice();
-
-      // Group cards, ordering groups by GROUP_ORDER (unknown groups appended).
-      var groups = {};
-      cards.forEach(function (c) { (groups[c.group] = groups[c.group] || []).push(c); });
-      var names = Object.keys(groups).sort(function (a, b) {
-        var ia = GROUP_ORDER.indexOf(a), ib = GROUP_ORDER.indexOf(b);
-        if (ia === -1) ia = 99; if (ib === -1) ib = 99;
-        return ia - ib || a.localeCompare(b);
-      });
-
-      names.forEach(function (group) {
-        var section = document.createElement("section");
-        section.className = "group";
-        var h2 = document.createElement("h2");
-        h2.textContent = group;
-        section.appendChild(h2);
-
-        groups[group].forEach(function (card) {
-          var vp = parseViewport(card.viewport);
-          var fig = document.createElement("figure");
-          fig.className = "specimen";
-
-          var cap = document.createElement("figcaption");
-          var name = document.createElement("span");
-          name.className = "name";
-          name.textContent = card.name || card.path;
-          cap.appendChild(name);
-          if (card.subtitle) {
-            var sub = document.createElement("span");
-            sub.className = "sub";
-            sub.textContent = card.subtitle;
-            cap.appendChild(sub);
-          }
-          fig.appendChild(cap);
-
-          var frame = document.createElement("div");
-          frame.className = "frame";
-          frame.style.height = vp.h + "px";
-          var iframe = document.createElement("iframe");
-          iframe.src = card.path;
-          iframe.width = vp.w;
-          iframe.height = vp.h;
-          iframe.loading = "lazy";
-          iframe.setAttribute("sandbox", "allow-same-origin allow-scripts");
-          iframe.title = (card.name || card.path) + " specimen";
-          frame.appendChild(iframe);
-          fig.appendChild(frame);
-
-          section.appendChild(fig);
-        });
-
-        gallery.appendChild(section);
-      });
-    }).catch(function (e) {
-      document.getElementById("gallery").innerHTML =
-        '<p class="status">Could not load <code>_ds_manifest.json</code>: ' + String(e) + "</p>";
-    });
   </script>
+
 </body>
 </html>

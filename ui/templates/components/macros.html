@@ -134,8 +134,8 @@
 {# ── Table (Table.d.ts) ──────────────────────────────────
    Grid-based header + rows. Compose the header/body with a {% call %} block for full
    per-cell control, or pass columns (str or {label,key}) + rows for the simple case. #}
-{% macro table(columns=none, rows=none, attrs={}) -%}
-<table class="ax-table"{{ attrs|xmlattr }}>
+{% macro table(columns=none, rows=none, full_bleed=false, attrs={}) -%}
+<table class="ax-table{% if full_bleed %} ax-table--full-bleed{% endif %}"{{ attrs|xmlattr }}>
 {%- if caller %}{{ caller() }}
 {%- else %}
   <thead><tr>{% for c in columns %}<th scope="col">{{ c.label if c is mapping else c }}</th>{% endfor %}</tr></thead>

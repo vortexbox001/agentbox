@@ -230,6 +230,12 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 }
 .ax-table tr:hover td { background: var(--color-background-default-hover); }
 .ax-table .ax-mono { color: var(--color-text-light); }
+/* Full-bleed variant (Table.d.ts fullBleed) — object-overview lists: vertical column
+   rules between cells and a double rule above the first row; the flush frame/page gives
+   the edge-to-edge horizontal bleed. */
+.ax-table--full-bleed th:not(:last-child),
+.ax-table--full-bleed td:not(:last-child) { border-right: thin solid var(--color-border-default); }
+.ax-table--full-bleed thead th { border-bottom: medium double var(--color-border-default); }
 
 /* ── Badges ───────────────────────────────────────────── */
 .ax-badge {
