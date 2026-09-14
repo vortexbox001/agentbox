@@ -70,6 +70,27 @@ def test_no_bespoke_save_banner_remains():
     assert "showStatus" in auto
 
 
+def test_theme_control_is_accessible_icon_buttons():
+    # Bug theme-control-overflow: the sidebar theme control is a radiogroup of three
+    # icon-only buttons (System/Light/Dark) that fits the narrow column, each with an
+    # accessible name (aria-label) and a hover tooltip (title); no native <select>.
+    base = open(os.path.join(_TEMPLATES, "base.html"), encoding="utf-8").read()
+    group = re.search(r'<div class="ax-theme-control"[^>]*>(.*?)</div>', base, re.DOTALL)
+    assert group, "theme control radiogroup not found"
+    block = group.group(0)
+    assert 'role="radiogroup"' in block and 'aria-label="Theme"' in block
+    assert "<select" not in block, "theme control must not use a native <select>"
+    choices = re.findall(r'data-theme-choice="(system|light|dark)"', block)
+    assert set(choices) == {"system", "light", "dark"}, f"expected all three choices, got {choices}"
+    # Every option is a button with an accessible name and a hover title.
+    for m in re.finditer(r"<button\b[^>]*>", block):
+        tag = m.group(0)
+        assert 'data-theme-choice="' in tag
+        assert "aria-label=" in tag, f"theme option missing aria-label: {tag}"
+        assert "title=" in tag, f"theme option missing hover title: {tag}"
+        assert "ax-btn" in tag, f"theme option missing design-system button class: {tag}"
+
+
 def test_automation_uses_shared_dropdown_and_notice():
     auto = open(os.path.join(_STATIC, "automation.js"), encoding="utf-8").read()
     assert "enhanceSelects" in auto and "/static/dropdown.js" in auto

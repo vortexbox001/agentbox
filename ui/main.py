@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -32,7 +32,6 @@ from prompts_store import PromptValidationError
 _UI_DIR = os.path.dirname(os.path.abspath(__file__))
 _TEMPLATES_DIR = os.path.join(_UI_DIR, "templates")
 _STATIC_DIR = os.path.join(_UI_DIR, "static")
-_DESIGN_DOC = "Archon Design System.dc.html"
 
 app = FastAPI(title="Agentbox")
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
@@ -112,15 +111,14 @@ async def _validation_error(request: Request, exc: RequestValidationError):
 
 
 # --- Design system (registered before the static mount so the exact paths win) ---
+# The retired Archon document and its ./support.js / ./archon-tokens.css assets are
+# gone (spec 009 FR-001); the in-repo design-system bundle stays served here at
+# /design-system/. The developer-reference entry for /design-system/ is wired in
+# US3 (T018) — until then only the bundle's own files resolve through the mount.
 @app.get("/design-system")
 async def _design_root_redirect():
-    # Trailing slash so the document's relative ./support.js and ./archon-tokens.css resolve.
+    # Trailing slash so the bundle's relative asset paths resolve under the mount.
     return RedirectResponse("/design-system/", status_code=302)
-
-
-@app.get("/design-system/")
-async def _design_index():
-    return FileResponse(os.path.join(config.DESIGN_SYSTEM_DIR, _DESIGN_DOC), media_type="text/html")
 
 
 app.mount("/design-system", StaticFiles(directory=config.DESIGN_SYSTEM_DIR, html=False), name="design-system")

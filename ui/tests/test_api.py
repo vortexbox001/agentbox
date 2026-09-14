@@ -872,39 +872,41 @@ def test_new_agent_page_keeps_backing_selects_and_loads_dropdown_module(client):
 
 
 def test_app_css_defines_custom_dropdown_component():
+    # Re-pointed at the spec-009 design-system tokens (the --ax-* set is retired,
+    # FR-013): the dropdown structure/behaviour is unchanged, only the token hooks.
     css = _app_css()
     panel = _css_block(css, ".ax-dropdown-panel")
-    assert "var(--ax-bg-card)" in panel
-    assert "var(--ax-border-strong)" in panel
-    assert "var(--ax-shadow-lg)" in panel
-    assert "var(--ax-z-dropdown)" in panel
+    assert "var(--color-popover-background)" in panel
+    assert "var(--color-border-hover)" in panel
+    assert "var(--shadow-lg)" in panel
+    assert "var(--z-dropdown)" in panel
     selected = _css_block(css, '.ax-dropdown-option[aria-selected="true"]')
-    assert "var(--ax-cyan-bg)" in selected
-    assert "var(--ax-cyan)" in selected
+    assert "var(--color-background-blue)" in selected
+    assert "var(--color-text-teal)" in selected
 
 
-# US2 — the toggle maps every state to the reference's tokens (research R4).
+# US2 — the toggle maps every state to the design-system tokens (spec 009).
 def test_app_css_toggle_matches_reference_tokens():
     css = _app_css()
     on_track = _css_block(css, ".ax-toggle input:checked + .ax-toggle-track")
-    assert "background:var(--ax-cyan)" in on_track
+    assert "background:var(--color-accent-teal)" in on_track   # on = teal
     on_thumb = _css_block(css, ".ax-toggle input:checked + .ax-toggle-track::after")
-    assert "background:var(--ax-text-primary)" in on_thumb
-    assert "translateX(var(--ax-space-8))" in on_thumb
+    assert "translateX(var(--space-8))" in on_thumb            # thumb slides right
     off_track = _css_block(css, ".ax-toggle-track")
-    assert "background:var(--ax-border-strong)" in off_track
-    off_thumb = _css_block(css, ".ax-toggle-track::after")
-    assert "background:var(--ax-text-low)" in off_thumb
+    assert "background:var(--color-accent-gray)" in off_track  # off = gray
+    thumb = _css_block(css, ".ax-toggle-track::after")
+    assert "background:var(--color-always-white)" in thumb     # white thumb in both states
 
 
 # US3 — the responsive form grid and the full-row modifier exist as specified.
+# The 280px minimum is now expressed pixel-free as 17.5rem (FR-022).
 def test_app_css_defines_form_grid():
     css = _app_css()
     grid = _css_block(css, ".ax-grid-form")
     assert "display:grid" in grid
     assert "auto-fill" in grid
-    assert "minmax(" in grid and "280px" in grid      # 280px minimum field width
-    assert "gap:var(--ax-space-10)" in grid
+    assert "minmax(" in grid and "17.5rem" in grid    # 280px minimum field width, rem-expressed
+    assert "gap:var(--space-10)" in grid
     wide = _css_block(css, ".ax-field--wide")
     assert "grid-column:1/-1" in wide
 
@@ -936,22 +938,24 @@ def test_app_css_defines_base_grid_agent():
 
 
 # ── 003 US2: three columns on a wide pane ────────────────
+# Breakpoints are now rem-expressed (1320px → 82.5rem) to stay pixel-free (FR-022).
 def test_app_css_three_column_container_query():
     css = _app_css()
-    block = _container_block(css, "ax-content (min-width: 1320px)")
+    block = _container_block(css, "ax-content (min-width: 82.5rem)")
     assert 'grid-template-areas:"runsjobbox"' in block
     assert "grid-template-columns:minmax(0,1fr)minmax(0,1.4fr)minmax(0,1fr)" in block
 
 
 # ── 003 US3: two columns on a mid-width pane ─────────────
+# 720px → 45rem (FR-022).
 def test_app_css_two_column_container_query():
     css = _app_css()
-    block = _container_block(css, "ax-content (min-width: 720px)")
+    block = _container_block(css, "ax-content (min-width: 45rem)")
     assert 'grid-template-areas:"runsjob""boxjob"' in block
     assert "grid-template-columns:minmax(0,1fr)minmax(0,1fr)" in block
     # The wider query must come later in the file so it wins the cascade.
-    assert css.index("@container ax-content (min-width: 720px)") \
-        < css.index("@container ax-content (min-width: 1320px)")
+    assert css.index("@container ax-content (min-width: 45rem)") \
+        < css.index("@container ax-content (min-width: 82.5rem)")
 
 
 # ── 003 Agent Form Layout: page markup (US1) ─────────────
