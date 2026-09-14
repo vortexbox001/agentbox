@@ -146,7 +146,7 @@ No emoji in the product UI. No custom icon font. Unicode characters are not used
 └─────────┴────────────────────────────┘
 ```
 
-- **Sidebar:** 240px wide (68px collapsed), dark background (`--color-nav-background`), vertical flex column
+- **Sidebar:** 240px wide (68px collapsed), same surface as the content area (`--color-background-default`), vertical flex column
 - **Sidebar border:** `inset -1px 0 0 var(--color-keyline-default)` (right edge shadow, not a CSS border)
 - **Content area:** `flex: 1`, full height, `overflow-y: auto`
 - **Content padding:** determined by the page, typically 24px
@@ -154,7 +154,7 @@ No emoji in the product UI. No custom icon font. Unicode characters are not used
 
 ### Navigation
 - Nav items: 32px height, 8px border-radius, flex row with icon + label
-- Active item: `--color-background-blue` fill, white text
+- Active item: `--color-background-blue` fill, `--color-text-default` text
 - Hover: `--color-background-lighter` fill
 - Font: 14px, weight 400 (500 when active)
 - Icons: 16×16, stroke currentColor
