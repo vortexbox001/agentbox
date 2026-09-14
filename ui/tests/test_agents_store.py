@@ -249,8 +249,12 @@ def test_emitted_section_headers_follow_schema_order(settings, harness):
 
 
 def test_repo_agents_round_trip(settings):
-    """Every real agents/*.yaml (templates included) survives emit + reload."""
+    """Every real agents/*.yaml and every examples-tree template survives emit + reload.
+
+    Templates moved to the examples tree (R7), so they are globbed from TEMPLATES_DIR now.
+    """
     paths = sorted(glob.glob(os.path.join(settings.AGENTS_DIR, "*.yaml")))
+    paths += sorted(glob.glob(os.path.join(settings.TEMPLATES_DIR, "*.yaml")))
     assert paths, "no agent files copied into the temp dir"
     for path in paths:
         with open(path, encoding="utf-8") as f:
@@ -363,6 +367,48 @@ def test_list_agents_splits_templates(settings):
     assert "repo-librarian-agentbox.yaml" in files
     assert all(not f.startswith("_") for f in files)
     assert any(f.startswith("_") for f in template_files)
+
+
+def test_templates_listed_from_examples_tree(settings, tmp_agents, tmp_templates):
+    """Picker templates come from the examples tree; instance agents are never templates (R7, FR-008).
+
+    An instance agent (no ``_``) is listed as an agent, never as a template. A stray
+    ``_``-prefixed file in the instance dir (e.g. one a fresh install copied in) is kept out
+    of the agent list and is not offered as a template — the examples tree is the only
+    template source. The examples tree's own non-template sample agents (``hello-example.yaml``)
+    are not offered as templates either.
+    """
+    (tmp_agents / "my-real-agent.yaml").write_text(
+        "name: my-real-agent\nharness: pi\nprompt_file: p.md\noutput_dir: /data/outputs/x\n",
+        encoding="utf-8",
+    )
+    (tmp_agents / "_stray.yaml").write_text(
+        "name: stray\nharness: pi\nprompt_file: p.md\noutput_dir: /data/outputs/y\n",
+        encoding="utf-8",
+    )
+    listed = st.list_agents()
+    agent_files = {a["file"] for a in listed["agents"]}
+    template_files = {t["file"] for t in listed["templates"]}
+
+    # Templates are the examples-tree ``_``-prefixed starters only.
+    assert "_template-pi.yaml" in template_files
+    assert template_files and all(f.startswith("_") for f in template_files)
+    assert "hello-example.yaml" not in template_files  # a sample agent, not a picker template
+
+    # Instance agents: a real one is listed; a stray ``_`` file is neither an agent nor a template.
+    assert "my-real-agent.yaml" in agent_files
+    assert "_stray.yaml" not in agent_files
+    assert "_stray.yaml" not in template_files
+
+
+def test_read_template_reads_from_examples_tree(settings):
+    """read_template resolves against the examples tree, not the instance agents dir (R7)."""
+    info = st.read_template("_template-pi")
+    assert info["file"] == "_template-pi.yaml"
+    assert info["agent"]["harness"] == "pi"
+    # The same stem is not an instance agent.
+    with pytest.raises(FileNotFoundError):
+        st.read_agent("_template-pi")
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")

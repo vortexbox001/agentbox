@@ -59,9 +59,16 @@ def partition_on_cron_supported() -> bool:
 
 
 def known_agent_names() -> set[str]:
-    """Every agent name from agents/*.yaml — templates and disabled included (contract §3)."""
+    """Every agent name from agents/*.yaml — disabled included (contract §3).
+
+    Templates live in the product examples tree now (R7), not the instance agents dir, so
+    none are expected here; a stray ``_``-prefixed file (e.g. one a fresh-install copied in)
+    is skipped so a trigger can never target it — mirroring ``per_agent_view``.
+    """
     names: set[str] = set()
     for path in glob.glob(os.path.join(config.AGENTS_DIR, "*.yaml")):
+        if os.path.basename(path).startswith("_"):
+            continue
         try:
             with open(path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f)
@@ -101,7 +108,7 @@ def per_agent_view() -> list[dict]:
     for path in sorted(glob.glob(os.path.join(config.AGENTS_DIR, "*.yaml"))):
         stem = os.path.basename(path)[:-5]
         if stem.startswith("_"):
-            continue  # templates are not real agents
+            continue  # defensive: templates live in the examples tree now (R7), not here
         info = agents_store.read_agent(stem)
         agent = info.get("agent") or {}
         kinds, schedules = _kinds_and_schedules(agent)

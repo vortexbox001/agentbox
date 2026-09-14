@@ -86,10 +86,10 @@ here.
 
 **Independent Test**: In a clean clone, copy examples→config, set roots to empty dirs, bootstrap, up. The UI lists the example agents; one materializes; its run dir appears under `$AGENTBOX_DATA/runs/`; a filesystem watch records zero writes outside the two roots and no agentbox run dirs under `$DAGSTER_HOME` (quickstart US2, SC-003/SC-004).
 
-- [ ] T019 [P] [US2] Move `agents/_template-*.yaml` (api, claude-code, codex, pi, repo-librarian) into `examples/config/agents/` so templates leave the instance agents dir (FR-008/FR-015, R7).
-- [ ] T020 [P] [US2] Author the rest of `examples/config/`: a sample prompt in `prompts/`, a sample project in `projects/`, a minimal `settings.yaml` (reserved/mostly-empty per R5), sufficient to seed a working box by copying (FR-015). *(LiteLLM overlay example is authored in US6/T034.)*
-- [ ] T021 [US2] Repoint the UI template picker to the examples tree: `ui/main.py` create form (`?from=<template>`) and the template-listing in `ui/agents_store.py`/`ui/automation_store.py` source templates from `EXAMPLES_DIR`, not the instance agents dir; the `_`-prefix `is_template` convention no longer matches instance agents (FR-008, R7).
-- [ ] T022 [P] [US2] Add a UI test in `ui/tests/test_agents_store.py` (or `test_api.py`) asserting the template picker lists templates from the examples tree and that instance agents (no `_` prefix) are not treated as templates (FR-008, R7).
+- [X] T019 [P] [US2] Move `agents/_template-*.yaml` (api, claude-code, codex, pi, repo-librarian) into `examples/config/agents/` so templates leave the instance agents dir (FR-008/FR-015, R7).
+- [X] T020 [P] [US2] Author the rest of `examples/config/`: a sample prompt in `prompts/`, a sample project in `projects/`, a minimal `settings.yaml` (reserved/mostly-empty per R5), sufficient to seed a working box by copying (FR-015). *(LiteLLM overlay example is authored in US6/T034.)*
+- [X] T021 [US2] Repoint the UI template picker to the examples tree: `ui/main.py` create form (`?from=<template>`) and the template-listing in `ui/agents_store.py`/`ui/automation_store.py` source templates from `EXAMPLES_DIR`, not the instance agents dir; the `_`-prefix `is_template` convention no longer matches instance agents (FR-008, R7).
+- [X] T022 [P] [US2] Add a UI test in `ui/tests/test_agents_store.py` (or `test_api.py`) asserting the template picker lists templates from the examples tree and that instance agents (no `_` prefix) are not treated as templates (FR-008, R7).
 
 **Checkpoint**: A clean clone stands up from examples with all writes under the two roots.
 

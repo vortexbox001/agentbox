@@ -1,0 +1,9 @@
+# Instance settings (config/settings.yaml).
+#
+# Deliberately minimal (research R5): nothing in the current stack reads a settings
+# file yet, so this is a reserved, mostly-empty placeholder seeded into a fresh box.
+# Richer instance settings are owned by later briefs. The fresh-install copies this to
+# config/settings.yaml; the migration moves an existing orchestrator/settings.yaml here
+# only if one exists (on the current box, none does).
+
+# schema_version: 1   # reserved — settings schema is defined by a future brief

@@ -1381,7 +1381,8 @@ function wireDelete() {
 // ── Start from template ─────────────────────────────────
 async function prefillFromTemplate(stem) {
   let resp;
-  try { resp = await fetch(`/api/agents/${encodeURIComponent(stem)}`); }
+  // Templates are product-owned starters in the examples tree, not instance agents (FR-008).
+  try { resp = await fetch(`/api/templates/${encodeURIComponent(stem)}`); }
   catch (e) { toast("Could not load the template", { tone: "error" }); return; }
   if (!resp.ok) { toast("Could not load the template", { tone: "error" }); return; }
   const data = await resp.json();

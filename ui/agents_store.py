@@ -41,8 +41,18 @@ def _agents_dir() -> str:
     return config.AGENTS_DIR
 
 
-def _path(stem: str) -> str:
-    return os.path.join(_agents_dir(), f"{stem}.yaml")
+def _templates_dir() -> str:
+    """Product-owned examples tree the create form's starters are read from (FR-008, R7).
+
+    Templates live under the read-only product examples tree (``config.TEMPLATES_DIR``), not
+    in the instance agents dir, so they are never listed as real agents nor copied into an
+    operator's config repo as fake ones.
+    """
+    return config.TEMPLATES_DIR
+
+
+def _path(stem: str, base_dir: str | None = None) -> str:
+    return os.path.join(base_dir or _agents_dir(), f"{stem}.yaml")
 
 
 def _safe_stem(stem: str) -> bool:
@@ -79,8 +89,12 @@ def agent_exists(stem: str) -> bool:
     return _safe_stem(stem) and os.path.isfile(_path(stem))
 
 
-def read_agent(stem: str) -> dict:
+def read_agent(stem: str, base_dir: str | None = None) -> dict:
     """Read one agent file into a rich definition dict.
+
+    ``base_dir`` overrides the directory read from (default: the instance agents dir);
+    ``read_template`` passes the product examples tree so a template pre-fill reads the
+    same shape an edit would, without the template living in the instance dir.
 
     The returned dict always has: ``stem``, ``file``, ``agent`` (the definition,
     or None on parse error), ``parse_error``, ``raw`` (file text when unparsable),
@@ -94,7 +108,7 @@ def read_agent(stem: str) -> dict:
     if not _safe_stem(stem):
         # Traversal or a separator in the stem: no such addressable agent (404).
         raise FileNotFoundError(stem)
-    path = _path(stem)
+    path = _path(stem, base_dir)
     is_template = stem.startswith("_")
     result = {
         "stem": stem,
@@ -216,14 +230,50 @@ def read_agent(stem: str) -> dict:
     return result
 
 
-def list_agents() -> dict:
-    """List all agent files, split into ``agents`` (non-template) and ``templates``.
+def read_template(stem: str) -> dict:
+    """Read one product-owned starter from the examples tree (FR-008, R7).
 
-    Each agent row carries the list-page fields from contracts/http-api.md; each
-    template row carries just ``file`` and ``harness``.
+    Same rich shape as ``read_agent`` (so the create form's pre-fill matches an edit),
+    but read from ``config.TEMPLATES_DIR`` rather than the instance agents dir.
+    """
+    return read_agent(stem, base_dir=_templates_dir())
+
+
+def list_templates() -> list[dict]:
+    """Product-owned starters offered by the create form's picker (FR-008, R7).
+
+    Sourced from the examples tree (``config.TEMPLATES_DIR``), not the instance agents dir;
+    each row carries just ``file`` and ``harness``. Only ``_``-prefixed files are picker
+    templates — the examples tree also ships non-template sample agents (e.g.
+    ``hello-example.yaml``) a fresh install copies as real starters, which are not offered
+    as templates. A missing examples tree yields no templates rather than an error (a box may
+    run without the product examples mounted).
+    """
+    try:
+        paths = sorted(glob.glob(os.path.join(_templates_dir(), "_*.yaml")))
+    except OSError:
+        return []
+    templates: list[dict] = []
+    for path in paths:
+        stem = os.path.splitext(os.path.basename(path))[0]
+        info = read_template(stem)
+        harness = info["agent"].get("harness") if info["agent"] else None
+        templates.append({"file": info["file"], "harness": harness})
+    return templates
+
+
+def list_agents() -> dict:
+    """List agent files, split into ``agents`` and picker ``templates``.
+
+    ``agents`` are the instance agents dir's files; ``templates`` are the product-owned
+    starters from the examples tree (``list_templates``). Genuine instance agents never
+    start with ``_`` (templates moved to the examples tree — R7), so the ``is_template``
+    check here is now only a defensive guard: it keeps any stray ``_``-prefixed file (e.g.
+    a template a fresh-install copied into ``config/agents/``) out of the agent list rather
+    than surfacing it as a fake agent. Each agent row carries the list-page fields from
+    contracts/http-api.md; each template row carries just ``file`` and ``harness``.
     """
     agents: list[dict] = []
-    templates: list[dict] = []
     try:
         paths = sorted(glob.glob(os.path.join(_agents_dir(), "*.yaml")))
     except OSError as e:
@@ -233,9 +283,7 @@ def list_agents() -> dict:
         stem = os.path.splitext(os.path.basename(path))[0]
         info = read_agent(stem)
         if info["is_template"]:
-            harness = info["agent"].get("harness") if info["agent"] else None
-            templates.append({"file": info["file"], "harness": harness})
-            continue
+            continue  # defensive: never list a stray _-prefixed file as an agent
         agent = info["agent"] or {}
         row = {
             "name": info["name"],
@@ -251,7 +299,7 @@ def list_agents() -> dict:
             "editable": info["editable"],
         }
         agents.append(row)
-    return {"agents": agents, "templates": templates}
+    return {"agents": agents, "templates": list_templates()}
 
 
 # --- Emitter --------------------------------------------------------------

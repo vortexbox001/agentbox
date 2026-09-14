@@ -40,6 +40,22 @@ def tmp_prompts(tmp_path):
 
 
 @pytest.fixture
+def tmp_templates(tmp_path):
+    """A writable copy of the product examples starters (examples/config/agents/*.yaml).
+
+    The create form's template picker reads starters from here (config.TEMPLATES_DIR), not
+    from the instance agents dir (R7).
+    """
+    dest = tmp_path / "templates"
+    dest.mkdir()
+    src = REPO_ROOT / "examples" / "config" / "agents"
+    if src.is_dir():
+        for f in src.glob("*.yaml"):
+            shutil.copy(f, dest / f.name)
+    return dest
+
+
+@pytest.fixture
 def litellm_cfg(tmp_path):
     """A copy of the repo litellm/config.yaml in a temp directory."""
     dest = tmp_path / "config.yaml"
@@ -50,12 +66,13 @@ def litellm_cfg(tmp_path):
 
 
 @pytest.fixture
-def settings(monkeypatch, tmp_agents, tmp_prompts, litellm_cfg):
+def settings(monkeypatch, tmp_agents, tmp_prompts, tmp_templates, litellm_cfg):
     """Point ui/config.py at the temp stores for the duration of a test."""
     import config
 
     monkeypatch.setattr(config, "AGENTS_DIR", str(tmp_agents))
     monkeypatch.setattr(config, "PROMPTS_DIR", str(tmp_prompts))
+    monkeypatch.setattr(config, "TEMPLATES_DIR", str(tmp_templates))
     monkeypatch.setattr(config, "LITELLM_CONFIG", str(litellm_cfg))
     return config
 

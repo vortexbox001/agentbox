@@ -1,0 +1,26 @@
+# agentbox-schema: 5
+# Sample instance agent — copied to config/agents/ by the fresh-install (examples/config → config).
+# A working starter a new box can launch straight away; edit or delete it once you have your own.
+
+name: hello-example             # unique kebab-case identifier; becomes Dagster job "agent_hello_example"
+enabled: true                   # true | false — disabled agents are skipped at startup
+harness: api                    # api — calls LiteLLM via agentbox/agent-python image
+
+# --- LiteLLM / model ---
+model: cheap                    # LiteLLM alias tier (see litellm/config.template.yaml + your overlay)
+max_tokens: 1024                # max response tokens (default: 1024)
+
+# --- Prompt & output ---
+prompt_file: hello-example.md   # file in prompts/ mounted read-only into the container
+output_dir: /data/agentbox/outputs/hello-example  # under the data root ($AGENTBOX_DATA default)
+
+# --- Job ---
+job: true                       # launchable/schedulable job agent_hello_example
+
+# --- Container resources ---
+network: agentnet-isolated      # LiteLLM only, no internet (recommended)
+memory: 1g                      # container memory limit (default: 1g)
+cpus: 1.5                       # CPU limit (default: 1.5)
+
+# --- Execution ---
+timeout_seconds: 600            # kill container after this many seconds

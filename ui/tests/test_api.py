@@ -244,8 +244,10 @@ def test_api_agents_marks_newer_schema_uneditable(client, tmp_agents):
     assert "9999" in row["parse_error"]
 
 
-def test_api_agents_empty_directory(client, tmp_agents):
+def test_api_agents_empty_directory(client, tmp_agents, tmp_templates):
     for f in tmp_agents.glob("*.yaml"):
+        f.unlink()
+    for f in tmp_templates.glob("*.yaml"):  # templates come from the examples tree now (R7)
         f.unlink()
     data = client.get("/api/agents").json()
     assert data == {"agents": [], "templates": []}
@@ -421,12 +423,23 @@ def test_preview_does_not_write(client, tmp_agents):
 
 
 def test_read_agent_returns_template_for_prefill(client):
-    resp = client.get("/api/agents/_template-pi")
+    # Templates live in the examples tree now (R7): the picker's pre-fill reads them from
+    # /api/templates/{name}, not /api/agents/{name}.
+    resp = client.get("/api/templates/_template-pi")
     assert resp.status_code == 200
     data = resp.json()
     assert data["agent"]["harness"] == "pi"
     assert data["file"] == "_template-pi.yaml"
     assert data["editable"] is True
+
+
+def test_template_not_served_as_agent(client):
+    # A template is not an instance agent: reading it via the agents route 404s.
+    assert client.get("/api/agents/_template-pi").status_code == 404
+
+
+def test_read_template_404_when_absent(client):
+    assert client.get("/api/templates/_template-nope").status_code == 404
 
 
 def test_read_agent_404_when_absent(client):
