@@ -1,11 +1,12 @@
 <!--
 Sync Impact Report
-  Version change: 1.1.0 → 1.2.0 (added Principle VII. One Design System — spec 009)
-  Modified principles: none
+  Version change: 1.2.0 → 1.3.0 (expanded Principle VII: CSS lives in dedicated stylesheets)
+  Modified principles:
+    - VII. One Design System — added the rule that application CSS lives in dedicated
+      stylesheets (no inline `style`/`<style>` in templates), with the design-system
+      reference pages as the sole exception
   Removed sections: none
-  Added sections:
-    - VII. One Design System (design-system tokens + shared component macros; no literal
-      colours/fonts/pixel values in app styling; new components land in the design system first)
+  Added sections: none
   Deferred TODOs: none
 -->
 
@@ -73,8 +74,12 @@ misconfigure agents and failures surface hours later.
 Every user-facing screen MUST be built from the shared design system: styling MUST resolve
 from design-system tokens, and controls MUST be composed from the shared component macros.
 Literal colours, typefaces, and pixel values MUST NOT appear in application styling or
-templates. A new component MUST land in the design system first and the shared component set
-second, so a single change to a token or a component updates the whole interface.
+templates. Application CSS MUST live in dedicated stylesheets: templates MUST NOT carry inline
+`style` attributes or embedded `<style>` blocks. The self-contained design-system reference
+pages (the served specimen gallery and guideline specimens under the design-system directory)
+are the sole exception, because they must render offline as standalone documents. A new
+component MUST land in the design system first and the shared component set second, so a single
+change to a token or a component updates the whole interface.
 
 **Rationale:** AgentBox is meant to feel like a sibling of the tools it lives beside. One
 authoritative design system keeps every screen consistent, makes visual change a single edit,
@@ -92,4 +97,4 @@ platform targets — live in the README and code, not here.
 - **Compliance** is verified through automated documentation review and human review on
   pull requests.
 
-**Version**: 1.2.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-13
+**Version**: 1.3.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-14

@@ -19,12 +19,16 @@ served read-only at `/design-system/` (the developer reference app) and the `age
 points at it.
 
 The design system makes AgentBox a **sibling of Dagster** — same layout, fonts, and surfaces, only
-the brand differs. When changing the UI (`ui/templates/`, `ui/static/`), follow two rules, both
+the brand differs. When changing the UI (`ui/templates/`, `ui/static/`), follow three rules, all
 enforced by the UI test suite (`cd ui && ../.venv/bin/python -m pytest -q`):
 
 - **Style through tokens.** Every colour, spacing, type, radius, shadow, and transition resolves
   from a design-system `var(--…)` token. No literal colours (hex/rgb/hsl/named), no literal pixel
   values, no `font-family`, and no `--ax-*` custom properties in app styling or templates.
+- **Keep CSS in stylesheets.** App CSS lives in `ui/static/app.css` and the token stylesheets —
+  never as an inline `style="…"` attribute or an embedded `<style>` block in a template. The only
+  exception is the self-contained design-system reference pages under `ui/design-system/`, which
+  must render offline as standalone documents.
 - **Compose from macros.** Every control is rendered from the shared Jinja2 macros in
   `ui/templates/components/macros.html` (`button`, `text_input`, `select`, `checkbox`, `toggle`,
   `badge`, `status_dot`, `alert`, `spinner`, `tabs`, `card`, `dialog`, `table`). Do not hand-roll

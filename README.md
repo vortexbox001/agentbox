@@ -256,9 +256,11 @@ The UI is built on the **AgentBox design system**, which lives in the repo at
 [`ui/design-system/`](ui/design-system/) and is the single source of truth for how the management
 UI looks — `ui/design-system/readme.md` is the authoritative guide, and the token stylesheets under
 `ui/design-system/tokens/` are the machine-readable source. The design system makes AgentBox a
-**sibling of Dagster**: same layout, fonts, and surfaces, only the brand differs. Two rules follow
+**sibling of Dagster**: same layout, fonts, and surfaces, only the brand differs. Three rules follow
 from it and are enforced by the UI test suite — style only through design-system **tokens**
-(`var(--…)`; no literal colours, fonts, or pixel values in `ui/templates/` or `ui/static/`), and
+(`var(--…)`; no literal colours, fonts, or pixel values in `ui/templates/` or `ui/static/`), keep
+all app **CSS in stylesheets** (`ui/static/app.css` and the token files — no inline `style=` or
+`<style>` blocks in templates; the `ui/design-system/` reference pages are the sole exception), and
 build every screen from the shared component **macros** in `ui/templates/components/macros.html`
 rather than bespoke markup. A served developer reference of the whole system lives at
 [`/design-system`](http://localhost:8080/design-system) (a developer aid, not linked from the app

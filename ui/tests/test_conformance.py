@@ -102,6 +102,8 @@ _PX = re.compile(r"\b\d+px\b")                               # literal pixel val
 _HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")                    # #rgb / #rrggbb / #rrggbbaa
 _COLOR_FN = re.compile(r"\b(?:rgba?|hsla?)\s*\(")            # rgb()/rgba()/hsl()/hsla()
 _FONT_FAMILY = re.compile(r"font-family", re.IGNORECASE)
+_INLINE_STYLE = re.compile(r"style\s*=\s*[\"']")            # inline style="…" attribute
+_STYLE_BLOCK = re.compile(r"<style[\s>]", re.IGNORECASE)    # embedded <style> block
 _VAR_CALL = re.compile(r"var\([^)]*\)")
 # Any absolute http(s) URL, and the CDN/font hosts the migration must never reference.
 _URL = re.compile(r"https?://[^\s\"')]+", re.IGNORECASE)
@@ -162,6 +164,29 @@ def test_no_stray_font_family():
     assert not bad, f"stray font-family declared in: {bad}"
 
 
+def test_no_inline_styles_in_app_templates():
+    """App CSS lives in dedicated stylesheets (Constitution VII): no template under
+    ``ui/templates/`` may carry an inline ``style="…"`` attribute or an embedded
+    ``<style>`` block. The self-contained design-system reference pages under
+    ``ui/design-system/`` are the sole exception (offline standalone documents) and are
+    not scanned here."""
+    bad = []
+    for dirpath, _, names in os.walk(_TEMPLATES):
+        for n in names:
+            if not n.endswith(".html"):
+                continue
+            path = os.path.join(dirpath, n)
+            text = _strip_comments(open(path, encoding="utf-8").read(), "html")
+            hits = []
+            if _INLINE_STYLE.search(text):
+                hits.append("inline style=")
+            if _STYLE_BLOCK.search(text):
+                hits.append("<style> block")
+            if hits:
+                bad.append(f"{_rel(path)}: {hits}")
+    assert not bad, f"embedded CSS in app template(s) — move it to a stylesheet: {bad}"
+
+
 def test_no_external_urls():
     """No served style/markup/script references an external asset (FR-017/FR-022, US4).
 
@@ -186,6 +211,9 @@ def test_checks_catch_inserted_literals():
     assert _AX_TOKEN.search(stripped)
     assert _FONT_FAMILY.search(stripped)
     assert _NAMED.search(_VAR_CALL.sub(" ", ".y { border-color: navy; }"))
+    # Embedded CSS in a template fires the inline-style / <style>-block gates.
+    assert _INLINE_STYLE.search('<p style="margin-top:0">')
+    assert _STYLE_BLOCK.search("<style>.x{}</style>")
     # External-URL gate fires on a CDN import but not on an SVG namespace URI.
     imp = "@import url('https://fonts.googleapis.com/css2?family=Inter');"
     assert [u for u in _URL.findall(imp) if not _NS_ALLOW.match(u)]
