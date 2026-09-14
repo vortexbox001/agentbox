@@ -8,9 +8,11 @@ served bundle CSS at ``ui/design-system/*.css``. Exempt (literals allowed): the 
 files ``ui/design-system/tokens/*.css`` and any self-hosted font file — everything
 else is app styling held to the token rule.
 
-The external-font/CDN/asset-URL half of FR-022 is added to this same module by US4
-(T025); this module already fails on an inserted literal colour, literal pixel value,
-or ``--ax-*`` token and passes clean on the migrated tree.
+The external-font/CDN/asset-URL half of FR-022 is enforced by ``test_no_external_urls``
+(US4/T025): no served style/markup/script may reference ``googleapis``/``unpkg``/``cdn``
+or any other ``http(s)://`` asset URL, so the UI renders with egress blocked. This module
+fails on an inserted literal colour, literal pixel value, ``--ax-*`` token, or external URL,
+and passes clean on the migrated tree.
 """
 import os
 import re
@@ -71,6 +73,29 @@ def _scanned_files():
         yield path, kind, _strip_comments(text, kind)
 
 
+def _url_scanned_files():
+    """(path, raw text) for every served text file in the egress scope (T025):
+    ``ui/templates/`` (html), ``ui/static/`` (css/js/html), and the served bundle CSS
+    ``ui/design-system/*.css`` — including ``tokens/`` here (where the retired Google
+    Fonts ``@import`` lived and where the local ``@font-face`` ``url()``s now point), which
+    the literal-token scan exempts. Font binaries are not text and are skipped. Comments
+    are NOT stripped: a commented-out external ``@import`` is a latent egress risk, so it
+    still fails."""
+    roots = []
+    for dirpath, _, names in os.walk(_TEMPLATES):
+        roots += [os.path.join(dirpath, n) for n in names if n.endswith(".html")]
+    for dirpath, _, names in os.walk(_STATIC):
+        roots += [os.path.join(dirpath, n) for n in names if n.endswith((".css", ".js", ".html"))]
+    for n in sorted(os.listdir(_DESIGN)):          # bundle root, e.g. styles.css
+        if n.endswith(".css"):
+            roots.append(os.path.join(_DESIGN, n))
+    for n in sorted(os.listdir(_TOKENS)):          # tokens/*.css — included for URLs
+        if n.endswith(".css"):
+            roots.append(os.path.join(_TOKENS, n))
+    for path in sorted(set(roots)):
+        yield path, open(path, encoding="utf-8").read()
+
+
 # ── Patterns ────────────────────────────────────────────
 _AX_TOKEN = re.compile(r"--ax-[\w-]*")                       # def or var() ref
 _PX = re.compile(r"\b\d+px\b")                               # literal pixel value
@@ -78,6 +103,10 @@ _HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")                    # #rgb / #rrggbb / 
 _COLOR_FN = re.compile(r"\b(?:rgba?|hsla?)\s*\(")            # rgb()/rgba()/hsl()/hsla()
 _FONT_FAMILY = re.compile(r"font-family", re.IGNORECASE)
 _VAR_CALL = re.compile(r"var\([^)]*\)")
+# Any absolute http(s) URL, and the CDN/font hosts the migration must never reference.
+_URL = re.compile(r"https?://[^\s\"')]+", re.IGNORECASE)
+# XML/SVG/metadata namespace URIs are identifiers, not fetched assets — never egress.
+_NS_ALLOW = re.compile(r"^https?://(?:www\.)?(?:w3\.org|c2pa\.org)/", re.IGNORECASE)
 # Named CSS colours (common subset), matched as standalone value tokens only —
 # keywords like transparent/currentColor/inherit/none are intentionally excluded.
 _NAMED = re.compile(
@@ -133,6 +162,20 @@ def test_no_stray_font_family():
     assert not bad, f"stray font-family declared in: {bad}"
 
 
+def test_no_external_urls():
+    """No served style/markup/script references an external asset (FR-017/FR-022, US4).
+
+    Fails on any ``http(s)://`` URL — Google Fonts, unpkg, any CDN, any font/icon/asset
+    host — outside XML/SVG/metadata namespaces, so the UI renders with egress blocked.
+    """
+    bad = []
+    for p, t in _url_scanned_files():
+        offenders = [u for u in _URL.findall(t) if not _NS_ALLOW.match(u)]
+        if offenders:
+            bad.append(f"{_rel(p)}: {offenders[:5]}")
+    assert not bad, f"external asset URL(s) — must be self-hosted — in: {bad}"
+
+
 # ── SC-005 negative-gate coverage (self-test of the checks) ──
 def test_checks_catch_inserted_literals():
     """The patterns must fire on a deliberately non-conforming sample (Edge Case)."""
@@ -143,3 +186,8 @@ def test_checks_catch_inserted_literals():
     assert _AX_TOKEN.search(stripped)
     assert _FONT_FAMILY.search(stripped)
     assert _NAMED.search(_VAR_CALL.sub(" ", ".y { border-color: navy; }"))
+    # External-URL gate fires on a CDN import but not on an SVG namespace URI.
+    imp = "@import url('https://fonts.googleapis.com/css2?family=Inter');"
+    assert [u for u in _URL.findall(imp) if not _NS_ALLOW.match(u)]
+    assert not [u for u in _URL.findall('xmlns="http://www.w3.org/2000/svg"')
+                if not _NS_ALLOW.match(u)]

@@ -7,8 +7,8 @@ AgentBox is a self-hosted "runner" that launches AI agents on a schedule. Each a
 This design system was built from the following references:
 
 - **Dagster UI codebase:** [github.com/dagster-io/dagster](https://github.com/dagster-io/dagster) — `js_modules/ui-components/` (color palettes, component CSS, theme tokens) and `js_modules/ui-core/` (app shell, navigation layout)
-- **Existing Archon design system:** A local design-system project containing `archon-tokens.css` and `ARCHON-DESIGN-SYSTEM.md` — the original dark-theme token set for agent orchestration UIs
-- **AgentBox logo:** `assets/logo.svg` (mark), `assets/wordmark.svg` (white wordmark, for dark grounds), `assets/wordmark-navy.svg` (navy wordmark, for light grounds) — fish school mark in navy, teal, and lime
+- **Prior art:** an earlier local dark-theme token set for agent-orchestration UIs, since retired — this system supersedes it (its files are no longer part of the repo)
+- **AgentBox logo:** `assets/logo.svg` (mark, for the collapsed rail), `assets/logo-light.svg` / `assets/logo-dark.svg` (theme-aware horizontal lockups, 130px) — fish school mark in navy, teal, and lime
 
 ## Brand Identity
 
@@ -59,7 +59,7 @@ AgentBox uses the same font stack as Dagster:
 - **Sans-serif:** Inter (substitute for Geist Sans — see Font Substitution below)
 - **Monospace:** Source Code Pro (substitute for Geist Mono)
 
-**Font substitution note:** Dagster uses Geist Sans and Geist Mono as primary fonts. This design system uses Inter and Source Code Pro as close substitutes available via Google Fonts. To match Dagster exactly, replace with Geist font files and update `tokens/typography.css`.
+**Font substitution note:** Dagster uses Geist Sans and Geist Mono as primary fonts. This design system uses Inter and Source Code Pro as close substitutes. Both are **self-hosted** (SIL Open Font License 1.1): the `latin`/`latin-ext` variable `.woff2` files live under `fonts/` and are wired via local `@font-face` rules in `tokens/typography.css` — there is no Google Fonts `@import`, so the UI renders with egress blocked (US4). To match Dagster exactly, drop Geist `.woff2` into `fonts/` and update those `@font-face` rules.
 
 **Type scale:**
 - Display: 32/24/20/16px, weight 600 — page headings, stats
@@ -127,8 +127,7 @@ AgentBox uses **Lucide** icons (outline stroke style), matching the icon aesthet
 - **Size:** 16×16 for navigation and inline, 20×20 for page actions, 24×24 for empty states
 - **Style:** Outline stroke, `stroke: currentColor`, `stroke-width: 2`, `fill: none`
 - **Color:** Always `currentColor` — inherits from parent text color
-- **Format:** Inline SVG preferred; Lucide CDN as fallback
-- **CDN:** `https://unpkg.com/lucide-static@latest/icons/`
+- **Format:** Vendored into the local sprite `ui/static/icons.svg`, referenced as `<use href="/static/icons.svg#name">`. No CDN — icons resolve with egress blocked (US4). To add an icon, copy its Lucide path into a new `<symbol>` in the sprite.
 
 No emoji in the product UI. No custom icon font. Unicode characters are not used as icons.
 
@@ -183,6 +182,7 @@ No emoji in the product UI. No custom icon font. Unicode characters are not used
 │   ├── navigation/      Tabs, Breadcrumbs
 │   ├── layout/          Card, Dialog
 │   └── data/            Table
+├── fonts/               Self-hosted brand fonts (Inter, Source Code Pro .woff2)
 ├── guidelines/          Foundation specimen cards
 ├── tokens/              CSS custom property files
 │   ├── colors.css       Core color scales

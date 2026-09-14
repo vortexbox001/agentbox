@@ -364,6 +364,35 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 .ax-status-dot[data-state="scheduled"] { background: var(--color-accent-lime); }
 .ax-status-dot[data-state="idle"] { background: var(--color-accent-gray); }
 
+/* ── RunStatusTag (RunStatusTag.d.ts) ─────────────────── */
+/* Run status pill: a status dot + label on a neutral chip. */
+.ax-run-status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--color-background-lighter);
+  color: var(--color-text-default);
+  font: var(--type-body-sm);
+}
+
+/* ── SchedulePill (SchedulePill.d.ts) ─────────────────── */
+/* Schedule / sensor chip: icon + frequency label + inline toggle. */
+.ax-schedule-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border: thin solid var(--color-border-default);
+  border-radius: var(--radius-pill);
+  background: var(--color-background-default);
+  color: var(--color-text-default);
+  font: var(--type-body-sm);
+}
+.ax-schedule-pill .ax-icon { color: var(--color-text-light); }
+.ax-schedule-pill-label { flex: 1; white-space: nowrap; }
+
 /* ── Tabs (Tabs.d.ts) ─────────────────────────────────── */
 /* Bottom-border indicator (Dagster style). Each tab also carries .ax-btn, so these
    descendant rules override the button base to a borderless, inset-underline tab. */

@@ -2,7 +2,7 @@
   Shared component macros — spec 009 US2 (contracts/component-macros.md).
 
   One macro per design-system component listed in ui/design-system/_ds_manifest.json
-  (Tab is part of tabs → thirteen macros). Each macro emits markup + the design-system
+  (Tab is part of tabs → fifteen macros). Each macro emits markup + the design-system
   ROOT class only (no event props); existing behavioural JS wires interaction. Pages
   compose these macros so control styling lives in one place (FR-006).
 
@@ -146,4 +146,30 @@
   </tbody>
 {%- endif %}
 </table>
+{%- endmacro %}
+
+{# ── RunStatusTag (RunStatusTag.d.ts) ────────────────────
+   Run status pill: a status dot + label. `status` maps to the status_dot state
+   (queued/canceled read as the neutral gray dot); `label` defaults to the status name —
+   pass a relative time like "2 hours ago" for a run row. #}
+{% macro run_status_tag(status="started", label=none, attrs={}) -%}
+{%- set dot = {"success": "success", "failure": "error", "error": "error", "started": "running", "running": "running", "queued": "idle", "canceled": "idle"} -%}
+<span class="ax-run-status-tag" data-status="{{ status }}"{{ attrs|xmlattr }}>
+  <span class="ax-status-dot" data-state="{{ dot.get(status, 'idle') }}" aria-hidden="true"></span>
+  <span>{{ label if label is not none else status }}</span>
+</span>
+{%- endmacro %}
+
+{# ── SchedulePill (SchedulePill.d.ts) ────────────────────
+   Schedule / sensor chip: icon + human-readable frequency + an inline on/off toggle.
+   `on` sets the toggle; the toggle behaviour is wired by existing JS (no event props). #}
+{% macro schedule_pill(type="schedule", label="", on=false, name=none, id=none, attrs={}) -%}
+<span class="ax-schedule-pill" data-type="{{ type }}"{{ attrs|xmlattr }}>
+  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#automation"></use></svg>
+  <span class="ax-schedule-pill-label">{{ label }}</span>
+  <label class="ax-toggle">
+    <input type="checkbox"{{ {'id': id, 'name': name}|xmlattr }}{% if on %} checked{% endif %}>
+    <span class="ax-toggle-track" aria-hidden="true"></span>
+  </label>
+</span>
 {%- endmacro %}

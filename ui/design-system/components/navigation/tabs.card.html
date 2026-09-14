@@ -1,23 +1,15 @@
 <!-- @dsCard group="Components" viewport="700x80" name="Tabs, Tab" subtitle="Tab bar with bottom-border indicator and count badges" -->
-<!DOCTYPE html><html><head>
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
 <link rel="stylesheet" href="../../styles.css">
-<script src="../../_ds_bundle.js"></script>
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
-</head><body style="margin:0;padding:12px;background:var(--color-background-default);font-family:var(--font-default)">
-<div id="root"></div>
-<script type="text/babel">
-const {Tabs, Tab} = window.AgentBoxDesignSystem_463fbd;
-function Demo() {
-  const [tab, setTab] = React.useState('runs');
-  return <Tabs selectedId={tab} onChange={setTab}>
-    <Tab id="runs" count={24}>Runs</Tab>
-    <Tab id="config">Configuration</Tab>
-    <Tab id="logs">Logs</Tab>
-    <Tab id="history" disabled>History</Tab>
-  </Tabs>;
-}
-ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
-</script>
+<link rel="stylesheet" href="/static/app.css">
+</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
+<!-- Production markup: the `tabs` macro → `ax-tabs` with `ax-btn ax-tab` buttons (bottom-border
+     indicator, mono count badge), styled by /static/app.css. No CDN, no React. -->
+<div class="ax-tabs" role="tablist">
+  <button type="button" class="ax-btn ax-tab is-active" role="tab" aria-selected="true">Runs <span class="ax-tab-count">24</span></button>
+  <button type="button" class="ax-btn ax-tab" role="tab" aria-selected="false">Configuration</button>
+  <button type="button" class="ax-btn ax-tab" role="tab" aria-selected="false">Logs</button>
+  <button type="button" class="ax-btn ax-tab" role="tab" aria-selected="false" disabled>History</button>
+</div>
 </body></html>
