@@ -132,7 +132,9 @@ html[data-sidebar="collapsed"] .ax-app {
 .ax-theme-control .ax-theme-option:hover:not(:disabled) { background: var(--color-nav-button-hover); border-color: transparent; color: var(--color-nav-text-hover); }
 .ax-theme-control .ax-theme-option[aria-checked="true"] { background: var(--color-background-blue); color: var(--color-nav-text-selected); }
 
-.ax-collapse-toggle {
+/* Scoped to the sidebar foot so this chrome styling outranks the .ax-btn base the
+   collapse toggle also carries (every <button> carries the design-system class, FR-024). */
+.ax-sidebar-foot .ax-collapse-toggle {
   display: flex;
   align-items: center;
   gap: var(--space-5);
@@ -145,7 +147,7 @@ html[data-sidebar="collapsed"] .ax-app {
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
-.ax-collapse-toggle:hover { background: var(--color-nav-button-hover); color: var(--color-nav-text-hover); }
+.ax-sidebar-foot .ax-collapse-toggle:hover { background: var(--color-nav-button-hover); color: var(--color-nav-text-hover); }
 .ax-collapse-label { flex: 1; min-width: 0; text-align: left; }
 
 /* ── Collapsed sidebar (68px) ─────────────────────────── */
@@ -291,6 +293,19 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 .ax-btn--ghost:hover:not(:disabled) { background: var(--color-background-lighter-hover); border-color: var(--color-border-hover); }
 .ax-btn--danger { background: var(--color-background-red); color: var(--color-text-red); border-color: var(--color-accent-red); }
 .ax-btn--danger:hover:not(:disabled) { background: var(--color-accent-red); color: var(--color-always-white); }
+
+/* ── Spinner (Spinner.d.ts) ───────────────────────────── */
+/* A token-sized ring spinning on ab-spin (animations.css); shown by `button loading`. */
+.ax-spinner {
+  display: inline-block;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  border: var(--space-1) solid var(--color-border-default);
+  border-top-color: var(--color-accent-teal);
+  border-radius: var(--radius-round);
+  animation: ab-spin var(--transition-slow) linear infinite;
+  flex: none;
+}
 
 /* ── Toggle ───────────────────────────────────────────── */
 /* Track 36×20 (on: teal / off: gray), thumb 16 at 2px inset. All sizes come from
@@ -439,7 +454,9 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
   border-radius: var(--radius-pill);
   font: var(--type-mono-sm);
 }
-.ax-chip-remove {
+/* Higher specificity than .ax-btn so the bare × keeps its chip styling when the
+   JS-created remove button also carries the design-system .ax-btn class (FR-024). */
+.ax-chip .ax-chip-remove {
   background: none; border: none; cursor: pointer; padding: 0;
   color: var(--color-text-teal); font: var(--type-body-md); line-height: 1;
 }
@@ -495,18 +512,25 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 .ax-error-list { margin: 0 0 var(--space-9); padding-left: var(--space-9); color: var(--color-text-light); font: var(--type-body-md); }
 .ax-error-list li { margin-bottom: var(--space-3); }
 
-/* ── Edit-mode banner (parse error / newer schema) ────── */
-.ax-banner {
+/* ── Alert (Alert.d.ts) — banner for parse errors and notices ──
+   The design-system Alert component (was .ax-banner); one macro emits .ax-alert. */
+.ax-alert {
   margin-bottom: var(--space-9);
   padding: var(--space-7);
   border-radius: var(--radius-md);
+  border: thin solid transparent;
 }
-.ax-banner--error {
-  background: var(--color-background-red);
-  border: thin solid var(--color-accent-red);
-}
-.ax-banner-title { margin: 0; color: var(--color-text-red); font: var(--type-body-md); }
-.ax-banner .ax-muted { margin: var(--space-3) 0 0; color: var(--color-text-light); font: var(--type-body-sm); }
+.ax-alert-title { margin: 0; font: var(--type-body-md); }
+.ax-alert p { margin: 0; font: var(--type-body-md); }
+.ax-alert .ax-muted { margin: var(--space-3) 0 0; color: var(--color-text-light); font: var(--type-body-sm); }
+.ax-alert--error { background: var(--color-background-red); border-color: var(--color-accent-red); }
+.ax-alert--error .ax-alert-title { color: var(--color-text-red); }
+.ax-alert--warning { background: var(--color-background-yellow); border-color: var(--color-accent-yellow); }
+.ax-alert--warning .ax-alert-title { color: var(--color-text-yellow); }
+.ax-alert--success { background: var(--color-background-green); border-color: var(--color-accent-green); }
+.ax-alert--success .ax-alert-title { color: var(--color-text-green); }
+.ax-alert--info { background: var(--color-background-blue); border-color: var(--color-accent-teal); }
+.ax-alert--info .ax-alert-title { color: var(--color-text-teal); }
 .ax-form-section-heading { margin: 0 0 var(--space-6); color: var(--color-text-default); font: var(--type-display-sm); }
 
 /* Read-only name field on the edit form (identity cannot change). */

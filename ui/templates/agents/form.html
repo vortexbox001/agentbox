@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "components/macros.html" as ui %}
 
 {% block breadcrumb %}
   <a href="/agents">Agents</a>
@@ -8,39 +9,33 @@
 
 {% block actions %}
   {% if mode == "edit" %}
-  <a class="ax-btn ax-btn--ghost" href="{{ dagster_url }}{{ dagster_path }}"
-     target="_blank" rel="noopener" id="ax-job-link">
-    <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#external"></use></svg>
-    <span>Dagster {{ dagster_kind }}</span>
-  </a>
+  {{ ui.button(label="Dagster " ~ dagster_kind, intent="ghost", icon="external",
+               href="" ~ dagster_url ~ dagster_path,
+               attrs={"target": "_blank", "rel": "noopener", "id": "ax-job-link"}) }}
   {% endif %}
   {% if show_form is not defined or show_form %}
-  <button type="button" class="ax-btn ax-btn--ghost" id="ax-preview-btn">
-    <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#eye"></use></svg>
-    <span>Preview YAML</span>
-  </button>
+  {{ ui.button(label="Preview YAML", intent="ghost", icon="eye", attrs={"id": "ax-preview-btn"}) }}
   {% endif %}
-  <a class="ax-btn ax-btn--ghost" href="/agents" id="ax-cancel-btn">{% if show_form is not defined or show_form %}Cancel{% else %}Back{% endif %}</a>
+  {{ ui.button(label=("Cancel" if (show_form is not defined or show_form) else "Back"),
+               intent="ghost", href="/agents", attrs={"id": "ax-cancel-btn"}) }}
   {% if mode == "edit" %}
-  <button type="button" class="ax-btn ax-btn--danger" id="ax-delete-btn" data-stem="{{ stem }}">Delete</button>
+  {{ ui.button(label="Delete", intent="danger", attrs={"id": "ax-delete-btn", "data-stem": stem}) }}
   {% endif %}
   {% if show_form is not defined or show_form %}
-  <button type="submit" form="ax-agent-form" class="ax-btn ax-btn--primary" id="ax-save-btn">
-    <span>Save</span>
-  </button>
+  {{ ui.button(label="Save", intent="primary", type="submit",
+               attrs={"form": "ax-agent-form", "id": "ax-save-btn"}) }}
   {% endif %}
 {% endblock %}
 
 {% block content %}
   {% if parse_error %}
-  <div class="ax-card ax-banner ax-banner--error" role="alert">
-    <p class="ax-banner-title">{{ parse_error }}</p>
+  {% call ui.alert(intent="error", title=parse_error) %}
     {% if not editable %}
     <p class="ax-muted">This file was written by a newer version of agentbox. Update agentbox to edit it here, or delete it and recreate the agent.</p>
     {% else %}
     <p class="ax-muted">The form below shows schema defaults. Saving replaces the file with a valid, UI-generated definition.</p>
     {% endif %}
-  </div>
+  {% endcall %}
   {% endif %}
 
   {% if show_form is not defined or show_form %}
@@ -54,11 +49,7 @@
 
     {# Sits right-aligned at the top of the form, directly under the Save button. #}
     <div class="ax-form-actionbar">
-      <label class="ax-toggle" for="ax-reload-checkbox">
-        <input type="checkbox" id="ax-reload-checkbox" checked>
-        <span class="ax-toggle-track" aria-hidden="true"></span>
-        <span>Reload Dagster after saving</span>
-      </label>
+      {{ ui.toggle(label="Reload Dagster after saving", id="ax-reload-checkbox", checked=true) }}
     </div>
 
     {# Lead strip (not a card): the template picker (create only) sits beside the
@@ -67,9 +58,8 @@
       {% if mode == "create" %}
       <label class="ax-field" for="ax-template-select">
         <span>Start from template</span>
-        <select class="ax-select" id="ax-template-select" data-allow-dirty>
-          <option value="">Blank agent</option>
-        </select>
+        {{ ui.select(options=[{"value": "", "label": "Blank agent"}],
+                     attrs={"id": "ax-template-select", "data-allow-dirty": ""}) }}
         <span class="ax-help">Pre-fills the form from an existing <span class="ax-mono">_template-*.yaml</span>; the name is cleared and the agent starts disabled.</span>
       </label>
       {% endif %}
@@ -77,19 +67,18 @@
     </div>
 
     <div data-sections id="ax-form-sections" class="ax-grid-agent">
-      <div class="ax-card ax-empty" id="ax-form-loading">
+      {% call ui.card(class="ax-empty", attrs={"id": "ax-form-loading"}) %}
         <p class="ax-muted">Loading the agent schema…</p>
-      </div>
+      {% endcall %}
     </div>
 
   </form>
   {% endif %}
 
   {% if raw %}
-  <div class="ax-card">
-    <h2 class="ax-form-section-heading">File contents</h2>
+  {% call ui.card(title="File contents") %}
     <pre class="ax-preview-code" id="ax-raw-file" aria-readonly="true">{{ raw }}</pre>
-  </div>
+  {% endcall %}
   {% endif %}
 {% endblock %}
 

@@ -548,7 +548,7 @@ def test_edit_page_broken_file_falls_back_to_job_link(client, tmp_agents):
 def test_edit_page_broken_file_shows_banner_and_raw(client, tmp_agents):
     _write_agent_file(tmp_agents, "broken", "harness: [unclosed\n")
     html = client.get("/agents/broken").text
-    assert "ax-banner" in html                     # error banner
+    assert "ax-alert" in html                      # error alert (shared alert macro)
     assert "harness: [unclosed" in html            # read-only raw file block
 
 
@@ -556,7 +556,7 @@ def test_edit_page_newer_schema_is_readonly_with_delete(client, tmp_agents):
     _write_agent_file(tmp_agents, "futuristic",
                       "# agentbox-schema: 9999\nname: futuristic\nharness: pi\n")
     html = client.get("/agents/futuristic").text
-    assert "ax-banner" in html                     # "newer agentbox" banner
+    assert "ax-alert" in html                      # "newer agentbox" alert (shared alert macro)
     assert "9999" in html
     assert 'id="ax-agent-form"' not in html        # no editable form
     assert 'id="ax-delete-btn"' in html            # delete is still offered

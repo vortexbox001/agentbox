@@ -1,0 +1,149 @@
+{#
+  Shared component macros — spec 009 US2 (contracts/component-macros.md).
+
+  One macro per design-system component listed in ui/design-system/_ds_manifest.json
+  (Tab is part of tabs → thirteen macros). Each macro emits markup + the design-system
+  ROOT class only (no event props); existing behavioural JS wires interaction. Pages
+  compose these macros so control styling lives in one place (FR-006).
+
+  Styling comes entirely from the design-system tokens via static/app.css — no literal
+  colour, pixel value, or typeface name lives here (test_conformance.py, FR-022). The `ax-`
+  class prefix is the app namespace behavioural JS and tests key off (FR-025); only the
+  retired design tokens were dropped, never the class names.
+
+  Every macro takes an optional `attrs` dict of extra HTML attributes (id, data-*, title,
+  aria-*, …) rendered with the built-in `xmlattr` filter (values are escaped; a None value
+  is dropped). Boolean HTML attributes (disabled/checked/selected) are emitted explicitly.
+#}
+
+{# ── Button (Button.d.ts) ─────────────────────────────────
+   intent maps to ax-btn--{intent}: primary (default), ghost, danger, success, warning.
+   `loading` renders the spinner; `icon`/`right_icon` are icons.svg sprite names. An `href`
+   renders the anchor variant (styled identically) for link-as-button; otherwise a native button. #}
+{% macro button(label="", intent="primary", outlined=false, disabled=false, loading=false,
+                icon=none, right_icon=none, type="button", href=none, attrs={}) -%}
+{%- set inner %}
+{%- if loading %}{{ spinner() }}{% elif icon %}<svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#{{ icon }}"></use></svg>{% endif -%}
+{%- if caller %}{{ caller() }}{% elif label %}<span>{{ label }}</span>{% endif -%}
+{%- if right_icon %}<svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#{{ right_icon }}"></use></svg>{% endif -%}
+{%- endset -%}
+{%- if href -%}
+<a class="ax-btn ax-btn--{{ intent }}{% if outlined %} ax-btn--outlined{% endif %}" href="{{ href }}"{{ attrs|xmlattr }}>{{ inner }}</a>
+{%- else -%}
+<button type="{{ type }}" class="ax-btn ax-btn--{{ intent }}{% if outlined %} ax-btn--outlined{% endif %}"{% if disabled %} disabled{% endif %}{{ attrs|xmlattr }}>{{ inner }}</button>
+{%- endif -%}
+{%- endmacro %}
+
+{# ── TextInput (TextInput.d.ts) ──────────────────────────
+   Optional label + <input class="ax-input"> + error slot; `invalid` (bool) drives the
+   validation error state (FR-025). #}
+{% macro text_input(label=none, name=none, value="", placeholder=none, type="text",
+                    disabled=false, invalid=false, error=none, id=none, attrs={}) -%}
+{%- if label %}<label class="ax-field-label"{% if id %} for="{{ id }}"{% endif %}>{{ label }}</label>{% endif -%}
+<input class="ax-input" type="{{ type }}" value="{{ value }}"
+       {{- {'id': id, 'name': name, 'placeholder': placeholder}|xmlattr }}
+       {%- if disabled %} disabled{% endif %}{% if invalid %} aria-invalid="true"{% endif %}{{ attrs|xmlattr }}>
+{%- if invalid and error %}<span class="ax-field-error">{{ error }}</span>{% endif -%}
+{%- endmacro %}
+
+{# ── Select (Select.d.ts) — spec-002 dropdown, behaviour frozen ──
+   Emits <select class="ax-select">; the page/module still calls dropdown.enhanceSelect()
+   (FR-025, guarded by test_ui_consistency.py). options: str or {value,label}. #}
+{% macro select(name=none, value=none, options=[], disabled=false, id=none, attrs={}) -%}
+<select class="ax-select"{{ {'id': id, 'name': name}|xmlattr }}{% if disabled %} disabled{% endif %}{{ attrs|xmlattr }}>
+{%- for o in options %}
+  {%- if o is mapping %}
+  <option value="{{ o.value }}"{% if value is not none and o.value|string == value|string %} selected{% endif %}>{{ o.label }}</option>
+  {%- else %}
+  <option value="{{ o }}"{% if value is not none and o|string == value|string %} selected{% endif %}>{{ o }}</option>
+  {%- endif %}
+{%- endfor %}
+</select>
+{%- endmacro %}
+
+{# ── Checkbox (Checkbox.d.ts) ────────────────────────────  teal-checked. #}
+{% macro checkbox(label="", name=none, id=none, checked=false, disabled=false, attrs={}) -%}
+<label class="ax-checkbox"{% if id %} for="{{ id }}"{% endif %}>
+  <input type="checkbox"{{ {'id': id, 'name': name}|xmlattr }}{% if checked %} checked{% endif %}{% if disabled %} disabled{% endif %}{{ attrs|xmlattr }}>
+  {%- if label %}<span>{{ label }}</span>{% endif %}
+</label>
+{%- endmacro %}
+
+{# ── Toggle (Toggle.d.ts) ────────────────────────────────  teal active on/off switch. #}
+{% macro toggle(label="", name=none, id=none, checked=false, disabled=false, attrs={}) -%}
+<label class="ax-toggle"{% if id %} for="{{ id }}"{% endif %}>
+  <input type="checkbox"{{ {'id': id, 'name': name}|xmlattr }}{% if checked %} checked{% endif %}{% if disabled %} disabled{% endif %}{{ attrs|xmlattr }}>
+  <span class="ax-toggle-track" aria-hidden="true"></span>
+  {%- if label %}<span>{{ label }}</span>{% endif %}
+</label>
+{%- endmacro %}
+
+{# ── Badge (Badge.d.ts) ──────────────────────────────────
+   intent maps to ax-badge--{intent}. Retired magenta remaps here: queued→queued (gray),
+   template/scheduled→scheduled (lime) (FR-014). #}
+{% macro badge(label, intent="default", attrs={}) -%}
+<span class="ax-badge ax-badge--{{ intent }}"{{ attrs|xmlattr }}>{{ label }}</span>
+{%- endmacro %}
+
+{# ── StatusDot (StatusDot.d.ts) ──────────────────────────  colored dot from status tokens. #}
+{% macro status_dot(state="idle", label=none, attrs={}) -%}
+<span class="ax-status-dot" data-state="{{ state }}"{% if label %} role="img" aria-label="{{ label }}"{% else %} aria-hidden="true"{% endif %}{{ attrs|xmlattr }}></span>
+{%- endmacro %}
+
+{# ── Alert (Alert.d.ts) ──────────────────────────────────
+   intent ∈ {info, warning, error, success}. Body is the {% call %} block (or `message`). #}
+{% macro alert(intent="info", title=none, message=none, attrs={}) -%}
+<div class="ax-alert ax-alert--{{ intent }}" role="alert"{{ attrs|xmlattr }}>
+  {%- if title %}<p class="ax-alert-title">{{ title }}</p>{% endif %}
+  {%- if caller %}{{ caller() }}{% elif message %}<p>{{ message }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{# ── Spinner (Spinner.d.ts) ──────────────────────────────  loading spinner; used by button loading. #}
+{% macro spinner(label="Loading") -%}
+<span class="ax-spinner" role="status" aria-label="{{ label }}"></span>
+{%- endmacro %}
+
+{# ── Tabs (Tabs.d.ts) ────────────────────────────────────
+   Bottom-border indicator (Dagster style). items: list of {id, label, count?}. #}
+{% macro tabs(items=[], active=none, attrs={}) -%}
+<div class="ax-tabs" role="tablist"{{ attrs|xmlattr }}>
+{%- for t in items %}
+  <button type="button" class="ax-btn ax-tab{% if t.id == active %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if t.id == active else 'false' }}" data-tab="{{ t.id }}">{{ t.label }}{% if t.count is defined and t.count is not none %} <span class="ax-tab-count">{{ t.count }}</span>{% endif %}</button>
+{%- endfor %}
+</div>
+{%- endmacro %}
+
+{# ── Card (Card.d.ts) ────────────────────────────────────  border, no shadow. Body is the {% call %} block. #}
+{% macro card(title=none, class="", attrs={}) -%}
+<div class="ax-card{% if class %} {{ class }}{% endif %}"{{ attrs|xmlattr }}>
+  {%- if title %}<h2 class="ax-form-section-heading">{{ title }}</h2>{% endif %}
+  {%- if caller %}{{ caller() }}{% endif %}
+</div>
+{%- endmacro %}
+
+{# ── Dialog (Dialog.d.ts) ────────────────────────────────
+   Modal + backdrop; rendered into the existing #ax-modal-root by JS callers. Title/body/actions. #}
+{% macro dialog(title=none, wide=false, attrs={}) -%}
+<div class="ax-modal{% if wide %} ax-modal--wide{% endif %}" role="dialog" aria-modal="true"{{ attrs|xmlattr }}>
+  {%- if title %}<h2>{{ title }}</h2>{% endif %}
+  {%- if caller %}{{ caller() }}{% endif %}
+</div>
+{%- endmacro %}
+
+{# ── Table (Table.d.ts) ──────────────────────────────────
+   Grid-based header + rows. Compose the header/body with a {% call %} block for full
+   per-cell control, or pass columns (str or {label,key}) + rows for the simple case. #}
+{% macro table(columns=none, rows=none, attrs={}) -%}
+<table class="ax-table"{{ attrs|xmlattr }}>
+{%- if caller %}{{ caller() }}
+{%- else %}
+  <thead><tr>{% for c in columns %}<th scope="col">{{ c.label if c is mapping else c }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {%- for r in rows %}
+    <tr>{% for c in columns %}<td>{{ r[c.key] if c is mapping else r[c] }}</td>{% endfor %}</tr>
+  {%- endfor %}
+  </tbody>
+{%- endif %}
+</table>
+{%- endmacro %}

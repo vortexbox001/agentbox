@@ -623,7 +623,7 @@ function renderList(id, f) {
       t.textContent = item;
       const rm = document.createElement("button");
       rm.type = "button";
-      rm.className = "ax-chip-remove";
+      rm.className = "ax-chip-remove ax-btn";
       rm.setAttribute("aria-label", `Remove ${item}`);
       rm.textContent = "×";
       rm.addEventListener("click", () => { arr.splice(i, 1); setControlValue(f.id, arr.slice()); render(); });
