@@ -505,6 +505,7 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 /* ── Utility ──────────────────────────────────────────── */
 .ax-muted { color: var(--color-text-light); }   /* AA (T008): the "lighter" tier fails 4.5:1 in dark */
 .ax-mono { font: var(--type-mono-md); }
+.ax-flush-top { margin-top: 0; }   /* drop a block's default top margin (e.g. a card's first child) */
 .ax-empty { padding: var(--space-13); text-align: center; color: var(--color-text-light); font: var(--type-body-lg); }
 
 /* ── Create/edit form: breadcrumb, layout, action bar ─── */
