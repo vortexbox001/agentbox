@@ -4,7 +4,7 @@
 
 :root {
   color-scheme: var(--browser-color-scheme);
-  --brand-lockup-width: 168px;
+  --brand-lockup-width: 130px;
 }
 
 body {
