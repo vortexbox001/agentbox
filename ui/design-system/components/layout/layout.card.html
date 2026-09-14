@@ -1,0 +1,24 @@
+<!-- @dsCard group="Components" viewport="700x160" name="Card, Dialog" subtitle="Content card and modal dialog" -->
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../static/app.css">
+</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
+<!-- Production markup: the `card` and `dialog` macros → `ax-card` / `ax-modal`, styled by
+     /static/app.css. The dialog panel is shown inline here (JS mounts it into #ax-modal-root
+     in the app). No CDN, no React. -->
+<div style="display:flex;gap:var(--space-8);align-items:flex-start">
+  <div class="ax-card" style="flex:1">
+    <h2 class="ax-form-section-heading">Agent summary</h2>
+    <p style="margin:0;font:var(--type-body-sm);color:var(--color-text-light)">3 runs today · 2 success · 1 error</p>
+  </div>
+  <div class="ax-modal" role="dialog" aria-modal="true" style="flex:1;width:auto">
+    <h2>Delete agent?</h2>
+    <p>This removes the agent definition and cannot be undone.</p>
+    <div class="ax-modal-actions">
+      <button type="button" class="ax-btn ax-btn--ghost"><span>Cancel</span></button>
+      <button type="button" class="ax-btn ax-btn--danger"><span>Delete</span></button>
+    </div>
+  </div>
+</div>
+</body></html>

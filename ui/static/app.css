@@ -1,30 +1,39 @@
-/* Agentbox control-center component styles.
-   Every colour, font, space, and radius comes from an --ax-* token defined in
-   /design-system/archon-tokens.css — no literal colours or typeface names live
-   here, so the whole UI stays consistent with the design system (FR-015). */
+/* Agentbox control-center component styles (spec 009 design-system migration).
+   Every colour, space, type, radius, shadow, and transition resolves from a
+   design-system token defined under /design-system/tokens/*.css — no literal
+   colours, pixel values, typeface names, or --ax-* tokens live here, so the whole
+   UI stays a sibling of Dagster and the automated conformance check stays green.
+   The ax- CLASS prefix is kept as the app namespace (behavioural JS + tests key
+   off it); only the --ax-* TOKENS are retired. */
 
 /* The hidden attribute always wins over an author display rule (e.g. a grid or
    block panel toggled with el.hidden), so nothing "revealed" leaks by default. */
 [hidden] { display: none !important; }
 
 /* ── App shell layout ─────────────────────────────────── */
-/* A fixed-height grid that fills the viewport and never grows the page: the sidebar and top
-   bar stay pinned while .ax-content is the sole scroller (spec 006 US4 / contract §3). */
+/* A fixed-height grid that fills the viewport and never grows the page: the
+   sidebar stays pinned while .ax-content is the sole scroller. No top bar — all
+   navigation lives in the left sidebar (readme Layout). */
 .ax-app {
   display: grid;
-  grid-template-columns: var(--ax-sidebar-width) 1fr;
+  grid-template-columns: var(--nav-width) 1fr;
   height: 100dvh;
   overflow: hidden;
+}
+html[data-sidebar="collapsed"] .ax-app {
+  grid-template-columns: var(--nav-width-collapsed) 1fr;
 }
 
 .ax-sidebar {
   display: flex;
   flex-direction: column;
-  background: var(--ax-bg-sidebar);
-  border-right: 1px solid var(--ax-border-subtle);
-  padding: var(--ax-space-9) var(--ax-space-6);
-  gap: var(--ax-space-9);
-  overflow-y: auto;      /* its own scroll, fixed by the fixed-height grid column */
+  /* Sidebar and content share one ground (T032) — the sidebar is no longer a dark
+     navy rail. The right-edge keyline is the only thing separating the two panes. */
+  background: var(--color-background-default);
+  border-right: thin solid var(--color-keyline-default);
+  padding: var(--space-8) var(--space-6);
+  gap: var(--space-6);
+  overflow: hidden;
   min-height: 0;
 }
 
@@ -37,135 +46,223 @@
 }
 
 /* ── Brand ────────────────────────────────────────────── */
-.ax-brand { display: flex; align-items: center; gap: calc(var(--ax-space-5) / 2); }
-.ax-brand-mark {
-  display: inline-flex;
-  width: calc(var(--ax-avatar-md) * 1.5);
-  height: calc(var(--ax-avatar-md) * 1.5);
-  flex: none;
+.ax-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+  min-height: var(--brand-height);
 }
-.ax-brand-mark svg { width: 100%; height: 100%; display: block; }
-.ax-brand-name { font: var(--ax-type-display-md); color: var(--ax-text-primary); }
+/* Expanded rail shows the horizontal lockup; the standalone mark is for the
+   collapsed rail only (revealed in the collapsed block below). */
+.ax-brand-mark { width: var(--icon-lg); height: var(--icon-lg); flex: none; display: none; }
+.ax-brand-lockup { width: var(--brand-lockup-width); height: auto; flex: none; }
+.ax-brand-lockup--dark { display: none; }                       /* light ground → light lockup */
+html[data-theme="dark"] .ax-brand-lockup--light { display: none; }
+html[data-theme="dark"] .ax-brand-lockup--dark { display: block; }
 
 /* ── Navigation ───────────────────────────────────────── */
-.ax-nav { display: flex; flex-direction: column; gap: var(--ax-space-2); flex: 1; }
+.ax-nav { display: flex; flex-direction: column; gap: var(--space-1); flex: 1; overflow-y: auto; min-height: 0; }
 .ax-nav-item {
   display: flex;
   align-items: center;
-  gap: var(--ax-space-5);
-  padding: var(--ax-space-5) var(--ax-space-6);
-  border-radius: var(--ax-radius-lg);
-  color: var(--ax-text-mid);
-  font: var(--ax-type-body-lg);
-  transition: background var(--ax-transition-normal), color var(--ax-transition-normal);
+  gap: var(--space-5);
+  min-height: var(--space-12);      /* 32px */
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-lg);  /* 8px */
+  color: var(--color-text-light);
+  font: var(--type-body-md);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
-.ax-nav-item:hover { background: var(--ax-bg-elevated); color: var(--ax-text-high); }
-.ax-nav-item.is-active {
-  background: var(--ax-cyan-bg);
-  color: var(--ax-cyan);
-  box-shadow: inset 2px 0 0 var(--ax-cyan);
-}
-.ax-icon { width: var(--ax-icon-sm); height: var(--ax-icon-sm); stroke: currentColor; fill: none; flex: none; }
+/* Now that the rail shares the content ground (T032), hover/active read against the
+   flat surface in both themes: hover = one level lighter (readme Navigation), active
+   = translucent-teal fill with default-strength text (both AA in light and dark). */
+.ax-nav-item:hover { background: var(--color-background-lighter); color: var(--color-text-default); }
+.ax-nav-item.is-active { background: var(--color-background-blue); color: var(--color-text-default); font-weight: 500; }
+.ax-icon { width: var(--icon-sm); height: var(--icon-sm); stroke: currentColor; fill: none; flex: none; }
 
-/* ── Dagster status block ─────────────────────────────── */
-.ax-sidebar-foot { margin-top: auto; }
+/* ── Sidebar foot: Dagster status, theme control, collapse ── */
+.ax-sidebar-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-6);
+  border-top: thin solid var(--color-keyline-default);
+}
 .ax-dagster {
   display: flex;
   align-items: center;
-  gap: var(--ax-space-5);
-  padding: var(--ax-space-5) var(--ax-space-6);
-  border: 1px solid var(--ax-border-default);
-  border-radius: var(--ax-radius-lg);
-  color: var(--ax-text-mid);
-  background: var(--ax-bg-elevated);
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-light);
+  background: var(--color-background-light);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
-.ax-dagster:hover { border-color: var(--ax-border-strong); color: var(--ax-text-high); }
+.ax-dagster:hover { background: var(--color-background-lighter); color: var(--color-text-default); }
 .ax-dagster-dot {
-  width: var(--ax-dot-md);
-  height: var(--ax-dot-md);
-  border-radius: var(--ax-radius-round);
-  background: var(--ax-status-idle);
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: var(--radius-round);
+  background: var(--color-accent-gray);
   flex: none;
 }
-.ax-dagster-dot[data-state="ok"] { background: var(--ax-status-success); box-shadow: 0 0 6px var(--ax-green-muted); }
-.ax-dagster-dot[data-state="down"] { background: var(--ax-status-error); }
-.ax-dagster-dot[data-state="unknown"] { background: var(--ax-status-idle); animation: ax-pulse 1.4s ease-in-out infinite; }
+.ax-dagster-dot[data-state="ok"] { background: var(--color-accent-green); }
+.ax-dagster-dot[data-state="down"] { background: var(--color-accent-red); }
+.ax-dagster-dot[data-state="unknown"] { background: var(--color-accent-gray); animation: ab-pulse 1.4s ease-in-out infinite; }
 .ax-dagster-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; flex: 1; }
-.ax-dagster-label { font: var(--ax-type-label); letter-spacing: var(--ax-tracking-label); text-transform: uppercase; color: var(--ax-text-low); }
-.ax-dagster-status { font: var(--ax-type-body-sm); color: var(--ax-text-high); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ax-dagster-open { width: var(--ax-icon-sm); height: var(--ax-icon-sm); color: var(--ax-text-faint); }
+.ax-dagster-label { font: var(--type-label-sm); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-light); }
+.ax-dagster-status { font: var(--type-body-sm); color: var(--color-text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-dagster-open { color: var(--color-text-lighter); flex: none; }
 
-/* ── Top bar ──────────────────────────────────────────── */
-.ax-topbar {
+/* Theme control: a compact segmented control of three icon-only buttons that fits
+   the narrow sidebar column (bug theme-control-overflow). The option name is the
+   button's title (hover tooltip) + aria-label; shell.js reflects the active choice
+   with aria-checked. Descendant selectors keep these overrides above the base
+   .ax-btn regardless of source order. */
+.ax-theme-control {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--ax-space-5) var(--ax-space-8);
-  min-height: var(--ax-topbar-height);
-  padding: var(--ax-space-5) var(--ax-space-11);
-  border-bottom: 1px solid var(--ax-border-subtle);
-  background: var(--ax-bg-root);
-  position: sticky;   /* pinned above the scrolling content region (contract §3) */
-  top: 0;
-  z-index: 5;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
 }
-.ax-topbar-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--ax-space-3) var(--ax-space-8); min-width: 0; }
-.ax-page-title { margin: 0; font: var(--ax-type-display-md); color: var(--ax-text-primary); }
-.ax-breadcrumb { font: var(--ax-type-body-sm); color: var(--ax-text-low); }
-.ax-breadcrumb a { color: var(--ax-text-mid); }
-.ax-topbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ax-space-5); }
+.ax-theme-control .ax-theme-option {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+  padding: var(--space-3);
+  background: none;
+  border-color: transparent;
+  color: var(--color-text-light);
+}
+.ax-theme-control .ax-theme-option:hover:not(:disabled) { background: var(--color-background-lighter); border-color: transparent; color: var(--color-text-default); }
+.ax-theme-control .ax-theme-option[aria-checked="true"] { background: var(--color-background-blue); color: var(--color-text-default); }
+
+/* Scoped to the sidebar foot so this chrome styling outranks the .ax-btn base the
+   collapse toggle also carries (every <button> carries the design-system class, FR-024). */
+.ax-sidebar-foot .ax-collapse-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-3) var(--space-6);
+  border: none;
+  background: none;
+  border-radius: var(--radius-lg);
+  color: var(--color-text-light);
+  font: var(--type-body-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.ax-sidebar-foot .ax-collapse-toggle:hover { background: var(--color-background-lighter); color: var(--color-text-default); }
+.ax-collapse-label { flex: 1; min-width: 0; text-align: left; }
+
+/* ── Collapsed sidebar (68px) ─────────────────────────── */
+html[data-sidebar="collapsed"] .ax-nav-label,
+html[data-sidebar="collapsed"] .ax-brand-lockup,
+html[data-sidebar="collapsed"] .ax-collapse-label,
+html[data-sidebar="collapsed"] .ax-dagster-text,
+html[data-sidebar="collapsed"] .ax-dagster-open { display: none; }
+/* The collapsed rail is too narrow for the 130px lockup — show the mark instead. */
+html[data-sidebar="collapsed"] .ax-brand-mark { display: block; }
+html[data-sidebar="collapsed"] .ax-sidebar { padding-left: var(--space-3); padding-right: var(--space-3); }
+html[data-sidebar="collapsed"] .ax-brand,
+html[data-sidebar="collapsed"] .ax-nav-item,
+html[data-sidebar="collapsed"] .ax-dagster,
+html[data-sidebar="collapsed"] .ax-collapse-toggle { justify-content: center; padding-left: 0; padding-right: 0; }
+/* No room for three icons in a 68px row — stack the theme options vertically. */
+html[data-sidebar="collapsed"] .ax-theme-control { flex-direction: column; gap: var(--space-1); }
+html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 
 /* ── Content region ───────────────────────────────────── */
 /* An inline-size container so the agent form's ax-grid-agent keys its column
-   arrangement to the pane's width, not the viewport (003 research R2). */
-.ax-content { padding: var(--ax-space-11); overflow-y: auto; flex: 1; container-type: inline-size; container-name: ax-content; }
+   arrangement to the pane's width, not the viewport (003 research R2). 64px of
+   bottom clearance keeps the last control off the scroll edge (readme Layout). */
+.ax-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-10);
+  padding-bottom: calc(var(--space-14) + var(--space-8));
+  container-type: inline-size;
+  container-name: ax-content;
+}
+
+/* ── Page header (in the content area; replaces the old top bar) ── */
+.ax-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-5) var(--space-8);
+  margin-bottom: var(--space-10);
+}
+.ax-page-header-heading { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.ax-page-title { margin: 0; font: var(--type-display-lg); color: var(--color-text-default); }
+.ax-breadcrumb { font: var(--type-body-sm); color: var(--color-text-light); }
+.ax-breadcrumb:empty { display: none; }
+.ax-breadcrumb a { color: var(--color-text-light); }
+.ax-page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); }
 
 /* ── Cards ────────────────────────────────────────────── */
+/* Elevation is the border, not a shadow (readme Shadows/Cards). */
 .ax-card {
-  background: var(--ax-bg-card);
-  border: 1px solid var(--ax-border-default);
-  border-radius: var(--ax-radius-2xl);
-  padding: var(--ax-space-10);
-  box-shadow: var(--ax-shadow-sm);
+  background: var(--color-background-default);
+  border: thin solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-10);
 }
 
 /* ── Tables ───────────────────────────────────────────── */
-.ax-table { width: 100%; border-collapse: collapse; font: var(--ax-type-body-md); }
+.ax-table { width: 100%; border-collapse: collapse; font: var(--type-body-md); }
 .ax-table th {
   text-align: left;
-  padding: var(--ax-space-6) var(--ax-space-7);
-  font: var(--ax-type-label);
-  letter-spacing: var(--ax-tracking-label);
+  padding: var(--space-6) var(--space-7);
+  font: var(--type-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
-  color: var(--ax-text-low);
-  border-bottom: 1px solid var(--ax-border-default);
+  color: var(--color-text-light);   /* AA: text-lighter fails 4.5:1 in dark (T008) */
+  border-bottom: thin solid var(--color-border-default);
 }
 .ax-table td {
-  padding: var(--ax-space-7);
-  border-bottom: 1px solid var(--ax-border-subtle);
-  color: var(--ax-text-high);
+  padding: var(--space-7);
+  border-bottom: thin solid var(--color-keyline-default);
+  color: var(--color-text-default);
 }
-.ax-table tr:hover td { background: var(--ax-bg-card-hover); }
-.ax-table .ax-mono { font: var(--ax-type-mono-md); color: var(--ax-text-mid); }
+.ax-table tr:hover td { background: var(--color-background-default-hover); }
+.ax-table .ax-mono { color: var(--color-text-light); }
+/* Full-bleed variant (Table.d.ts fullBleed) — object-overview lists: vertical column
+   rules between cells and a double-thickness rule above the first row; the flush frame/page
+   gives the edge-to-edge horizontal bleed. */
+.ax-table--full-bleed th:not(:last-child),
+.ax-table--full-bleed td:not(:last-child) { border-right: thin solid var(--color-border-default); }
+.ax-table--full-bleed thead th { border-bottom: var(--border-width-thick) solid var(--color-border-default); }
 
 /* ── Badges ───────────────────────────────────────────── */
 .ax-badge {
   display: inline-flex;
   align-items: center;
-  gap: var(--ax-space-2);
-  height: var(--ax-badge-height);
-  padding: 0 var(--ax-space-5);
-  border-radius: var(--ax-radius-pill);
-  font: var(--ax-type-label);
-  letter-spacing: var(--ax-tracking-label);
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-5);
+  border-radius: var(--radius-pill);
+  font: var(--type-label-sm);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
-.ax-badge--enabled { background: var(--ax-green-bg); color: var(--ax-green); border: 1px solid var(--ax-green-border); }
-.ax-badge--disabled { background: var(--ax-bg-elevated); color: var(--ax-text-muted); border: 1px solid var(--ax-border-default); }
-.ax-badge--scheduled { background: var(--ax-yellow-bg); color: var(--ax-yellow); border: 1px solid var(--ax-yellow-border); }
-.ax-badge--error { background: var(--ax-error-bg); color: var(--ax-error); border: 1px solid var(--ax-error-border); }
-.ax-badge--harness { background: var(--ax-cyan-bg); color: var(--ax-cyan); border: 1px solid var(--ax-cyan-border); }
+.ax-badge--enabled { background: var(--color-background-green); color: var(--color-text-green); }
+.ax-badge--disabled { background: var(--color-background-gray); color: var(--color-text-light); }
+/* Scheduled / template use the lime intent (the retired magenta remaps here).
+   background-lime flips between themes, so the text does too (T008 AA): a dark lime
+   in light mode, the token's light lime in dark mode — text-lime alone fails 4.5:1
+   over the pale light-mode tint. */
+.ax-badge--scheduled,
+.ax-badge--template { background: var(--color-background-lime); color: var(--color-core-lime800); }
+[data-theme="dark"] .ax-badge--scheduled,
+[data-theme="dark"] .ax-badge--template { color: var(--color-text-lime); }
+/* Queued uses the gray intent (the second retired magenta remaps here). */
+.ax-badge--queued { background: var(--color-background-gray); color: var(--color-text-light); }
+.ax-badge--error { background: var(--color-background-red); color: var(--color-text-red); }
+.ax-badge--harness { background: var(--color-background-blue); color: var(--color-text-teal); }
+.ax-badge--fallback { background: var(--color-background-yellow); color: var(--color-text-yellow); }
 
 /* Disabled rows read at reduced opacity (US1 scenario 2). */
 .ax-row--disabled td { opacity: .55; }
@@ -173,215 +270,301 @@
 /* ── Inputs ───────────────────────────────────────────── */
 .ax-input, .ax-select, .ax-textarea {
   width: 100%;
-  padding: var(--ax-space-5) var(--ax-space-6);
-  background: var(--ax-bg-input);
-  border: 1px solid var(--ax-border-input);
-  border-radius: var(--ax-radius-md);
-  color: var(--ax-text-primary);
-  font: var(--ax-type-body-md);
-  transition: border-color var(--ax-transition-normal), background var(--ax-transition-normal);
+  padding: var(--space-5) var(--space-6);
+  background: var(--color-background-default);
+  border: thin solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-default);
+  font: var(--type-body-md);
+  transition: border-color var(--transition-normal), background var(--transition-normal);
 }
-.ax-input:hover, .ax-select:hover, .ax-textarea:hover { background: var(--ax-bg-input-hover); }
-.ax-input:focus, .ax-select:focus, .ax-textarea:focus {
-  outline: none;
-  border-color: var(--ax-cyan);
-  box-shadow: 0 0 0 1px var(--ax-cyan-border);
+.ax-input:hover, .ax-select:hover, .ax-textarea:hover { border-color: var(--color-border-hover); }
+.ax-input:focus, .ax-select:focus, .ax-textarea:focus { outline: none; border-color: var(--color-accent-teal); }
+.ax-input:focus-visible, .ax-select:focus-visible, .ax-textarea:focus-visible {
+  outline: thin solid var(--color-focus-ring);
+  outline-offset: var(--space-1);
+  border-color: var(--color-accent-teal);
 }
-.ax-input[aria-invalid="true"], .ax-select[aria-invalid="true"] { border-color: var(--ax-error); }
-.ax-textarea { min-height: var(--ax-space-14); resize: vertical; font: var(--ax-type-mono-md); }
+.ax-input[aria-invalid="true"], .ax-select[aria-invalid="true"] { border-color: var(--color-accent-red); }
+.ax-textarea { min-height: var(--space-14); resize: vertical; font: var(--type-mono-md); }
 
 /* ── Buttons ──────────────────────────────────────────── */
 .ax-btn {
   display: inline-flex;
   align-items: center;
-  gap: var(--ax-space-4);
-  padding: var(--ax-space-5) var(--ax-space-8);
-  border-radius: var(--ax-radius-md);
-  border: 1px solid transparent;
-  font: var(--ax-type-body-md);
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-8);
+  border-radius: var(--radius-md);
+  border: thin solid transparent;
+  font: var(--type-body-md);
   cursor: pointer;
-  transition: background var(--ax-transition-normal), border-color var(--ax-transition-normal), opacity var(--ax-transition-normal);
+  transition: background var(--transition-normal), border-color var(--transition-normal), opacity var(--transition-normal);
 }
 .ax-btn:disabled { opacity: .5; cursor: not-allowed; }
-.ax-btn--primary { background: var(--ax-gradient-cta); color: var(--ax-bg-root); }
-.ax-btn--primary:hover:not(:disabled) { box-shadow: var(--ax-shadow-glow-cyan); }
-.ax-btn--ghost { background: var(--ax-bg-elevated); color: var(--ax-text-high); border-color: var(--ax-border-default); }
-.ax-btn--ghost:hover:not(:disabled) { background: var(--ax-bg-card-hover); border-color: var(--ax-border-strong); }
-.ax-btn--danger { background: var(--ax-error-bg); color: var(--ax-error); border-color: var(--ax-error-border); }
-.ax-btn--danger:hover:not(:disabled) { background: var(--ax-error); color: var(--ax-text-primary); }
+.ax-btn:active:not(:disabled) { filter: brightness(0.95); }
+.ax-btn--primary { background: var(--color-accent-primary); color: var(--color-accent-reversed); }
+.ax-btn--primary:hover:not(:disabled) { background: var(--color-accent-primary-hover); box-shadow: var(--shadow-md); }
+.ax-btn--ghost { background: var(--color-background-lighter); color: var(--color-text-default); border-color: var(--color-border-default); }
+.ax-btn--ghost:hover:not(:disabled) { background: var(--color-background-lighter-hover); border-color: var(--color-border-hover); }
+.ax-btn--danger { background: var(--color-background-red); color: var(--color-text-red); border-color: var(--color-accent-red); }
+.ax-btn--danger:hover:not(:disabled) { background: var(--color-accent-red); color: var(--color-always-white); }
+/* Outlined modifier (readme Button variants): transparent fill + teal keyline, combines
+   with any intent. Placed last so it outranks the intent fill above (equal specificity). */
+.ax-btn--outlined { background: none; color: var(--color-accent-teal); border-color: var(--color-border-default); }
+.ax-btn--outlined:hover:not(:disabled) { background: var(--color-background-blue); border-color: var(--color-accent-teal); }
+
+/* ── Spinner (Spinner.d.ts) ───────────────────────────── */
+/* A token-sized ring spinning on ab-spin (animations.css); shown by `button loading`. */
+.ax-spinner {
+  display: inline-block;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  border: var(--space-1) solid var(--color-border-default);
+  border-top-color: var(--color-accent-teal);
+  border-radius: var(--radius-round);
+  animation: ab-spin var(--transition-slow) linear infinite;
+  flex: none;
+}
 
 /* ── Toggle ───────────────────────────────────────────── */
-/* Reference: track 36×20 (on: cyan / off: translucent), thumb 16 (on: white at
-   right / off: muted at left), transition-fast. Sizes come from token maths so no
-   literal reaches the stylesheet; the off track uses --ax-border-strong, the
-   nearest token to the reference's 15% white (spec 002 research R4). */
-.ax-toggle { position: relative; display: inline-flex; align-items: center; gap: var(--ax-space-5); cursor: pointer; }
+/* Track 36×20 (on: teal / off: gray), thumb 16 at 2px inset. All sizes come from
+   the spacing scale so no literal reaches the stylesheet. */
+.ax-toggle { position: relative; display: inline-flex; align-items: center; gap: var(--space-5); cursor: pointer; }
 .ax-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
 .ax-toggle-track {
-  width: calc(var(--ax-space-9) + var(--ax-space-8));   /* 36px */
-  height: var(--ax-space-9);                             /* 20px */
-  border-radius: var(--ax-radius-pill);
-  background: var(--ax-border-strong);
-  transition: background var(--ax-transition-fast), box-shadow var(--ax-transition-fast);
+  width: calc(var(--space-9) + var(--space-8));   /* 36px */
+  height: var(--space-9);                          /* 20px */
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-gray);
+  transition: background var(--transition-fast);
   flex: none;
 }
 .ax-toggle-track::after {
   content: "";
   display: block;
-  width: var(--ax-space-8);                              /* 16px */
-  height: var(--ax-space-8);
-  margin: var(--ax-space-1);                             /* 2px inset */
-  border-radius: var(--ax-radius-round);
-  background: var(--ax-text-low);
-  transition: transform var(--ax-transition-fast), background var(--ax-transition-fast);
+  width: var(--space-8);                            /* 16px */
+  height: var(--space-8);
+  margin: var(--space-1);                           /* 2px inset */
+  border-radius: var(--radius-round);
+  background: var(--color-always-white);
+  transition: transform var(--transition-fast);
 }
-.ax-toggle input:checked + .ax-toggle-track { background: var(--ax-cyan); }
-.ax-toggle input:checked + .ax-toggle-track::after { transform: translateX(var(--ax-space-8)); background: var(--ax-text-primary); }
-.ax-toggle input:focus-visible + .ax-toggle-track { box-shadow: 0 0 0 1px var(--ax-cyan-border); }
+.ax-toggle input:checked + .ax-toggle-track { background: var(--color-accent-teal); }
+.ax-toggle input:checked + .ax-toggle-track::after { transform: translateX(var(--space-8)); }
+.ax-toggle input:focus-visible + .ax-toggle-track { outline: thin solid var(--color-focus-ring); outline-offset: var(--space-1); }
+
+/* ── Checkbox (Checkbox.d.ts) ─────────────────────────── */
+/* Native input tinted to the brand via accent-color; token box + gap. */
+.ax-checkbox { display: inline-flex; align-items: center; gap: var(--space-4); cursor: pointer; font: var(--type-body-md); color: var(--color-text-default); }
+.ax-checkbox input { width: var(--icon-sm); height: var(--icon-sm); margin: 0; accent-color: var(--color-checkbox-checked); flex: none; cursor: pointer; }
+.ax-checkbox input:focus-visible { outline: thin solid var(--color-focus-ring); outline-offset: var(--space-1); }
+.ax-checkbox input:disabled { cursor: default; }
+
+/* ── StatusDot (StatusDot.d.ts) ───────────────────────── */
+/* An 8px dot coloured from the status accents; state = data-state on the span. */
+.ax-status-dot { display: inline-block; width: var(--space-4); height: var(--space-4); border-radius: var(--radius-round); background: var(--color-accent-gray); flex: none; }
+.ax-status-dot[data-state="running"] { background: var(--color-accent-teal); }
+.ax-status-dot[data-state="success"] { background: var(--color-accent-green); }
+.ax-status-dot[data-state="error"] { background: var(--color-accent-red); }
+.ax-status-dot[data-state="warning"] { background: var(--color-accent-yellow); }
+.ax-status-dot[data-state="scheduled"] { background: var(--color-accent-lime); }
+.ax-status-dot[data-state="idle"] { background: var(--color-accent-gray); }
+
+/* ── RunStatusTag (RunStatusTag.d.ts) ─────────────────── */
+/* Run status pill: a status dot + label on a neutral chip. */
+.ax-run-status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--color-background-lighter);
+  color: var(--color-text-default);
+  font: var(--type-body-sm);
+}
+
+/* ── SchedulePill (SchedulePill.d.ts) ─────────────────── */
+/* Schedule / sensor chip: icon + frequency label + inline toggle. */
+.ax-schedule-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border: thin solid var(--color-border-default);
+  border-radius: var(--radius-pill);
+  background: var(--color-background-default);
+  color: var(--color-text-default);
+  font: var(--type-body-sm);
+}
+.ax-schedule-pill .ax-icon { color: var(--color-text-light); }
+.ax-schedule-pill-label { flex: 1; white-space: nowrap; }
+
+/* ── Tabs (Tabs.d.ts) ─────────────────────────────────── */
+/* Bottom-border indicator (Dagster style). Each tab also carries .ax-btn, so these
+   descendant rules override the button base to a borderless, inset-underline tab. */
+.ax-tabs { display: flex; gap: var(--space-8); border-bottom: thin solid var(--color-keyline-default); }
+.ax-tabs .ax-tab {
+  background: none; border: none; border-radius: 0;
+  padding: var(--space-6) 0;
+  font: var(--type-body-md); font-weight: 600;
+  color: var(--color-text-light);
+  box-shadow: transparent 0 calc(-1 * var(--space-1)) 0 inset;
+  cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-3);
+  transition: color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.ax-tabs .ax-tab:hover:not(:disabled) { background: none; color: var(--color-text-default); }
+.ax-tabs .ax-tab.is-active { color: var(--color-text-default); box-shadow: var(--color-text-default) 0 calc(-1 * var(--space-1)) 0 inset; }
+.ax-tabs .ax-tab:disabled { opacity: 0.5; cursor: default; }
+.ax-tab-count { font: var(--type-mono-sm); padding: 0 var(--space-3); background: var(--color-background-gray); border-radius: var(--radius-sm); color: var(--color-text-default); }
 
 /* ── Form sections & help text ────────────────────────── */
-.ax-form-section { margin-bottom: var(--ax-space-12); }
+.ax-form-section { margin-bottom: var(--space-12); }
 .ax-form-section > h2 {
-  margin: 0 0 var(--ax-space-7);
-  font: var(--ax-type-label);
-  letter-spacing: var(--ax-tracking-label);
+  margin: 0 0 var(--space-7);
+  font: var(--type-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
-  color: var(--ax-text-low);
-  padding-bottom: var(--ax-space-4);
-  border-bottom: 1px solid var(--ax-border-subtle);
+  color: var(--color-text-light);   /* AA (T008) */
+  padding-bottom: var(--space-4);
+  border-bottom: thin solid var(--color-keyline-default);
 }
-.ax-field { margin-bottom: var(--ax-space-8); }
-.ax-field > label { display: block; margin-bottom: var(--ax-space-3); font: var(--ax-type-body-md); color: var(--ax-text-high); }
+.ax-field { margin-bottom: var(--space-8); }
+.ax-field > label { display: block; margin-bottom: var(--space-3); font: var(--type-body-md); color: var(--color-text-default); }
+.ax-field-label { display: block; margin-bottom: var(--space-3); font: var(--type-body-md); color: var(--color-text-default); }  /* text_input macro label */
 .ax-field > label.ax-toggle { display: inline-flex; }   /* a toggle field keeps the pill + text row */
-.ax-help { display: block; margin-top: var(--ax-space-3); font: var(--ax-type-body-sm); color: var(--ax-text-low); overflow-wrap: anywhere; }
-.ax-field-error { margin-top: var(--ax-space-3); font: var(--ax-type-body-sm); color: var(--ax-error); overflow-wrap: anywhere; }
-.ax-new-prompt { margin-top: var(--ax-space-4); display: grid; gap: var(--ax-space-2); }
+.ax-help { display: block; margin-top: var(--space-3); font: var(--type-body-sm); color: var(--color-text-light); overflow-wrap: anywhere; }
+.ax-field-error { margin-top: var(--space-3); font: var(--type-body-sm); color: var(--color-text-red); overflow-wrap: anywhere; }
+.ax-new-prompt { margin-top: var(--space-4); display: grid; gap: var(--space-2); }
 .ax-new-prompt[hidden] { display: none; }
-.ax-new-prompt-label { font: var(--ax-type-body-sm); color: var(--ax-text-low); }
+.ax-new-prompt-label { font: var(--type-body-sm); color: var(--color-text-light); }
 
 /* ── Status banner (persistent until the next action) ─── */
-.ax-status-region { position: fixed; top: var(--ax-space-8); left: 50%; transform: translateX(-50%); z-index: var(--ax-z-toast); width: min(560px, calc(100vw - var(--ax-space-12))); }
+.ax-status-region { position: fixed; top: var(--space-8); left: 50%; transform: translateX(-50%); z-index: var(--z-toast); width: min(35rem, calc(100vw - var(--space-12))); }
 .ax-status {
   display: flex;
   align-items: center;
-  gap: var(--ax-space-6);
-  padding: var(--ax-space-6) var(--ax-space-8);
-  border-radius: var(--ax-radius-lg);
-  background: var(--ax-bg-card);
-  border: 1px solid var(--ax-border-strong);
-  box-shadow: var(--ax-shadow-md);
-  animation: ax-fadeIn var(--ax-transition-slow);
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-lg);
+  background: var(--color-popover-background);
+  border: thin solid var(--color-border-hover);
+  box-shadow: var(--shadow-md);
+  animation: ab-fadeIn var(--transition-slow);
 }
-.ax-status--ok { border-color: var(--ax-green-border); }
-.ax-status--error { border-color: var(--ax-error-border); }
-.ax-status-msg { flex: 1; font: var(--ax-type-body-md); color: var(--ax-text-high); }
-.ax-status--ok .ax-status-msg { color: var(--ax-green); }
-.ax-status--error .ax-status-msg { color: var(--ax-error); }
+.ax-status--ok { border-color: var(--color-accent-green); }
+.ax-status--error { border-color: var(--color-accent-red); }
+.ax-status-msg { flex: 1; font: var(--type-body-md); color: var(--color-text-default); }
+.ax-status--ok .ax-status-msg { color: var(--color-text-green); }
+.ax-status--error .ax-status-msg { color: var(--color-text-red); }
 
 /* ── Toasts ───────────────────────────────────────────── */
-.ax-toast-region { position: fixed; bottom: var(--ax-space-9); right: var(--ax-space-9); z-index: var(--ax-z-toast); display: flex; flex-direction: column; gap: var(--ax-space-5); }
+.ax-toast-region { position: fixed; bottom: var(--space-9); right: var(--space-9); z-index: var(--z-toast); display: flex; flex-direction: column; gap: var(--space-5); }
 .ax-toast {
   display: flex;
   align-items: center;
-  gap: var(--ax-space-6);
-  min-width: var(--ax-space-14);
-  padding: var(--ax-space-6) var(--ax-space-8);
-  border-radius: var(--ax-radius-lg);
-  background: var(--ax-bg-card);
-  border: 1px solid var(--ax-border-strong);
-  box-shadow: var(--ax-shadow-md);
-  color: var(--ax-text-high);
-  font: var(--ax-type-body-md);
-  animation: ax-slideIn var(--ax-transition-slow);
+  gap: var(--space-6);
+  min-width: var(--space-14);
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-lg);
+  background: var(--color-popover-background);
+  border: thin solid var(--color-border-hover);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text-default);
+  font: var(--type-body-md);
+  animation: ab-slideIn var(--transition-slow);
 }
-.ax-toast--ok { border-color: var(--ax-green-border); }
-.ax-toast--error { border-color: var(--ax-error-border); }
+.ax-toast--ok { border-color: var(--color-accent-green); }
+.ax-toast--error { border-color: var(--color-accent-red); }
 .ax-toast-close, .ax-status-close {
   background: none; border: none; cursor: pointer;
-  color: var(--ax-text-low); font: var(--ax-type-body-lg);
-  padding: 0 var(--ax-space-3);
+  color: var(--color-text-lighter); font: var(--type-body-lg);
+  padding: 0 var(--space-3);
 }
-.ax-toast-close:hover, .ax-status-close:hover { color: var(--ax-text-high); }
+.ax-toast-close:hover, .ax-status-close:hover { color: var(--color-text-default); }
 
 /* ── Modal ────────────────────────────────────────────── */
 .ax-modal-root[hidden] { display: none; }
 .ax-modal-root:not([hidden]) {
-  position: fixed; inset: 0; z-index: var(--ax-z-modal);
+  position: fixed; inset: 0; z-index: var(--z-modal);
   display: flex; align-items: center; justify-content: center;
-  background: var(--ax-bg-overlay);
+  background: var(--color-dialog-background);
 }
 .ax-modal {
-  width: min(440px, calc(100vw - var(--ax-space-12)));
-  background: var(--ax-bg-card);
-  border: 1px solid var(--ax-border-strong);
-  border-radius: var(--ax-radius-2xl);
-  box-shadow: var(--ax-shadow-lg);
-  padding: var(--ax-space-10);
-  animation: ax-fadeIn var(--ax-transition-normal);
+  width: min(27.5rem, calc(100vw - var(--space-12)));
+  background: var(--color-popover-background);
+  border: thin solid var(--color-border-hover);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-10);
+  animation: ab-fadeIn var(--transition-normal);
 }
-.ax-modal h2 { margin: 0 0 var(--ax-space-6); font: var(--ax-type-display-sm); color: var(--ax-text-primary); }
-.ax-modal p { margin: 0 0 var(--ax-space-9); font: var(--ax-type-body-md); color: var(--ax-text-mid); }
-.ax-modal-actions { display: flex; justify-content: flex-end; gap: var(--ax-space-5); }
+.ax-modal h2 { margin: 0 0 var(--space-6); font: var(--type-display-sm); color: var(--color-text-default); }
+.ax-modal p { margin: 0 0 var(--space-9); font: var(--type-body-md); color: var(--color-text-light); }
+.ax-modal-actions { display: flex; justify-content: flex-end; gap: var(--space-5); }
 
 /* ── Utility ──────────────────────────────────────────── */
-.ax-muted { color: var(--ax-text-low); }
-.ax-empty { padding: var(--ax-space-13); text-align: center; color: var(--ax-text-low); font: var(--ax-type-body-lg); }
+.ax-muted { color: var(--color-text-light); }   /* AA (T008): the "lighter" tier fails 4.5:1 in dark */
+.ax-mono { font: var(--type-mono-md); }
+.ax-flush-top { margin-top: 0; }   /* drop a block's default top margin (e.g. a card's first child) */
+.ax-empty { padding: var(--space-13); text-align: center; color: var(--color-text-light); font: var(--type-body-lg); }
 
 /* ── Create/edit form: breadcrumb, layout, action bar ─── */
-.ax-breadcrumb-sep { margin: 0 var(--ax-space-3); color: var(--ax-text-ghost); }
-.ax-form-lead { margin-bottom: var(--ax-space-9); }
+.ax-breadcrumb-sep { margin: 0 var(--space-3); color: var(--color-text-disabled); }
+.ax-form-lead { margin-bottom: var(--space-9); }
 .ax-form-lead .ax-field { margin-bottom: 0; }
 .ax-form-actionbar {
   display: flex;
-  justify-content: flex-end;   /* right-aligned, under the top bar's Save button */
+  justify-content: flex-end;   /* right-aligned above the form */
   align-items: center;
-  gap: var(--ax-space-6);
-  margin-bottom: var(--ax-space-7);
+  gap: var(--space-6);
+  margin-bottom: var(--space-7);
 }
 
 /* ── Harness picker meta line ─────────────────────────── */
-.ax-harness-meta { margin: var(--ax-space-3) 0 0; font: var(--ax-type-body-sm); color: var(--ax-text-mid); overflow-wrap: anywhere; }
+.ax-harness-meta { margin: var(--space-3) 0 0; font: var(--type-body-sm); color: var(--color-text-light); overflow-wrap: anywhere; }
 
 /* ── Chip (list) editor ───────────────────────────────── */
 .ax-chips {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--ax-space-3);
-  padding: var(--ax-space-4);
-  min-height: var(--ax-space-11);
-  background: var(--ax-bg-input);
-  border: 1px solid var(--ax-border-input);
-  border-radius: var(--ax-radius-md);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
+  padding: var(--space-4);
+  min-height: var(--space-11);
+  background: var(--color-background-default);
+  border: thin solid var(--color-border-default);
+  border-radius: var(--radius-md);
 }
 .ax-chip {
-  display: inline-flex; align-items: center; gap: var(--ax-space-3);
-  padding: var(--ax-space-2) var(--ax-space-5);
-  background: var(--ax-cyan-bg); color: var(--ax-cyan);
-  border: 1px solid var(--ax-cyan-border); border-radius: var(--ax-radius-pill);
-  font: var(--ax-type-mono-sm);
+  display: inline-flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  background: var(--color-background-blue); color: var(--color-text-teal);
+  border-radius: var(--radius-pill);
+  font: var(--type-mono-sm);
 }
-.ax-chip-remove {
+/* Higher specificity than .ax-btn so the bare × keeps its chip styling when the
+   JS-created remove button also carries the design-system .ax-btn class (FR-024). */
+.ax-chip .ax-chip-remove {
   background: none; border: none; cursor: pointer; padding: 0;
-  color: var(--ax-cyan); font: var(--ax-type-body-md); line-height: 1;
+  color: var(--color-text-teal); font: var(--type-body-md); line-height: 1;
 }
 .ax-chip-input {
-  flex: 1; min-width: var(--ax-space-13);
+  flex: 1; min-width: var(--space-13);
   background: none; border: none; outline: none;
-  color: var(--ax-text-high); font: var(--ax-type-body-md);
+  color: var(--color-text-default); font: var(--type-body-md);
 }
 
 /* ── Key/value (env) editor ───────────────────────────── */
-.ax-kv { display: flex; flex-direction: column; gap: var(--ax-space-4); }
-.ax-kv-row { display: flex; gap: var(--ax-space-4); align-items: center; }
+.ax-kv { display: flex; flex-direction: column; gap: var(--space-4); }
+.ax-kv-row { display: flex; gap: var(--space-4); align-items: center; }
 .ax-kv-key { flex: 1; }
 .ax-kv-val { flex: 2; }
-.ax-kv-remove { flex: none; padding: var(--ax-space-3) var(--ax-space-5); line-height: 1; }
+.ax-kv-remove { flex: none; padding: var(--space-3) var(--space-5); line-height: 1; }
 .ax-kv-add { align-self: flex-start; }
 
 /* ── Checks editor (produces.checks) ──────────────────── */
-.ax-checks { display: flex; flex-direction: column; gap: var(--ax-space-4); }
+.ax-checks { display: flex; flex-direction: column; gap: var(--space-4); }
 .ax-check-row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--ax-space-4);
+  gap: var(--space-4);
   align-items: center;
 }
 .ax-check-name { flex: 1 1 10rem; }
@@ -394,83 +577,87 @@
 /* ── Secret warning (inline + preview) ────────────────── */
 .ax-secret-warn {
   display: block;
-  margin-top: var(--ax-space-3);
-  padding: var(--ax-space-3) var(--ax-space-5);
-  background: var(--ax-yellow-bg); color: var(--ax-yellow);
-  border: 1px solid var(--ax-yellow-border); border-radius: var(--ax-radius-md);
-  font: var(--ax-type-body-sm);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-background-yellow); color: var(--color-text-yellow);
+  border-radius: var(--radius-md);
+  font: var(--type-body-sm);
 }
 
 /* ── YAML preview modal ───────────────────────────────── */
-.ax-modal--wide { width: min(760px, calc(100vw - var(--ax-space-12))); }
+.ax-modal--wide { width: min(47.5rem, calc(100vw - var(--space-12))); }
 .ax-preview-code {
-  margin: 0; padding: var(--ax-space-7);
+  margin: 0; padding: var(--space-7);
   max-height: 60vh; overflow: auto;
-  background: var(--ax-bg-root); border: 1px solid var(--ax-border-subtle);
-  border-radius: var(--ax-radius-md);
-  color: var(--ax-text-high); font: var(--ax-type-mono-sm);
+  background: var(--color-background-light); border: thin solid var(--color-keyline-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-default); font: var(--type-mono-sm);
   white-space: pre;
 }
-.ax-error-list { margin: 0 0 var(--ax-space-9); padding-left: var(--ax-space-9); color: var(--ax-text-mid); font: var(--ax-type-body-md); }
-.ax-error-list li { margin-bottom: var(--ax-space-3); }
+.ax-error-list { margin: 0 0 var(--space-9); padding-left: var(--space-9); color: var(--color-text-light); font: var(--type-body-md); }
+.ax-error-list li { margin-bottom: var(--space-3); }
 
-/* ── Edit-mode banner (parse error / newer schema) ────── */
-.ax-banner {
-  margin-bottom: var(--ax-space-9);
-  padding: var(--ax-space-7);
-  border-radius: var(--ax-radius-md);
+/* ── Alert (Alert.d.ts) — banner for parse errors and notices ──
+   The design-system Alert component (was .ax-banner); one macro emits .ax-alert. */
+.ax-alert {
+  margin-bottom: var(--space-9);
+  padding: var(--space-7);
+  border-radius: var(--radius-md);
+  border: thin solid transparent;
 }
-.ax-banner--error {
-  background: var(--ax-error-bg);
-  border: 1px solid var(--ax-error-border);
-}
-.ax-banner-title { margin: 0; color: var(--ax-error); font: var(--ax-type-body-md); }
-.ax-banner .ax-muted { margin: var(--ax-space-3) 0 0; color: var(--ax-text-mid); font: var(--ax-type-body-sm); }
-.ax-form-section-heading { margin: 0 0 var(--ax-space-6); color: var(--ax-text-high); font: var(--ax-type-display-sm); }
+.ax-alert-title { margin: 0; font: var(--type-body-md); }
+.ax-alert p { margin: 0; font: var(--type-body-md); }
+.ax-alert .ax-muted { margin: var(--space-3) 0 0; color: var(--color-text-light); font: var(--type-body-sm); }
+.ax-alert--error { background: var(--color-background-red); border-color: var(--color-accent-red); }
+.ax-alert--error .ax-alert-title { color: var(--color-text-red); }
+.ax-alert--warning { background: var(--color-background-yellow); border-color: var(--color-accent-yellow); }
+.ax-alert--warning .ax-alert-title { color: var(--color-text-yellow); }
+.ax-alert--success { background: var(--color-background-green); border-color: var(--color-accent-green); }
+.ax-alert--success .ax-alert-title { color: var(--color-text-green); }
+.ax-alert--info { background: var(--color-background-blue); border-color: var(--color-accent-teal); }
+.ax-alert--info .ax-alert-title { color: var(--color-text-teal); }
+.ax-form-section-heading { margin: 0 0 var(--space-6); color: var(--color-text-default); font: var(--type-display-sm); }
 
 /* Read-only name field on the edit form (identity cannot change). */
 .ax-input--readonly {
-  background: var(--ax-bg-elevated);
-  color: var(--ax-text-mid);
+  background: var(--color-background-lighter);
+  color: var(--color-text-light);
   cursor: not-allowed;
 }
 
 /* ── Custom dropdown (enhanced <select>; spec 002 US1) ─── */
 /* Structure is built by /static/dropdown.js around the untouched backing select:
    .ax-dropdown > button.ax-dropdown-trigger + ul.ax-dropdown-panel
-   + .ax-dropdown-sizer + select.
-   Reference: "Custom Dropdown (open)" — bg-card · border-strong · shadow-lg ·
-   cyan-bg active. */
-/* Default width is intrinsic: the invisible sizer (one line per option) makes the
-   wrapper exactly as wide as the largest value, capped at the container. */
+   + .ax-dropdown-sizer + select. Behaviour is frozen (FR-025); only the styling
+   hooks move to the new tokens. */
 .ax-dropdown { position: relative; width: max-content; max-width: 100%; }
 /* The backing select stays in the DOM (value store, form semantics, focus
-   redirect from its <label>) but is visually hidden. */
+   redirect from its <label>) but is visually hidden without any pixel literal. */
 .ax-dropdown > .ax-dropdown-native {
-  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
-  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  position: absolute; width: 1em; height: 1em; margin: 0; padding: 0; border: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
   opacity: 0; pointer-events: none;
 }
 .ax-dropdown-trigger {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--ax-space-5);
+  gap: var(--space-5);
   width: 100%;
-  padding: var(--ax-space-5) var(--ax-space-6);
-  background: var(--ax-bg-input);
-  border: 1px solid var(--ax-border-input);
-  border-radius: var(--ax-radius-md);
-  color: var(--ax-text-primary);
-  font: var(--ax-type-body-md);
+  padding: var(--space-5) var(--space-6);
+  background: var(--color-background-default);
+  border: thin solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-default);
+  font: var(--type-body-md);
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--ax-transition-normal), background var(--ax-transition-normal);
+  transition: border-color var(--transition-normal), background var(--transition-normal);
 }
-.ax-dropdown-trigger:hover { background: var(--ax-bg-input-hover); }
-.ax-dropdown-trigger:focus-visible { outline: none; border-color: var(--ax-cyan); box-shadow: 0 0 0 1px var(--ax-cyan-border); }
-.ax-dropdown.is-open .ax-dropdown-trigger { border-color: var(--ax-cyan-border); }
-.ax-dropdown.is-invalid .ax-dropdown-trigger { border-color: var(--ax-error); }
+.ax-dropdown-trigger:hover { border-color: var(--color-border-hover); }
+.ax-dropdown-trigger:focus-visible { outline: thin solid var(--color-focus-ring); outline-offset: var(--space-1); border-color: var(--color-accent-teal); }
+.ax-dropdown.is-open .ax-dropdown-trigger { border-color: var(--color-accent-teal); }
+.ax-dropdown.is-invalid .ax-dropdown-trigger { border-color: var(--color-accent-red); }
 .ax-dropdown.is-disabled .ax-dropdown-trigger { opacity: .5; cursor: not-allowed; }
 .ax-dropdown-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ax-dropdown-value:empty::before { content: "\00a0"; }
@@ -483,74 +670,70 @@
   height: 0;
   overflow: hidden;
   pointer-events: none;
-  border-inline: 1px solid transparent;
-  padding-left: var(--ax-space-6);
-  padding-right: calc(var(--ax-space-6) + var(--ax-space-5) + var(--ax-space-6) + var(--ax-space-8));
-  font: var(--ax-type-body-md);
+  border-inline: thin solid transparent;
+  padding-left: var(--space-6);
+  padding-right: calc(var(--space-6) + var(--space-5) + var(--space-6) + var(--space-8));
+  font: var(--type-body-md);
 }
 .ax-dropdown-sizer > span { display: block; white-space: nowrap; }
 /* A control revealed by a dropdown choice (e.g. "Custom model id…") renders
    directly below the trigger; give it the same gap the new-prompt panel has. */
 .ax-dropdown + .ax-input,
-.ax-dropdown + .ax-textarea { margin-top: var(--ax-space-4); }
+.ax-dropdown + .ax-textarea { margin-top: var(--space-4); }
 .ax-dropdown-chevron {
-  width: var(--ax-space-6); height: var(--ax-space-6); flex: none;
-  color: var(--ax-text-muted); stroke: currentColor; fill: none;
-  transition: transform var(--ax-transition-fast);
+  width: var(--space-6); height: var(--space-6); flex: none;
+  color: var(--color-text-lighter); stroke: currentColor; fill: none;
+  transition: transform var(--transition-fast);
 }
 .ax-dropdown.is-open .ax-dropdown-chevron { transform: rotate(180deg); }
 .ax-dropdown-panel {
   position: absolute;
   left: 0; right: 0;
-  top: calc(100% + var(--ax-space-2));
+  top: calc(100% + var(--space-2));
   margin: 0;
-  padding: var(--ax-space-2);
+  padding: var(--space-2);
   list-style: none;
   max-height: min(18rem, 50vh);
   overflow-y: auto;
-  background: var(--ax-bg-card);
-  border: 1px solid var(--ax-border-strong);
-  border-radius: var(--ax-radius-lg);
-  box-shadow: var(--ax-shadow-lg);
-  z-index: var(--ax-z-dropdown);
+  background: var(--color-popover-background);
+  border: thin solid var(--color-border-hover);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
 }
 .ax-dropdown-panel[hidden] { display: none; }
-.ax-dropdown-panel.is-up { top: auto; bottom: calc(100% + var(--ax-space-2)); }
+.ax-dropdown-panel.is-up { top: auto; bottom: calc(100% + var(--space-2)); }
 .ax-dropdown-option {
-  padding: var(--ax-space-4) var(--ax-space-6);
-  border-radius: var(--ax-radius-sm);
-  font: var(--ax-type-body-md);
-  color: var(--ax-text-mid);
+  padding: var(--space-4) var(--space-6);
+  border-radius: var(--radius-sm);
+  font: var(--type-body-md);
+  color: var(--color-text-light);
   cursor: pointer;
   overflow-wrap: anywhere;
 }
-.ax-dropdown-option:hover, .ax-dropdown-option.is-active { background: var(--ax-bg-card-hover); color: var(--ax-text-high); }
-.ax-dropdown-option[aria-selected="true"] { background: var(--ax-cyan-bg); color: var(--ax-cyan); }
-.ax-dropdown-option[aria-disabled="true"] { color: var(--ax-text-ghost); cursor: not-allowed; }
+.ax-dropdown-option:hover, .ax-dropdown-option.is-active { background: var(--color-popover-background-hover); color: var(--color-text-default); }
+.ax-dropdown-option[aria-selected="true"] { background: var(--color-background-blue); color: var(--color-text-teal); }
+.ax-dropdown-option[aria-disabled="true"] { color: var(--color-text-disabled); cursor: not-allowed; }
 
 /* ── Responsive form grid (spec 002 US3) ─────────────── */
-/* Reference ax-grid-form: auto-fill columns at a 280px minimum, 24px gap. The
-   min() guard keeps a single column from overflowing a container narrower than
-   280px (FR-012: no horizontal page scroll at any width). */
+/* Reference ax-grid-form: auto-fill columns at a 280px (17.5rem) minimum, 24px
+   gap. The min() guard keeps a single column from overflowing a container
+   narrower than the minimum (FR-012: no horizontal page scroll at any width). */
 .ax-grid-form {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
-  gap: var(--ax-space-10);
+  grid-template-columns: repeat(auto-fill, minmax(min(17.5rem, 100%), 1fr));
+  gap: var(--space-10);
 }
 .ax-grid-form > .ax-field { margin-bottom: 0; min-width: 0; }
 .ax-field--wide { grid-column: 1 / -1; }
 
 /* ── Agent form layout: Runs / Job / Box (003 contracts/layout.md §2) ──
-   A named-area grid on the sections mount. It is the one deliberate exception to
-   Grid Rule 1 ("no fixed breakpoints"): auto-fill cannot fold a third column under
-   the first and let the second span both rows, so two explicit container-width
-   thresholds and the Job track ratio are the only literals allowed here. The base
-   rule is one column; the container queries below add the two- and three-column
-   arrangements, widest last so it wins. align-items:start keeps a short group from
-   stretching to a tall neighbour's height. */
+   A named-area grid on the sections mount. The two container-width thresholds
+   (expressed in rem to stay pixel-free) and the Job track ratio are the only
+   layout thresholds; the base rule is one column, widest arrangement last. */
 .ax-grid-agent {
   display: grid;
-  gap: var(--ax-space-9);
+  gap: var(--space-9);
   align-items: start;
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas: "runs" "job" "box";
@@ -558,12 +741,12 @@
 .ax-form-group[data-group="runs"] { grid-area: runs; }
 .ax-form-group[data-group="job"]  { grid-area: job; }
 .ax-form-group[data-group="box"]  { grid-area: box; }
-.ax-form-group { display: flex; flex-direction: column; gap: var(--ax-space-9); min-width: 0; }
+.ax-form-group { display: flex; flex-direction: column; gap: var(--space-9); min-width: 0; }
 .ax-form-group > .ax-form-section { margin-bottom: 0; }
 
 /* Two columns once the pane can hold two form cards side by side: Runs over Box on
    the left, Job spanning both rows on the right (by area name, no explicit spans). */
-@container ax-content (min-width: 720px) {
+@container ax-content (min-width: 45rem) {
   .ax-grid-agent {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas: "runs job" "box job";
@@ -572,7 +755,7 @@
 
 /* Three columns once the pane is wide enough for Job at 1.4× beside Runs and Box
    (research R2/R3). Job holds every wide control, so it gets the widest track. */
-@container ax-content (min-width: 1320px) {
+@container ax-content (min-width: 82.5rem) {
   .ax-grid-agent {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
     grid-template-areas: "runs job box";
@@ -581,38 +764,37 @@
 
 /* ── Nature cards (Asset / Job) — spec 006 US1 ────────── */
 /* Each card is gated by its own checkbox; the gated-off grid dims and its controls disable. */
-.ax-nature-card .ax-toggle { margin-bottom: var(--ax-space-6); }
+.ax-nature-card .ax-toggle { margin-bottom: var(--space-6); }
 .ax-grid-form.ax-gated-off { opacity: 0.5; }
 .ax-nature-hint {
   grid-column: 1 / -1;
-  margin: var(--ax-space-6) 0 0;
+  margin: var(--space-6) 0 0;
 }
 
 /* ── Automation view — grouped per-kind rows (spec 006 US3) ── */
 .ax-automation-agent {
-  padding: var(--ax-space-7) 0;
-  border-bottom: 1px solid var(--ax-border-subtle);
+  padding: var(--space-7) 0;
+  border-bottom: thin solid var(--color-keyline-default);
 }
 .ax-automation-agent:last-child { border-bottom: 0; }
 .ax-automation-agent.ax-row--disabled { opacity: 0.6; }
 .ax-automation-agent-head {
   display: flex;
   align-items: center;
-  gap: var(--ax-space-5);
-  margin-bottom: var(--ax-space-5);
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
 }
-.ax-automation-agent-head a { color: var(--ax-text-high); font: var(--ax-type-body-lg); }
-/* Left-anchored fixed tracks: the controls keep their widths (no stretching to the card
-   edge) and line up vertically across rows. The kind label sits on its own grid row above
-   the controls, spanning both control tracks. The mode track is fixed (not max-content) so
-   the dropdown's width can't change with the selected value. */
+.ax-automation-agent-head a { color: var(--color-text-default); font: var(--type-body-lg); }
+/* Left-anchored fixed tracks: the controls keep their widths and line up vertically
+   across rows. The kind label sits on its own grid row above the controls. The mode
+   track is fixed so the dropdown's width can't change with the selected value. */
 .ax-automation-schedule {
   display: grid;
   grid-template-columns: 10rem minmax(min(16rem, 100%), 18rem);
   justify-content: start;
   align-items: flex-start;
-  gap: var(--ax-space-3) var(--ax-space-6);
-  padding: var(--ax-space-3) 0 var(--ax-space-3) var(--ax-space-8);
+  gap: var(--space-3) var(--space-6);
+  padding: var(--space-3) 0 var(--space-3) var(--space-8);
 }
 .ax-automation-kind {
   grid-column: 1 / -1;
@@ -620,47 +802,46 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--ax-space-4);
-  font: var(--ax-type-label);
-  letter-spacing: var(--ax-tracking-label);
+  gap: var(--space-4);
+  font: var(--type-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
-  color: var(--ax-text-low);
+  color: var(--color-text-light);   /* AA (T008) */
 }
 /* .ax-automation-mode is the backing select before dropdown.js enhances it; .ax-dropdown is
    the wrapper afterwards — both must land in the mode cell. */
 .ax-automation-schedule > .ax-automation-mode,
 .ax-automation-schedule > .ax-dropdown { grid-column: 1; grid-row: 2; }
 .ax-automation-cron-wrap { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; min-width: 0; }
-/* Reserve one line under the cron input so toggling the shape warning never shifts the row
-   (SC-007 / contract §5). */
-.ax-automation-cron-wrap .ax-field-error { min-height: 1.2em; margin-top: var(--ax-space-2); }
-.ax-automation-empty { margin: 0 0 0 var(--ax-space-8); }
-.ax-badge--fallback { background: var(--ax-yellow-bg, var(--ax-bg-elevated)); color: var(--ax-yellow, var(--ax-text-mid)); }
+/* Reserve one line under the cron input so toggling the shape warning never shifts the row. */
+.ax-automation-cron-wrap .ax-field-error { min-height: 1.2em; margin-top: var(--space-2); }
+.ax-automation-empty { margin: 0 0 0 var(--space-8); }
 
 /* ── Fixed shell at phone width (spec 006 US4 / contract §3) ── */
-/* Collapse to a single column with a non-overlapping sidebar strip on top and a still-sticky
-   top bar; nothing overlaps or hides content at ~400px (SC-006). */
-@media (max-width: 640px) {
+/* Collapse to a single column with a non-overlapping sidebar strip on top; nothing
+   overlaps or hides content at ~400px (SC-006). 40em ≈ 640px. */
+@media (max-width: 40em) {
   .ax-app {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
     height: 100dvh;
   }
+  html[data-sidebar="collapsed"] .ax-app { grid-template-columns: 1fr; }
   .ax-sidebar {
     flex-direction: row;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--ax-space-5);
-    padding: var(--ax-space-5) var(--ax-space-6);
+    gap: var(--space-5);
+    padding: var(--space-5) var(--space-6);
     border-right: 0;
-    border-bottom: 1px solid var(--ax-border-subtle);
+    border-bottom: thin solid var(--color-keyline-default);
     overflow-y: visible;
   }
-  .ax-nav { flex-direction: row; flex: 1; gap: var(--ax-space-3); }
-  .ax-sidebar-foot { margin-top: 0; }
-  .ax-content { padding: var(--ax-space-7); }
-  /* Fixed tracks can't fit a phone viewport — stack each schedule row instead (SC-006).
-     The resets must match the desktop placement selectors' specificity to win. */
+  .ax-brand { padding: 0; min-height: 0; }
+  .ax-nav { flex-direction: row; flex: 1; gap: var(--space-3); overflow: visible; }
+  .ax-sidebar-foot { margin-top: 0; flex-direction: row; align-items: center; border-top: 0; padding-top: 0; }
+  .ax-content { padding: var(--space-7); }
+  /* Fixed tracks can't fit a phone viewport — stack each schedule row instead (SC-006). */
   .ax-automation-schedule { grid-template-columns: 1fr; }
   .ax-automation-schedule > .ax-automation-kind,
   .ax-automation-schedule > .ax-automation-mode,

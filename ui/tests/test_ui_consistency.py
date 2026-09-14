@@ -45,6 +45,41 @@ def test_modules_that_create_selects_enhance_them():
         assert re.search(r"enhanceSelects?\s*\(", text), f"{base} creates a <select> but never enhances it"
 
 
+# ── spec 009 US2 / FR-024: every button and table carries its design-system class ──
+# Control styling lives in the shared macros (templates/components/macros.html) + app.css,
+# never per page; recomposed pages compose those macros (FR-006).
+
+
+def test_every_template_button_is_ax_btn():
+    # A literal <button> in server markup must carry class="ax-btn" (the design-system button).
+    for path in _walk(_TEMPLATES, ".html"):
+        text = open(path, encoding="utf-8").read()
+        for m in re.finditer(r"<button\b[^>]*>", text):
+            assert "ax-btn" in m.group(0), f"raw <button> without ax-btn in {os.path.basename(path)}"
+
+
+def test_every_template_table_is_ax_table():
+    # A literal <table> in server markup must carry class="ax-table" (the design-system table).
+    for path in _walk(_TEMPLATES, ".html"):
+        text = open(path, encoding="utf-8").read()
+        for m in re.finditer(r"<table\b[^>]*>", text):
+            assert "ax-table" in m.group(0), f"raw <table> without ax-table in {os.path.basename(path)}"
+
+
+def test_modules_that_create_buttons_set_ax_btn():
+    # Any module that builds a <button> in JS must set the design-system class on it (T014).
+    # dropdown.js is the shared custom-dropdown implementation whose trigger is its own control
+    # (frozen behaviour, FR-025) — excluded, exactly as the <select> guard above excludes it.
+    for path in _walk(_STATIC, ".js"):
+        base = os.path.basename(path)
+        if base == "dropdown.js":
+            continue
+        text = open(path, encoding="utf-8").read()
+        if 'createElement("button")' not in text:
+            continue
+        assert "ax-btn" in text, f"{base} creates a <button> but never sets ax-btn"
+
+
 def test_model_control_never_uses_a_native_datalist():
     # Every single-choice control goes through the shared custom dropdown; a native
     # <datalist> on the model field is the one that slipped through for codex
@@ -68,6 +103,27 @@ def test_no_bespoke_save_banner_remains():
     auto = open(os.path.join(_STATIC, "automation.js"), encoding="utf-8").read()
     assert "ax-banner" not in auto
     assert "showStatus" in auto
+
+
+def test_theme_control_is_accessible_icon_buttons():
+    # Bug theme-control-overflow: the sidebar theme control is a radiogroup of three
+    # icon-only buttons (System/Light/Dark) that fits the narrow column, each with an
+    # accessible name (aria-label) and a hover tooltip (title); no native <select>.
+    base = open(os.path.join(_TEMPLATES, "base.html"), encoding="utf-8").read()
+    group = re.search(r'<div class="ax-theme-control"[^>]*>(.*?)</div>', base, re.DOTALL)
+    assert group, "theme control radiogroup not found"
+    block = group.group(0)
+    assert 'role="radiogroup"' in block and 'aria-label="Theme"' in block
+    assert "<select" not in block, "theme control must not use a native <select>"
+    choices = re.findall(r'data-theme-choice="(system|light|dark)"', block)
+    assert set(choices) == {"system", "light", "dark"}, f"expected all three choices, got {choices}"
+    # Every option is a button with an accessible name and a hover title.
+    for m in re.finditer(r"<button\b[^>]*>", block):
+        tag = m.group(0)
+        assert 'data-theme-choice="' in tag
+        assert "aria-label=" in tag, f"theme option missing aria-label: {tag}"
+        assert "title=" in tag, f"theme option missing hover title: {tag}"
+        assert "ax-btn" in tag, f"theme option missing design-system button class: {tag}"
 
 
 def test_automation_uses_shared_dropdown_and_notice():

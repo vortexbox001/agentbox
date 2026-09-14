@@ -1,0 +1,208 @@
+<!-- @dsCard group="AgentBox App" viewport="1280x720" name="AgentBox App" subtitle="Full interactive app with sidebar navigation and agent management" -->
+<!-- @startingPoint section="UI Kits" subtitle="Complete AgentBox app shell with sidebar and agent list" viewport="1280x720" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+  // Pre-paint theme resolution, mirroring the app shell (theme-and-shell contract):
+  // stamp <html> before first paint so there is no wrong-theme flash. No external deps.
+  (function () {
+    try {
+      var root = document.documentElement;
+      var pref = localStorage.getItem("agentbox.theme") || "system";
+      var dark = pref === "dark" ||
+        (pref !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      if (dark) root.setAttribute("data-theme", "dark");
+      else root.removeAttribute("data-theme");
+    } catch (e) { /* storage unavailable: default light shell */ }
+  })();
+</script>
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../static/app.css">
+<style>
+  /* This card renders the production shell + agents list statically (no React, no CDN):
+     same markup and design-system classes the running app uses, styled by app.css. */
+  html, body { margin: 0; padding: 0; height: 100%; }
+  .ax-app { height: 100%; }
+  .ax-brand-lockup--dark { display: none; }
+  [data-theme="dark"] .ax-brand-lockup--light { display: none; }
+  [data-theme="dark"] .ax-brand-lockup--dark { display: block; }
+</style>
+</head>
+<body>
+<div class="ax-app">
+  <aside class="ax-sidebar">
+    <div class="ax-brand">
+      <img class="ax-brand-mark" src="../../assets/logo.svg" alt="" aria-hidden="true" width="24" height="24">
+      <img class="ax-brand-lockup ax-brand-lockup--light" src="../../assets/logo-light.svg" alt="agentbox">
+      <img class="ax-brand-lockup ax-brand-lockup--dark" src="../../assets/logo-dark.svg" alt="agentbox">
+    </div>
+    <nav class="ax-nav" aria-label="Primary">
+      <a class="ax-nav-item is-active" href="#" data-nav="/agents" aria-current="page">
+        <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#agents"></use></svg>
+        <span class="ax-nav-label">Agents</span>
+      </a>
+      <a class="ax-nav-item" href="#" data-nav="/automation">
+        <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#automation"></use></svg>
+        <span class="ax-nav-label">Automation</span>
+      </a>
+    </nav>
+    <div class="ax-sidebar-foot">
+      <a class="ax-dagster" href="#" id="ax-dagster-link">
+        <span class="ax-dagster-dot" data-state="success" id="ax-dagster-dot"></span>
+        <span class="ax-dagster-text">
+          <span class="ax-dagster-label">Dagster</span>
+          <span class="ax-dagster-status" id="ax-dagster-status">running</span>
+        </span>
+        <svg class="ax-icon ax-dagster-open" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#external"></use></svg>
+      </a>
+      <div class="ax-theme-control" role="radiogroup" aria-label="Theme">
+        <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="system" title="System" aria-label="System theme">
+          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#theme-system"></use></svg>
+        </button>
+        <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="light" title="Light" aria-label="Light theme">
+          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#theme-light"></use></svg>
+        </button>
+        <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="dark" title="Dark" aria-label="Dark theme">
+          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#theme-dark"></use></svg>
+        </button>
+      </div>
+      <button class="ax-btn ax-collapse-toggle" id="ax-collapse-toggle" type="button" aria-label="Collapse sidebar">
+        <svg class="ax-icon ax-collapse-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#collapse"></use></svg>
+        <span class="ax-collapse-label">Collapse</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="ax-main">
+    <main class="ax-content">
+      <header class="ax-page-header">
+        <div class="ax-page-header-heading">
+          <nav class="ax-breadcrumb" aria-label="Breadcrumb"></nav>
+          <h1 class="ax-page-title">Agents</h1>
+        </div>
+        <div class="ax-page-actions">
+          <a class="ax-btn ax-btn--primary" href="#">
+            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#plus"></use></svg>
+            <span>New agent</span>
+          </a>
+        </div>
+      </header>
+
+      <div class="ax-card">
+        <table class="ax-table">
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Harness</th>
+              <th scope="col">Model</th>
+              <th scope="col">Status</th>
+              <th scope="col">Dagster</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="#">summarizer</a></td>
+              <td><span class="ax-badge ax-badge--harness">api</span></td>
+              <td><span class="ax-mono">gpt-4o</span></td>
+              <td><span class="ax-badge ax-badge--enabled">enabled</span></td>
+              <td>
+                <a class="ax-btn ax-btn--ghost" href="#" title="Open this agent's runs in Dagster">
+                  <span>runs</span>
+                  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#external"></use></svg>
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td><a href="#">code-reviewer</a></td>
+              <td><span class="ax-badge ax-badge--harness">claude-code</span></td>
+              <td><span class="ax-mono">claude-sonnet-5</span></td>
+              <td><span class="ax-badge ax-badge--enabled">enabled</span></td>
+              <td>
+                <a class="ax-btn ax-btn--ghost" href="#" title="Open this agent's runs in Dagster">
+                  <span>runs</span>
+                  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#external"></use></svg>
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <a href="#">report-writer</a>
+                <span class="ax-badge ax-badge--scheduled">scheduled</span>
+              </td>
+              <td><span class="ax-badge ax-badge--harness">api</span></td>
+              <td><span class="ax-mono">claude-haiku-4-5</span></td>
+              <td><span class="ax-badge ax-badge--enabled">enabled</span></td>
+              <td>
+                <a class="ax-btn ax-btn--ghost" href="#" title="Open this agent's runs in Dagster">
+                  <span>runs</span>
+                  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#external"></use></svg>
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td><a href="#">data-cleaner</a></td>
+              <td colspan="2">
+                <span class="ax-badge ax-badge--error">error</span>
+                <span class="ax-muted">could not parse agents/data-cleaner.yaml</span>
+              </td>
+              <td><span class="ax-muted">—</span></td>
+              <td>
+                <a class="ax-btn ax-btn--ghost" href="#" title="Open this agent's runs in Dagster">
+                  <span>runs</span>
+                  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#external"></use></svg>
+                </a>
+              </td>
+            </tr>
+            <tr class="ax-row--disabled">
+              <td><a href="#">doc-indexer</a></td>
+              <td><span class="ax-badge ax-badge--harness">api</span></td>
+              <td><span class="ax-mono">gpt-4o-mini</span></td>
+              <td><span class="ax-badge ax-badge--disabled">disabled</span></td>
+              <td>
+                <a class="ax-btn ax-btn--ghost" href="#" title="Open this agent's runs in Dagster">
+                  <span>runs</span>
+                  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#external"></use></svg>
+                </a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  // Minimal, self-contained theme toggle (no external deps) so the specimen behaves like
+  // the app: the sidebar-foot control writes agentbox.theme and re-stamps <html> live.
+  (function () {
+    var root = document.documentElement;
+    function resolved() {
+      try { return localStorage.getItem("agentbox.theme") || "system"; } catch (e) { return "system"; }
+    }
+    function stamp() {
+      var pref = resolved();
+      var dark = pref === "dark" ||
+        (pref !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      if (dark) root.setAttribute("data-theme", "dark");
+      else root.removeAttribute("data-theme");
+      document.querySelectorAll(".ax-theme-option").forEach(function (b) {
+        b.setAttribute("aria-checked", b.getAttribute("data-theme-choice") === pref ? "true" : "false");
+      });
+    }
+    document.querySelectorAll(".ax-theme-option").forEach(function (b) {
+      b.addEventListener("click", function () {
+        try { localStorage.setItem("agentbox.theme", b.getAttribute("data-theme-choice")); } catch (e) {}
+        stamp();
+      });
+    });
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", function () { if (resolved() === "system") stamp(); });
+    stamp();
+  })();
+</script>
+</body>
+</html>

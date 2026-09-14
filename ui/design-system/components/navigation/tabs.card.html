@@ -1,0 +1,15 @@
+<!-- @dsCard group="Components" viewport="700x80" name="Tabs, Tab" subtitle="Tab bar with bottom-border indicator and count badges" -->
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../static/app.css">
+</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
+<!-- Production markup: the `tabs` macro → `ax-tabs` with `ax-btn ax-tab` buttons (bottom-border
+     indicator, mono count badge), styled by /static/app.css. No CDN, no React. -->
+<div class="ax-tabs" role="tablist">
+  <button type="button" class="ax-btn ax-tab is-active" role="tab" aria-selected="true">Runs <span class="ax-tab-count">24</span></button>
+  <button type="button" class="ax-btn ax-tab" role="tab" aria-selected="false">Configuration</button>
+  <button type="button" class="ax-btn ax-tab" role="tab" aria-selected="false">Logs</button>
+  <button type="button" class="ax-btn ax-tab" role="tab" aria-selected="false" disabled>History</button>
+</div>
+</body></html>

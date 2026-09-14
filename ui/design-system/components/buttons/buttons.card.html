@@ -1,0 +1,16 @@
+<!-- @dsCard group="Components" viewport="700x100" name="Button" subtitle="Primary, outlined, danger, and default button variants" -->
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../static/app.css">
+</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
+<!-- Production markup: the shared `button` macro emits `ax-btn ax-btn--{intent}` (+ outlined),
+     wrapping the label in a <span>. Styled by /static/app.css — no CDN, no React. -->
+<div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
+  <button type="button" class="ax-btn ax-btn--primary"><span>Primary</span></button>
+  <button type="button" class="ax-btn ax-btn--primary ax-btn--outlined"><span>Outlined</span></button>
+  <button type="button" class="ax-btn ax-btn--ghost"><span>Ghost</span></button>
+  <button type="button" class="ax-btn ax-btn--danger"><span>Danger</span></button>
+  <button type="button" class="ax-btn ax-btn--primary" disabled><span>Disabled</span></button>
+</div>
+</body></html>

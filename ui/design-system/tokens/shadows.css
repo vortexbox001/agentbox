@@ -1,0 +1,15 @@
+/* AgentBox Design System — Shadows, Transitions */
+
+:root {
+  /* ── Shadows ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-glow-teal: 0 0 8px rgba(48, 136, 126, 0.25);
+  --shadow-glow-lime: 0 0 8px rgba(168, 200, 52, 0.25);
+
+  /* ── Transitions ── */
+  --transition-fast: 0.1s ease; /* @kind other */
+  --transition-normal: 0.15s ease; /* @kind other */
+  --transition-slow: 0.3s ease; /* @kind other */
+}

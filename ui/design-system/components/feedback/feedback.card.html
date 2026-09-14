@@ -1,0 +1,47 @@
+<!-- @dsCard group="Components" viewport="700x260" name="Badge, StatusDot, Spinner, Alert, RunStatusTag, SchedulePill" subtitle="Status badges, dots, spinner, alerts, run tags, and schedule pills" -->
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../static/app.css">
+</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
+<!-- Production markup: `badge`, `status_dot`, `spinner`, `alert`, `run_status_tag`,
+     `schedule_pill` macros → ax- classes, styled by /static/app.css. No CDN, no React. -->
+<div style="display:flex;flex-direction:column;gap:var(--space-6)">
+  <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
+    <span class="ax-badge ax-badge--enabled">enabled</span>
+    <span class="ax-badge ax-badge--error">error</span>
+    <span class="ax-badge ax-badge--queued">queued</span>
+    <span class="ax-badge ax-badge--scheduled">scheduled</span>
+    <span class="ax-badge ax-badge--harness">claude-code</span>
+    <span class="ax-badge ax-badge--disabled">disabled</span>
+  </div>
+  <div style="display:flex;gap:var(--space-6);align-items:center;flex-wrap:wrap;font:var(--type-body-sm);color:var(--color-text-light)">
+    <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="running"></span>running</span>
+    <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="success"></span>success</span>
+    <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="error"></span>error</span>
+    <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="idle"></span>idle</span>
+    <span class="ax-spinner" role="status" aria-label="Loading"></span>
+  </div>
+  <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
+    <span class="ax-run-status-tag" data-status="success"><span class="ax-status-dot" data-state="success" aria-hidden="true"></span><span>2 hours ago</span></span>
+    <span class="ax-run-status-tag" data-status="started"><span class="ax-status-dot" data-state="running" aria-hidden="true"></span><span>running now</span></span>
+    <span class="ax-run-status-tag" data-status="failure"><span class="ax-status-dot" data-state="error" aria-hidden="true"></span><span>5 days ago</span></span>
+  </div>
+  <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
+    <span class="ax-schedule-pill" data-type="schedule">
+      <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#automation"></use></svg>
+      <span class="ax-schedule-pill-label">Every day at 7:00 AM</span>
+      <label class="ax-toggle"><input type="checkbox" checked><span class="ax-toggle-track" aria-hidden="true"></span></label>
+    </span>
+    <span class="ax-schedule-pill" data-type="sensor">
+      <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="../../static/icons.svg#automation"></use></svg>
+      <span class="ax-schedule-pill-label">Every Monday at 6:00 AM</span>
+      <label class="ax-toggle"><input type="checkbox"><span class="ax-toggle-track" aria-hidden="true"></span></label>
+    </span>
+  </div>
+  <div class="ax-alert ax-alert--info" role="alert">
+    <p class="ax-alert-title">Agent deployed</p>
+    <p>summarizer-v2 is now running on schedule.</p>
+  </div>
+</div>
+</body></html>

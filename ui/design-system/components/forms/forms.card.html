@@ -1,0 +1,32 @@
+<!-- @dsCard group="Components" viewport="700x220" name="TextInput, Select, Checkbox, Toggle" subtitle="Form controls — input, select, checkbox, toggle" -->
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../static/app.css">
+</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
+<!-- Production markup: `text_input`, `select`, `checkbox`, `toggle` macros → ax- classes,
+     styled by /static/app.css. No CDN, no React. -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-8);max-width:38rem">
+  <div>
+    <label class="ax-field-label" for="f-name">Agent name</label>
+    <input class="ax-input" type="text" id="f-name" placeholder="e.g. summarizer-v2">
+  </div>
+  <div>
+    <label class="ax-field-label" for="f-model">Model</label>
+    <select class="ax-select" id="f-model">
+      <option value="cheap">cheap</option>
+      <option value="smart">smart</option>
+      <option value="sonnet">sonnet</option>
+    </select>
+  </div>
+  <label class="ax-checkbox" for="f-retry">
+    <input type="checkbox" id="f-retry" checked>
+    <span>Enable auto-retry</span>
+  </label>
+  <label class="ax-toggle" for="f-active">
+    <input type="checkbox" id="f-active" checked>
+    <span class="ax-toggle-track" aria-hidden="true"></span>
+    <span>Active</span>
+  </label>
+</div>
+</body></html>

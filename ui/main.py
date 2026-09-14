@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -32,7 +32,6 @@ from prompts_store import PromptValidationError
 _UI_DIR = os.path.dirname(os.path.abspath(__file__))
 _TEMPLATES_DIR = os.path.join(_UI_DIR, "templates")
 _STATIC_DIR = os.path.join(_UI_DIR, "static")
-_DESIGN_DOC = "Archon Design System.dc.html"
 
 app = FastAPI(title="Agentbox")
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
@@ -112,18 +111,18 @@ async def _validation_error(request: Request, exc: RequestValidationError):
 
 
 # --- Design system (registered before the static mount so the exact paths win) ---
+# The old dark-theme reference doc and its inline assets are gone (spec 009 FR-001);
+# the in-repo design-system bundle is served here at /design-system/. With html=True
+# the mount serves the bundle's own index.html — the specimen gallery that renders every
+# component and foundation from _ds_manifest.json on the current design — at
+# /design-system/ (FR-003, US3/T018, T034).
 @app.get("/design-system")
 async def _design_root_redirect():
-    # Trailing slash so the document's relative ./support.js and ./archon-tokens.css resolve.
+    # Trailing slash so the bundle's relative asset paths resolve under the mount.
     return RedirectResponse("/design-system/", status_code=302)
 
 
-@app.get("/design-system/")
-async def _design_index():
-    return FileResponse(os.path.join(config.DESIGN_SYSTEM_DIR, _DESIGN_DOC), media_type="text/html")
-
-
-app.mount("/design-system", StaticFiles(directory=config.DESIGN_SYSTEM_DIR, html=False), name="design-system")
+app.mount("/design-system", StaticFiles(directory=config.DESIGN_SYSTEM_DIR, html=True), name="design-system")
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 

@@ -1,15 +1,13 @@
 {% extends "base.html" %}
+{% import "components/macros.html" as ui %}
 
 {% block actions %}
-  <button class="ax-btn ax-btn--primary" id="ax-automation-save" type="button" disabled>
-    <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#refresh"></use></svg>
-    <span>Save &amp; reload</span>
-  </button>
+  {{ ui.button(label="Save & reload", intent="primary", icon="refresh", type="button", disabled=true, attrs={"id": "ax-automation-save"}) }}
 {% endblock %}
 
 {% block content %}
-<div class="ax-card">
-  <p class="ax-muted" style="margin-top:0">
+{% call ui.card() %}
+  <p class="ax-muted ax-flush-top">
     When an agent runs is set here, on the agent itself. Each agent shows a row per kind it is —
     an <strong>asset</strong> schedule, a <strong>job</strong> schedule, or both. Choose
     <strong>on demand</strong> (no automatic trigger) or a five-field <strong>cron</strong> (runs
@@ -20,7 +18,7 @@
   <div id="ax-automation-rows">
     <p class="ax-muted">Loading…</p>
   </div>
-</div>
+{% endcall %}
 {% endblock %}
 
 {% block scripts %}

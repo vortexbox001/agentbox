@@ -29,21 +29,44 @@ def test_design_system_index_is_html(client):
     resp = client.get("/design-system/")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
-    # The document loads its assets by relative path so they resolve under the mount.
-    assert "./support.js" in resp.text
-    assert "./archon-tokens.css" in resp.text
+    # /design-system/ opens the developer reference app (index.html), not the old
+    # dark-theme reference doc (spec 009 FR-003). It loads the bundle stylesheet by
+    # relative path so assets resolve under the mount, and names the design system.
+    assert "Design System" in resp.text
+    assert 'href="styles.css"' in resp.text
 
 
 def test_design_system_assets_served(client):
-    for path in ("/design-system/support.js", "/design-system/archon-tokens.css"):
+    # Real bundle assets resolve through the mount, including nested token files.
+    for path in ("/design-system/styles.css", "/design-system/tokens/colors.css"):
         assert client.get(path).status_code == 200
 
 
-def test_design_system_prototype_served_with_space_in_name(client):
-    # A filename containing a space must resolve through the static mount (US7).
-    resp = client.get("/design-system/Archon%20Prototype.dc.html")
+def test_design_system_nested_specimen_served(client):
+    # A nested guideline specimen resolves through the static mount.
+    resp = client.get("/design-system/guidelines/brand-logo.html")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
+
+
+def test_design_system_gallery_renders_manifest(client):
+    # The gallery (index.html) reads _ds_manifest.json and groups the specimens; the
+    # served page names the manifest and the group order it renders (spec 009 T034).
+    html = client.get("/design-system/").text
+    assert "_ds_manifest.json" in html
+    assert "Components" in html and "Colors" in html
+
+
+def test_design_system_specimen_cards_all_served(client):
+    # Every specimen the gallery iframes must resolve under the mount (T034/T036).
+    import json as _json
+
+    manifest = _json.loads(
+        open(os.path.join(UI_DIR, "design-system", "_ds_manifest.json"), encoding="utf-8").read()
+    )
+    for card in manifest["cards"]:
+        resp = client.get("/design-system/" + card["path"])
+        assert resp.status_code == 200, f"specimen not served: {card['path']}"
 
 
 def test_agents_page_has_no_design_system_nav_anchor(client):
@@ -548,7 +571,7 @@ def test_edit_page_broken_file_falls_back_to_job_link(client, tmp_agents):
 def test_edit_page_broken_file_shows_banner_and_raw(client, tmp_agents):
     _write_agent_file(tmp_agents, "broken", "harness: [unclosed\n")
     html = client.get("/agents/broken").text
-    assert "ax-banner" in html                     # error banner
+    assert "ax-alert" in html                      # error alert (shared alert macro)
     assert "harness: [unclosed" in html            # read-only raw file block
 
 
@@ -556,7 +579,7 @@ def test_edit_page_newer_schema_is_readonly_with_delete(client, tmp_agents):
     _write_agent_file(tmp_agents, "futuristic",
                       "# agentbox-schema: 9999\nname: futuristic\nharness: pi\n")
     html = client.get("/agents/futuristic").text
-    assert "ax-banner" in html                     # "newer agentbox" banner
+    assert "ax-alert" in html                      # "newer agentbox" alert (shared alert macro)
     assert "9999" in html
     assert 'id="ax-agent-form"' not in html        # no editable form
     assert 'id="ax-delete-btn"' in html            # delete is still offered
@@ -872,39 +895,41 @@ def test_new_agent_page_keeps_backing_selects_and_loads_dropdown_module(client):
 
 
 def test_app_css_defines_custom_dropdown_component():
+    # Re-pointed at the spec-009 design-system tokens (the --ax-* set is retired,
+    # FR-013): the dropdown structure/behaviour is unchanged, only the token hooks.
     css = _app_css()
     panel = _css_block(css, ".ax-dropdown-panel")
-    assert "var(--ax-bg-card)" in panel
-    assert "var(--ax-border-strong)" in panel
-    assert "var(--ax-shadow-lg)" in panel
-    assert "var(--ax-z-dropdown)" in panel
+    assert "var(--color-popover-background)" in panel
+    assert "var(--color-border-hover)" in panel
+    assert "var(--shadow-lg)" in panel
+    assert "var(--z-dropdown)" in panel
     selected = _css_block(css, '.ax-dropdown-option[aria-selected="true"]')
-    assert "var(--ax-cyan-bg)" in selected
-    assert "var(--ax-cyan)" in selected
+    assert "var(--color-background-blue)" in selected
+    assert "var(--color-text-teal)" in selected
 
 
-# US2 — the toggle maps every state to the reference's tokens (research R4).
+# US2 — the toggle maps every state to the design-system tokens (spec 009).
 def test_app_css_toggle_matches_reference_tokens():
     css = _app_css()
     on_track = _css_block(css, ".ax-toggle input:checked + .ax-toggle-track")
-    assert "background:var(--ax-cyan)" in on_track
+    assert "background:var(--color-accent-teal)" in on_track   # on = teal
     on_thumb = _css_block(css, ".ax-toggle input:checked + .ax-toggle-track::after")
-    assert "background:var(--ax-text-primary)" in on_thumb
-    assert "translateX(var(--ax-space-8))" in on_thumb
+    assert "translateX(var(--space-8))" in on_thumb            # thumb slides right
     off_track = _css_block(css, ".ax-toggle-track")
-    assert "background:var(--ax-border-strong)" in off_track
-    off_thumb = _css_block(css, ".ax-toggle-track::after")
-    assert "background:var(--ax-text-low)" in off_thumb
+    assert "background:var(--color-accent-gray)" in off_track  # off = gray
+    thumb = _css_block(css, ".ax-toggle-track::after")
+    assert "background:var(--color-always-white)" in thumb     # white thumb in both states
 
 
 # US3 — the responsive form grid and the full-row modifier exist as specified.
+# The 280px minimum is now expressed pixel-free as 17.5rem (FR-022).
 def test_app_css_defines_form_grid():
     css = _app_css()
     grid = _css_block(css, ".ax-grid-form")
     assert "display:grid" in grid
     assert "auto-fill" in grid
-    assert "minmax(" in grid and "280px" in grid      # 280px minimum field width
-    assert "gap:var(--ax-space-10)" in grid
+    assert "minmax(" in grid and "17.5rem" in grid    # 280px minimum field width, rem-expressed
+    assert "gap:var(--space-10)" in grid
     wide = _css_block(css, ".ax-field--wide")
     assert "grid-column:1/-1" in wide
 
@@ -936,22 +961,24 @@ def test_app_css_defines_base_grid_agent():
 
 
 # ── 003 US2: three columns on a wide pane ────────────────
+# Breakpoints are now rem-expressed (1320px → 82.5rem) to stay pixel-free (FR-022).
 def test_app_css_three_column_container_query():
     css = _app_css()
-    block = _container_block(css, "ax-content (min-width: 1320px)")
+    block = _container_block(css, "ax-content (min-width: 82.5rem)")
     assert 'grid-template-areas:"runsjobbox"' in block
     assert "grid-template-columns:minmax(0,1fr)minmax(0,1.4fr)minmax(0,1fr)" in block
 
 
 # ── 003 US3: two columns on a mid-width pane ─────────────
+# 720px → 45rem (FR-022).
 def test_app_css_two_column_container_query():
     css = _app_css()
-    block = _container_block(css, "ax-content (min-width: 720px)")
+    block = _container_block(css, "ax-content (min-width: 45rem)")
     assert 'grid-template-areas:"runsjob""boxjob"' in block
     assert "grid-template-columns:minmax(0,1fr)minmax(0,1fr)" in block
     # The wider query must come later in the file so it wins the cascade.
-    assert css.index("@container ax-content (min-width: 720px)") \
-        < css.index("@container ax-content (min-width: 1320px)")
+    assert css.index("@container ax-content (min-width: 45rem)") \
+        < css.index("@container ax-content (min-width: 82.5rem)")
 
 
 # ── 003 Agent Form Layout: page markup (US1) ─────────────

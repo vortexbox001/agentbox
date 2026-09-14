@@ -1,4 +1,6 @@
 // Agentbox app-shell behaviour, shared by every page.
+// - resolves + persists the Light/Dark/System theme (theme-and-shell contract) and
+//   the collapsed/expanded sidebar state, re-stamping <html> with no full reload
 // - marks the active nav item
 // - a toast API (transient) and a status API (persistent until the next action)
 // - flashStatus(): stash a status in sessionStorage so it shows after a navigation,
@@ -8,6 +10,73 @@
 // - a one-shot Dagster reachability fetch on page load for the sidebar block
 
 const FLASH_KEY = "agentbox.flashStatus";
+const THEME_KEY = "agentbox.theme";       // preference ∈ {light, dark, system}
+const SIDEBAR_KEY = "agentbox.sidebar";   // "collapsed" | "expanded"
+
+// ── Theme (Light / Dark / System) ───────────────────────
+// The pre-paint script in base.html already stamped <html> before first paint;
+// these keep it in sync when the sidebar control or the OS setting changes.
+function readTheme() {
+  try { return localStorage.getItem(THEME_KEY) || "system"; } catch (e) { return "system"; }
+}
+
+function resolveTheme(pref) {
+  if (pref === "dark" || pref === "light") return pref;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function stampTheme(pref) {
+  const root = document.documentElement;
+  if (resolveTheme(pref) === "dark") root.setAttribute("data-theme", "dark");
+  else root.removeAttribute("data-theme");
+}
+
+function initTheme() {
+  // The sidebar theme control is a radiogroup of icon-only buttons (System/Light/
+  // Dark). Reflect the stored preference as aria-checked; a click writes it and
+  // re-stamps <html> with no reload (Acceptance 2).
+  const group = document.querySelector(".ax-theme-control");
+  const buttons = group ? Array.from(group.querySelectorAll("[data-theme-choice]")) : [];
+  const reflect = () => {
+    const pref = readTheme();
+    buttons.forEach((b) => b.setAttribute("aria-checked", b.dataset.themeChoice === pref ? "true" : "false"));
+  };
+  buttons.forEach((b) => {
+    b.addEventListener("click", () => {
+      const next = b.dataset.themeChoice;
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* not persisted */ }
+      stampTheme(next);
+      reflect();
+    });
+  });
+  reflect();
+  // While preference = system, follow the OS live with no reload flash (Acceptance 3).
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const onChange = () => { if (readTheme() === "system") stampTheme("system"); };
+  if (mq.addEventListener) mq.addEventListener("change", onChange);
+  else if (mq.addListener) mq.addListener(onChange);   // older Safari
+}
+
+// ── Sidebar collapse (persisted across navigation/reload) ──
+function initSidebar() {
+  const toggle = document.getElementById("ax-collapse-toggle");
+  if (!toggle) return;
+  const apply = (collapsed) => {
+    const root = document.documentElement;
+    if (collapsed) root.setAttribute("data-sidebar", "collapsed");
+    else root.removeAttribute("data-sidebar");
+    toggle.setAttribute("aria-pressed", collapsed ? "true" : "false");
+    toggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+  };
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(SIDEBAR_KEY) === "collapsed"; } catch (e) { /* default expanded */ }
+  apply(collapsed);
+  toggle.addEventListener("click", () => {
+    collapsed = !collapsed;
+    try { localStorage.setItem(SIDEBAR_KEY, collapsed ? "collapsed" : "expanded"); } catch (e) { /* not persisted */ }
+    apply(collapsed);
+  });
+}
 
 // ── Toasts (transient) ──────────────────────────────────
 export function toast(message, { tone = "info", timeout = 4000 } = {}) {
@@ -189,6 +258,8 @@ function markActiveNav() {
 
 // ── Boot ────────────────────────────────────────────────
 function boot() {
+  initTheme();
+  initSidebar();
   markActiveNav();
   consumeFlash();
   refreshDagsterStatus();   // page load only, per R13

@@ -1,16 +1,14 @@
 {% extends "base.html" %}
+{% import "components/macros.html" as ui %}
 
 {% block actions %}
-  <a class="ax-btn ax-btn--primary" href="/agents/new">
-    <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#plus"></use></svg>
-    <span>New agent</span>
-  </a>
+  {{ ui.button(label="New agent", intent="primary", icon="plus", href="/agents/new") }}
 {% endblock %}
 
 {% block content %}
 {% if agents %}
-  <div class="ax-card">
-    <table class="ax-table">
+  {% call ui.card() %}
+    {% call ui.table() %}
       <thead>
         <tr>
           <th scope="col">Name</th>
@@ -27,47 +25,41 @@
           <td>
             <a href="/agents/{{ stem }}">{{ a.name or stem }}</a>
             {% if a.name_mismatch %}
-              <span class="ax-badge ax-badge--scheduled" title="The name inside the file differs from the filename; it is normalised to &quot;{{ stem }}&quot; on save.">name mismatch</span>
+              {{ ui.badge("name mismatch", intent="scheduled", attrs={"title": "The name inside the file differs from the filename; it is normalised to \"" ~ stem ~ "\" on save."}) }}
             {% endif %}
           </td>
           {% if a.parse_error %}
           <td colspan="2">
-            <span class="ax-badge ax-badge--error">error</span>
+            {{ ui.badge("error", intent="error") }}
             <span class="ax-muted">{{ a.parse_error }}</span>
           </td>
           {% else %}
-          <td>{% if a.harness %}<span class="ax-badge ax-badge--harness">{{ a.harness }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+          <td>{% if a.harness %}{{ ui.badge(a.harness, intent="harness") }}{% else %}<span class="ax-muted">—</span>{% endif %}</td>
           <td>{% if a.model %}<span class="ax-mono">{{ a.model }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
           {% endif %}
           <td>
             {% if a.parse_error %}
               <span class="ax-muted">—</span>
             {% elif a.enabled is false %}
-              <span class="ax-badge ax-badge--disabled">disabled</span>
+              {{ ui.badge("disabled", intent="disabled") }}
             {% else %}
-              <span class="ax-badge ax-badge--enabled">enabled</span>
+              {{ ui.badge("enabled", intent="enabled") }}
             {% endif %}
           </td>
           <td>
-            <a class="ax-btn ax-btn--ghost" href="{{ dagster_url }}{{ a.dagster_path }}" target="_blank" rel="noopener" title="Open this agent's runs in Dagster">
-              <span>runs</span>
-              <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#external"></use></svg>
-            </a>
+            {{ ui.button(label="runs", intent="ghost", right_icon="external", href="" ~ dagster_url ~ a.dagster_path, attrs={"target": "_blank", "rel": "noopener", "title": "Open this agent's runs in Dagster"}) }}
           </td>
         </tr>
         {% endfor %}
       </tbody>
-    </table>
-  </div>
+    {% endcall %}
+  {% endcall %}
 {% else %}
-  <div class="ax-card ax-empty">
+  {% call ui.card(class="ax-empty") %}
     <p>No agents yet. An agent is a YAML definition in <span class="ax-mono">agents/</span> that the orchestrator runs.</p>
     <p>
-      <a class="ax-btn ax-btn--primary" href="/agents/new">
-        <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#plus"></use></svg>
-        <span>Create your first agent</span>
-      </a>
+      {{ ui.button(label="Create your first agent", intent="primary", icon="plus", href="/agents/new") }}
     </p>
-  </div>
+  {% endcall %}
 {% endif %}
 {% endblock %}

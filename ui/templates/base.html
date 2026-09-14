@@ -1,43 +1,56 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block head_title %}{{ title }} · agentbox{% endblock %}</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/design-system/archon-tokens.css">
+  <script>
+    // Pre-paint theme + sidebar resolution (theme-and-shell contract): stamp the
+    // <html> element before first paint so there is no wrong-theme or wrong-width
+    // flash. Preference ∈ {light, dark, system}; absent → system → follow the OS.
+    (function () {
+      try {
+        var root = document.documentElement;
+        var pref = localStorage.getItem("agentbox.theme") || "system";
+        var dark = pref === "dark" ||
+          (pref !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) root.setAttribute("data-theme", "dark");
+        else root.removeAttribute("data-theme");
+        if (localStorage.getItem("agentbox.sidebar") === "collapsed")
+          root.setAttribute("data-sidebar", "collapsed");
+      } catch (e) { /* storage unavailable: fall back to the default light shell */ }
+    })();
+  </script>
+  <link rel="stylesheet" href="/design-system/tokens/colors.css">
+  <link rel="stylesheet" href="/design-system/tokens/theme.css">
+  <link rel="stylesheet" href="/design-system/tokens/typography.css">
+  <link rel="stylesheet" href="/design-system/tokens/spacing.css">
+  <link rel="stylesheet" href="/design-system/tokens/shadows.css">
+  <link rel="stylesheet" href="/design-system/tokens/animations.css">
+  <link rel="stylesheet" href="/design-system/tokens/base.css">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
   <div class="ax-app">
     <aside class="ax-sidebar">
       <div class="ax-brand">
-        <span class="ax-brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 120 120" fill="none" stroke-linejoin="round">
-            <rect x="26" y="30" width="68" height="60" rx="8" stroke="var(--ax-cyan)" stroke-width="6"/>
-            <g stroke="none">
-              <rect x="35" y="39" width="15" height="15" rx="3" fill="var(--ax-cyan)"/>
-              <rect x="53" y="39" width="15" height="15" rx="3" fill="var(--ax-text-ghost)"/>
-              <rect x="71" y="39" width="15" height="15" rx="3" fill="var(--ax-magenta)"/>
-              <rect x="35" y="57" width="15" height="15" rx="3" fill="var(--ax-text-ghost)"/>
-              <rect x="53" y="57" width="15" height="15" rx="3" fill="var(--ax-green)"/>
-              <rect x="71" y="57" width="15" height="15" rx="3" fill="var(--ax-text-ghost)"/>
-              <rect x="35" y="75" width="15" height="9" rx="3" fill="var(--ax-yellow)"/>
-              <rect x="53" y="75" width="15" height="9" rx="3" fill="var(--ax-text-ghost)"/>
-              <rect x="71" y="75" width="15" height="9" rx="3" fill="var(--ax-cyan)"/>
-            </g>
-          </svg>
-        </span>
-        <span class="ax-brand-name">agentbox</span>
+        <!-- Expanded: the theme-aware 130px horizontal lockup (mark + wordmark in one
+             SVG); the light variant shows on the light ground, the dark variant under
+             [data-theme="dark"] — toggled by CSS on the pre-painted theme attribute so
+             there is no wrong-theme flash. Collapsed (68px): only the standalone mark. -->
+        <img class="ax-brand-mark" src="/design-system/assets/logo.svg" alt="" aria-hidden="true" width="24" height="24">
+        <img class="ax-brand-lockup ax-brand-lockup--light" src="/design-system/assets/logo-light.svg" alt="agentbox">
+        <img class="ax-brand-lockup ax-brand-lockup--dark" src="/design-system/assets/logo-dark.svg" alt="agentbox">
       </div>
       <nav class="ax-nav" aria-label="Primary">
         <a class="ax-nav-item" href="/agents" data-nav="/agents">
           <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#agents"></use></svg>
-          <span>Agents</span>
+          <span class="ax-nav-label">Agents</span>
         </a>
         <a class="ax-nav-item" href="/automation" data-nav="/automation">
-          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#agents"></use></svg>
-          <span>Automation</span>
+          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#automation"></use></svg>
+          <span class="ax-nav-label">Automation</span>
         </a>
       </nav>
       <div class="ax-sidebar-foot">
@@ -49,18 +62,35 @@
           </span>
           <svg class="ax-icon ax-dagster-open" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#external"></use></svg>
         </a>
+        <div class="ax-theme-control" role="radiogroup" aria-label="Theme">
+          <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="system" title="System" aria-label="System theme">
+            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#theme-system"></use></svg>
+          </button>
+          <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="light" title="Light" aria-label="Light theme">
+            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#theme-light"></use></svg>
+          </button>
+          <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="dark" title="Dark" aria-label="Dark theme">
+            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#theme-dark"></use></svg>
+          </button>
+        </div>
+        <button class="ax-btn ax-collapse-toggle" id="ax-collapse-toggle" type="button" aria-label="Collapse sidebar">
+          <svg class="ax-icon ax-collapse-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#collapse"></use></svg>
+          <span class="ax-collapse-label">Collapse</span>
+        </button>
       </div>
     </aside>
 
     <div class="ax-main">
-      <header class="ax-topbar">
-        <div class="ax-topbar-heading">
-          <h1 class="ax-page-title">{% block title %}{{ title }}{% endblock %}</h1>
-          <nav class="ax-breadcrumb" aria-label="Breadcrumb">{% block breadcrumb %}{% endblock %}</nav>
-        </div>
-        <div class="ax-topbar-actions">{% block actions %}{% endblock %}</div>
-      </header>
       <main class="ax-content">
+        {% block page_header %}
+        <header class="ax-page-header">
+          <div class="ax-page-header-heading">
+            <nav class="ax-breadcrumb" aria-label="Breadcrumb">{% block breadcrumb %}{% endblock %}</nav>
+            <h1 class="ax-page-title">{% block title %}{{ title }}{% endblock %}</h1>
+          </div>
+          <div class="ax-page-actions">{% block actions %}{% endblock %}</div>
+        </header>
+        {% endblock %}
         {% block content %}{% endblock %}
       </main>
     </div>

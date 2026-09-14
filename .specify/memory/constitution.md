@@ -1,16 +1,11 @@
 <!--
 Sync Impact Report
-  Version change: 1.0.0 → 1.1.0 (generalised all principles — removed implementation specifics)
+  Version change: 1.2.0 → 1.3.0 (expanded Principle VII: CSS lives in dedicated stylesheets)
   Modified principles:
-    - I. Container Isolation → I. Agent Isolation (broader; no longer names specific networks)
-    - II. Declarative Agent Definitions → II. Configuration over Code (broader)
-    - III. Credential Hygiene → III. Secrets Never in the Open (broader)
-    - IV. Harness Abstraction → IV. Uniform Interface, Diverse Runtimes (broader)
-    - V. Ephemeral Runs, Persistent Outputs → V. Ephemeral Runs, Immutable Outputs (broader)
-    - VI. Documentation Accuracy → VI. Docs Track Reality (broader)
-  Removed sections:
-    - Operational Constraints (implementation-specific details)
-    - Development Workflow (derivable from repo)
+    - VII. One Design System — added the rule that application CSS lives in dedicated
+      stylesheets (no inline `style`/`<style>` in templates), with the design-system
+      reference pages as the sole exception
+  Removed sections: none
   Added sections: none
   Deferred TODOs: none
 -->
@@ -74,6 +69,22 @@ is preferred over manual review alone.
 **Rationale:** The system runs headless and unattended. When docs are wrong, operators
 misconfigure agents and failures surface hours later.
 
+### VII. One Design System
+
+Every user-facing screen MUST be built from the shared design system: styling MUST resolve
+from design-system tokens, and controls MUST be composed from the shared component macros.
+Literal colours, typefaces, and pixel values MUST NOT appear in application styling or
+templates. Application CSS MUST live in dedicated stylesheets: templates MUST NOT carry inline
+`style` attributes or embedded `<style>` blocks. The self-contained design-system reference
+pages (the served specimen gallery and guideline specimens under the design-system directory)
+are the sole exception, because they must render offline as standalone documents. A new
+component MUST land in the design system first and the shared component set second, so a single
+change to a token or a component updates the whole interface.
+
+**Rationale:** AgentBox is meant to feel like a sibling of the tools it lives beside. One
+authoritative design system keeps every screen consistent, makes visual change a single edit,
+and lets both humans and agents build correct UI by reusing the same parts.
+
 ## Governance
 
 This constitution captures the guiding principles for Agentbox's architecture and
@@ -86,4 +97,4 @@ platform targets — live in the README and code, not here.
 - **Compliance** is verified through automated documentation review and human review on
   pull requests.
 
-**Version**: 1.1.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08
+**Version**: 1.3.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-14

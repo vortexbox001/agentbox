@@ -1,0 +1,19 @@
+<!-- @dsCard group="Components" viewport="700x200" name="Table" subtitle="Grid-based data table" -->
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../static/app.css">
+</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
+<!-- Production markup: the shared `table` macro emits `ax-table` with a thead/tbody; status
+     cells use the `badge` macro and counts render in mono (design-system content rules). -->
+<table class="ax-table">
+  <thead>
+    <tr><th scope="col">Agent</th><th scope="col">Status</th><th scope="col">Runs</th><th scope="col">Last run</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>summarizer-v2</td><td><span class="ax-badge ax-badge--enabled">running</span></td><td><span class="ax-mono">124</span></td><td>2m ago</td></tr>
+    <tr><td>code-reviewer</td><td><span class="ax-badge ax-badge--enabled">success</span></td><td><span class="ax-mono">89</span></td><td>1h ago</td></tr>
+    <tr><td>data-cleaner</td><td><span class="ax-badge ax-badge--error">error</span></td><td><span class="ax-mono">45</span></td><td>3h ago</td></tr>
+  </tbody>
+</table>
+</body></html>
