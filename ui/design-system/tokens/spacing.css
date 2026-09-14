@@ -27,6 +27,10 @@
   --radius-pill: 9999px;
   --radius-round: 50%;
 
+  /* ── Border widths ── */
+  --border-width: 1px;         /* default hairline rule */
+  --border-width-thick: 2px;   /* emphasis rule, e.g. full-bleed table header */
+
   /* ── Layout ── */
   --nav-width: 240px; /* @kind spacing */
   --nav-width-collapsed: 68px; /* @kind spacing */
