@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"AgentBoxDesignSystem_463fbd","components":[{"name":"Button","sourcePath":"components/buttons/Button.jsx"},{"name":"Table","sourcePath":"components/data/Table.jsx"},{"name":"Alert","sourcePath":"components/feedback/Alert.jsx"},{"name":"Badge","sourcePath":"components/feedback/Badge.jsx"},{"name":"Spinner","sourcePath":"components/feedback/Spinner.jsx"},{"name":"StatusDot","sourcePath":"components/feedback/StatusDot.jsx"},{"name":"Checkbox","sourcePath":"components/forms/Checkbox.jsx"},{"name":"Select","sourcePath":"components/forms/Select.jsx"},{"name":"TextInput","sourcePath":"components/forms/TextInput.jsx"},{"name":"Toggle","sourcePath":"components/forms/Toggle.jsx"},{"name":"Card","sourcePath":"components/layout/Card.jsx"},{"name":"Dialog","sourcePath":"components/layout/Dialog.jsx"},{"name":"Tabs","sourcePath":"components/navigation/Tabs.jsx"},{"name":"Tab","sourcePath":"components/navigation/Tabs.jsx"}],"sourceHashes":{"components/buttons/Button.jsx":"e5c09169e13c","components/data/Table.jsx":"f5b5964eee3c","components/feedback/Alert.jsx":"a8e9b189d966","components/feedback/Badge.jsx":"dcd2e315e7ee","components/feedback/Spinner.jsx":"ec7ee75319fc","components/feedback/StatusDot.jsx":"a238cf172490","components/forms/Checkbox.jsx":"1b36a86a1d79","components/forms/Select.jsx":"9344fce9702f","components/forms/TextInput.jsx":"a31075e0a82c","components/forms/Toggle.jsx":"9073dbbfcfd8","components/layout/Card.jsx":"d9a3d477352c","components/layout/Dialog.jsx":"3f642a39861e","components/navigation/Tabs.jsx":"6acb218ddf74","ui_kits/agentbox-app/AgentsPage.jsx":"2e0d56ec6305","ui_kits/agentbox-app/Sidebar.jsx":"78846490a03d"},"inlinedExternals":[],"unexposedExports":[]} */
+/* @ds-bundle: {"format":4,"namespace":"AgentBoxDesignSystem_463fbd","components":[{"name":"Button","sourcePath":"components/buttons/Button.jsx"},{"name":"Table","sourcePath":"components/data/Table.jsx"},{"name":"Alert","sourcePath":"components/feedback/Alert.jsx"},{"name":"Badge","sourcePath":"components/feedback/Badge.jsx"},{"name":"RunStatusTag","sourcePath":"components/feedback/RunStatusTag.jsx"},{"name":"SchedulePill","sourcePath":"components/feedback/SchedulePill.jsx"},{"name":"Spinner","sourcePath":"components/feedback/Spinner.jsx"},{"name":"StatusDot","sourcePath":"components/feedback/StatusDot.jsx"},{"name":"Checkbox","sourcePath":"components/forms/Checkbox.jsx"},{"name":"Select","sourcePath":"components/forms/Select.jsx"},{"name":"TextInput","sourcePath":"components/forms/TextInput.jsx"},{"name":"Toggle","sourcePath":"components/forms/Toggle.jsx"},{"name":"Card","sourcePath":"components/layout/Card.jsx"},{"name":"Dialog","sourcePath":"components/layout/Dialog.jsx"},{"name":"Tabs","sourcePath":"components/navigation/Tabs.jsx"},{"name":"Tab","sourcePath":"components/navigation/Tabs.jsx"}],"sourceHashes":{"components/buttons/Button.jsx":"e5c09169e13c","components/data/Table.jsx":"ec89ce49f825","components/feedback/Alert.jsx":"a8e9b189d966","components/feedback/Badge.jsx":"dcd2e315e7ee","components/feedback/RunStatusTag.jsx":"9bbfb16297bc","components/feedback/SchedulePill.jsx":"fd6ce3d3d2d6","components/feedback/Spinner.jsx":"ec7ee75319fc","components/feedback/StatusDot.jsx":"a238cf172490","components/forms/Checkbox.jsx":"1b36a86a1d79","components/forms/Select.jsx":"9344fce9702f","components/forms/TextInput.jsx":"a31075e0a82c","components/forms/Toggle.jsx":"9073dbbfcfd8","components/layout/Card.jsx":"d9a3d477352c","components/layout/Dialog.jsx":"3f642a39861e","components/navigation/Tabs.jsx":"6acb218ddf74","ui_kits/agentbox-app/AgentsPage.jsx":"2e0d56ec6305","ui_kits/agentbox-app/Sidebar.jsx":"047eb1e6870c"},"inlinedExternals":[],"unexposedExports":[]} */
 
 (() => {
 
@@ -139,44 +139,69 @@ function Table({
   columns = [],
   rows = [],
   onRowClick,
+  fullBleed = false,
   style,
   ...rest
 }) {
+  // Two layouts:
+  //  - default (detail page, single object): content inset from the edges, hairline
+  //    header + row rules, no vertical dividers.
+  //  - fullBleed (object-overview / list, the Dagster Runs pattern): horizontal rules
+  //    run edge to edge, a 2px header rule, per-column vertical dividers, and the first
+  //    and last cells inset 24px so cell content still lines up with surrounding copy.
+  const gridCols = columns.map(c => c.width || '1fr').join(' ');
+  const kl = '1px solid var(--color-keyline-default)';
+  const last = columns.length - 1;
   const wrapS = {
     width: '100%',
     overflowX: 'auto',
     ...style
   };
-  const gridCols = columns.map(c => c.width || '1fr').join(' ');
+  const pad = i => {
+    const l = i === 0 ? fullBleed ? 24 : 16 : 16;
+    const r = i === last ? fullBleed ? 24 : 16 : 16;
+    return {
+      l,
+      r
+    };
+  };
+  const divider = i => fullBleed && i !== last ? kl : undefined;
   const headerS = {
     display: 'grid',
     gridTemplateColumns: gridCols,
-    gap: '0',
-    padding: '8px 0',
-    borderBottom: '1px solid var(--color-keyline-default)'
-  };
-  const thS = {
-    font: 'var(--type-label-sm)',
-    textTransform: 'uppercase',
-    letterSpacing: 'var(--tracking-label)',
-    color: 'var(--color-text-lighter)',
-    padding: '0 8px'
+    borderBottom: fullBleed ? '2px solid var(--color-border-default)' : kl
   };
   const rowS = {
     display: 'grid',
     gridTemplateColumns: gridCols,
-    gap: '0',
-    padding: '12px 0',
-    borderBottom: '1px solid var(--color-keyline-default)',
+    borderBottom: kl,
     cursor: onRowClick ? 'pointer' : 'default',
     transition: 'background 100ms'
   };
-  const cellS = {
-    font: 'var(--type-body-md)',
-    color: 'var(--color-text-default)',
-    padding: '0 8px',
-    display: 'flex',
-    alignItems: 'center'
+  const thS = i => {
+    const p = pad(i);
+    return {
+      font: 'var(--type-label-sm)',
+      textTransform: 'uppercase',
+      letterSpacing: 'var(--tracking-label)',
+      color: 'var(--color-text-lighter)',
+      display: 'flex',
+      alignItems: 'center',
+      padding: '8px ' + p.r + 'px 8px ' + p.l + 'px',
+      borderRight: divider(i)
+    };
+  };
+  const cellS = i => {
+    const p = pad(i);
+    return {
+      font: 'var(--type-body-md)',
+      color: 'var(--color-text-default)',
+      display: 'flex',
+      alignItems: 'center',
+      minWidth: 0,
+      padding: '12px ' + p.r + 'px 12px ' + p.l + 'px',
+      borderRight: divider(i)
+    };
   };
   return React.createElement('div', {
     style: wrapS,
@@ -185,14 +210,14 @@ function Table({
     style: headerS
   }, columns.map((c, i) => React.createElement('div', {
     key: i,
-    style: thS
+    style: thS(i)
   }, c.label))), rows.map((row, ri) => React.createElement('div', {
     key: ri,
     style: rowS,
     onClick: () => onRowClick && onRowClick(row, ri)
   }, columns.map((c, ci) => React.createElement('div', {
     key: ci,
-    style: cellS
+    style: cellS(ci)
   }, c.render ? c.render(row, ri) : row[c.key])))));
 }
 Object.assign(__ds_scope, { Table });
@@ -333,6 +358,168 @@ function Badge({
 }
 Object.assign(__ds_scope, { Badge });
 })(); } catch (e) { __ds_ns.__errors.push({ path: "components/feedback/Badge.jsx", error: String((e && e.message) || e) }); }
+
+// components/feedback/RunStatusTag.jsx
+try { (() => {
+function RunStatusTag({
+  status = 'success',
+  label,
+  style,
+  ...rest
+}) {
+  const map = {
+    success: {
+      bg: 'var(--color-background-green)',
+      dot: 'var(--color-accent-green)'
+    },
+    failure: {
+      bg: 'var(--color-background-red)',
+      dot: 'var(--color-accent-red)'
+    },
+    error: {
+      bg: 'var(--color-background-red)',
+      dot: 'var(--color-accent-red)'
+    },
+    started: {
+      bg: 'var(--color-background-gray)',
+      dot: 'var(--color-text-light)'
+    },
+    running: {
+      bg: 'var(--color-background-gray)',
+      dot: 'var(--color-text-light)'
+    },
+    queued: {
+      bg: 'var(--color-background-gray)',
+      dot: 'var(--color-text-lighter)'
+    },
+    canceled: {
+      bg: 'var(--color-background-yellow)',
+      dot: 'var(--color-accent-yellow)'
+    }
+  };
+  const c = map[status] || map.success;
+  const s = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '3px 9px',
+    borderRadius: '8px',
+    background: c.bg,
+    whiteSpace: 'nowrap',
+    ...style
+  };
+  return React.createElement('span', {
+    style: s,
+    ...rest
+  }, React.createElement('span', {
+    style: {
+      width: '7px',
+      height: '7px',
+      borderRadius: '50%',
+      background: c.dot,
+      flexShrink: 0
+    }
+  }), React.createElement('span', {
+    style: {
+      font: 'var(--type-body-sm)',
+      color: 'var(--color-text-default)',
+      fontWeight: 500
+    }
+  }, label || status));
+}
+Object.assign(__ds_scope, { RunStatusTag });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/feedback/RunStatusTag.jsx", error: String((e && e.message) || e) }); }
+
+// components/feedback/SchedulePill.jsx
+try { (() => {
+function SchedulePill({
+  type = 'schedule',
+  label,
+  on = false,
+  onToggle,
+  style,
+  ...rest
+}) {
+  const stroke = {
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    width: 12,
+    height: 12,
+    viewBox: '0 0 24 24'
+  };
+  const icon = type === 'sensor' ? React.createElement('svg', stroke, React.createElement('circle', {
+    cx: 12,
+    cy: 12,
+    r: 2
+  }), React.createElement('path', {
+    d: 'M7.76 16.24a6 6 0 0 1 0-8.49M16.24 7.76a6 6 0 0 1 0 8.49M4.93 19.07a10 10 0 0 1 0-14.14M19.07 4.93a10 10 0 0 1 0 14.14'
+  })) : React.createElement('svg', stroke, React.createElement('circle', {
+    cx: 12,
+    cy: 12,
+    r: 9
+  }), React.createElement('polyline', {
+    points: '12 7 12 12 15 14'
+  }));
+  const wrap = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '4px 10px',
+    borderRadius: '8px',
+    background: 'var(--color-background-gray)',
+    minWidth: 0,
+    ...style
+  };
+  const track = {
+    width: '22px',
+    height: '13px',
+    borderRadius: '999px',
+    background: on ? 'var(--color-accent-teal)' : 'var(--color-border-default)',
+    position: 'relative',
+    flexShrink: 0,
+    display: 'inline-block',
+    cursor: onToggle ? 'pointer' : 'default'
+  };
+  const knob = {
+    position: 'absolute',
+    top: '2px',
+    [on ? 'right' : 'left']: '2px',
+    width: '9px',
+    height: '9px',
+    borderRadius: '50%',
+    background: '#fff'
+  };
+  return React.createElement('span', {
+    style: wrap,
+    ...rest
+  }, React.createElement('span', {
+    style: {
+      color: 'var(--color-text-lighter)',
+      display: 'inline-flex',
+      flexShrink: 0
+    }
+  }, icon), React.createElement('span', {
+    style: {
+      font: 'var(--type-body-sm)',
+      color: 'var(--color-text-default)',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
+    }
+  }, label), React.createElement('span', {
+    style: track,
+    onClick: onToggle,
+    role: onToggle ? 'switch' : undefined,
+    'aria-checked': on
+  }, React.createElement('span', {
+    style: knob
+  })));
+}
+Object.assign(__ds_scope, { SchedulePill });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/feedback/SchedulePill.jsx", error: String((e && e.message) || e) }); }
 
 // components/feedback/Spinner.jsx
 try { (() => {
@@ -1263,21 +1450,33 @@ function Sidebar({
     style: sidebarS
   }, React.createElement('div', {
     style: logoS
-  }, React.createElement('img', {
+  }, collapsed ? React.createElement('img', {
     src: '../../assets/logo.svg',
+    alt: 'agentbox',
     style: {
       width: '24px',
       height: '24px',
       objectFit: 'contain'
     }
-  }), !collapsed && React.createElement('img', {
-    src: '../../assets/wordmark.svg',
+  }) : React.createElement(React.Fragment, null, React.createElement('img', {
+    className: 'ax-lockup-light',
+    src: '../../assets/logo-light.svg',
     alt: 'agentbox',
     style: {
-      height: '18px',
+      width: '130px',
+      height: 'auto',
       objectFit: 'contain'
     }
-  })), React.createElement('div', {
+  }), React.createElement('img', {
+    className: 'ax-lockup-dark',
+    src: '../../assets/logo-dark.svg',
+    alt: 'agentbox',
+    style: {
+      width: '130px',
+      height: 'auto',
+      objectFit: 'contain'
+    }
+  }))), React.createElement('div', {
     style: {
       flex: 1,
       display: 'flex',
@@ -1325,6 +1524,10 @@ __ds_ns.Table = __ds_scope.Table;
 __ds_ns.Alert = __ds_scope.Alert;
 
 __ds_ns.Badge = __ds_scope.Badge;
+
+__ds_ns.RunStatusTag = __ds_scope.RunStatusTag;
+
+__ds_ns.SchedulePill = __ds_scope.SchedulePill;
 
 __ds_ns.Spinner = __ds_scope.Spinner;
 

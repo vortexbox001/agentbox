@@ -54,8 +54,12 @@ function Sidebar({ activeKey, onNav, collapsed, onToggleCollapse }) {
 
   return React.createElement('div', { style: sidebarS },
     React.createElement('div', { style: logoS },
-      React.createElement('img', { src: '../../assets/logo.svg', style: { width: '24px', height: '24px', objectFit: 'contain' } }),
-      !collapsed && React.createElement('img', { src: '../../assets/wordmark.svg', alt: 'agentbox', style: { height: '18px', objectFit: 'contain' } })
+      collapsed
+        ? React.createElement('img', { src: '../../assets/logo.svg', alt: 'agentbox', style: { width: '24px', height: '24px', objectFit: 'contain' } })
+        : React.createElement(React.Fragment, null,
+            React.createElement('img', { className: 'ax-lockup-light', src: '../../assets/logo-light.svg', alt: 'agentbox', style: { width: '130px', height: 'auto', objectFit: 'contain' } }),
+            React.createElement('img', { className: 'ax-lockup-dark', src: '../../assets/logo-dark.svg', alt: 'agentbox', style: { width: '130px', height: 'auto', objectFit: 'contain' } })
+          )
     ),
     React.createElement('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' } },
       topGroups.map((g, i) => React.createElement(NavGroup, { key: i, items: g.items, collapsed, activeKey, onNav }))

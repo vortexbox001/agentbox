@@ -1,30 +1,42 @@
-<!-- @dsCard group="Components" viewport="700x180" name="Badge, StatusDot, Spinner, Alert" subtitle="Status badges, dots, spinner, and alert banners" -->
-<!DOCTYPE html><html lang="en"><head>
-<meta charset="utf-8">
+<!-- @dsCard group="Components" viewport="700x260" name="Badge, StatusDot, Spinner, Alert, RunStatusTag, SchedulePill" subtitle="Status badges, dots, spinner, alerts, run tags, and schedule pills" -->
+<!DOCTYPE html><html><head>
 <link rel="stylesheet" href="../../styles.css">
-<link rel="stylesheet" href="/static/app.css">
-</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
-<!-- Production markup: `badge`, `status_dot`, `spinner`, `alert` macros → ax- classes,
-     styled by /static/app.css. No CDN, no React. -->
-<div style="display:flex;flex-direction:column;gap:var(--space-6)">
-  <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
-    <span class="ax-badge ax-badge--enabled">enabled</span>
-    <span class="ax-badge ax-badge--error">error</span>
-    <span class="ax-badge ax-badge--queued">queued</span>
-    <span class="ax-badge ax-badge--scheduled">scheduled</span>
-    <span class="ax-badge ax-badge--harness">claude-code</span>
-    <span class="ax-badge ax-badge--disabled">disabled</span>
+<script src="../../_ds_bundle.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+</head><body style="margin:0;padding:12px;background:var(--color-background-default);font-family:var(--font-default)">
+<div id="root"></div>
+<script type="text/babel">
+const {Badge, StatusDot, Spinner, Alert, RunStatusTag, SchedulePill} = window.AgentBoxDesignSystem_463fbd;
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+    <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+      <Badge label="running" intent="running" />
+      <Badge label="success" intent="success" />
+      <Badge label="error" intent="error" />
+      <Badge label="warning" intent="warning" />
+      <Badge label="queued" intent="queued" />
+      <Badge label="scheduled" intent="scheduled" />
+    </div>
+    <div style={{display:'flex',gap:'12px',alignItems:'center'}}>
+      <StatusDot status="running" /><span style={{fontSize:'12px',color:'var(--color-text-light)'}}>Running</span>
+      <StatusDot status="success" /><span style={{fontSize:'12px',color:'var(--color-text-light)'}}>Success</span>
+      <StatusDot status="error" /><span style={{fontSize:'12px',color:'var(--color-text-light)'}}>Error</span>
+      <StatusDot status="idle" /><span style={{fontSize:'12px',color:'var(--color-text-light)'}}>Idle</span>
+      <Spinner size={16} />
+    </div>
+    <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+      <RunStatusTag status="success" label="2 hours ago" />
+      <RunStatusTag status="started" label="running now" />
+      <RunStatusTag status="failure" label="5 days ago" />
+    </div>
+    <div style={{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+      <SchedulePill type="schedule" label="Every day at 7:00 AM" on={true} onToggle={()=>{}} />
+      <SchedulePill type="sensor" label="Every Monday at 6:00 AM" on={false} onToggle={()=>{}} />
+    </div>
+    <Alert intent="info" title="Agent deployed">summarizer-v2 is now running on schedule.</Alert>
   </div>
-  <div style="display:flex;gap:var(--space-6);align-items:center;flex-wrap:wrap;font:var(--type-body-sm);color:var(--color-text-light)">
-    <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="running"></span>running</span>
-    <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="success"></span>success</span>
-    <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="error"></span>error</span>
-    <span style="display:inline-flex;align-items:center;gap:var(--space-3)"><span class="ax-status-dot" data-state="idle"></span>idle</span>
-    <span class="ax-spinner" role="status" aria-label="Loading"></span>
-  </div>
-  <div class="ax-alert ax-alert--info" role="alert">
-    <p class="ax-alert-title">Agent deployed</p>
-    <p>summarizer-v2 is now running on schedule.</p>
-  </div>
-</div>
+);
+</script>
 </body></html>

@@ -7,8 +7,8 @@ AgentBox is a self-hosted "runner" that launches AI agents on a schedule. Each a
 This design system was built from the following references:
 
 - **Dagster UI codebase:** [github.com/dagster-io/dagster](https://github.com/dagster-io/dagster) — `js_modules/ui-components/` (color palettes, component CSS, theme tokens) and `js_modules/ui-core/` (app shell, navigation layout)
-- **An earlier in-house design system:** a local dark-theme token set for agent-orchestration UIs, since retired in favour of this Dagster-sibling system
-- **AgentBox logo:** `assets/logo.svg` (standalone mark, used on the collapsed 68px sidebar rail), plus the theme-aware horizontal lockups `assets/logo-light.svg` (for light grounds) and `assets/logo-dark.svg` (for dark grounds) — mark + wordmark in one SVG, shown at `--brand-lockup-width` (130px) on the expanded sidebar and toggled by the resolved theme. (`assets/wordmark.svg` / `assets/wordmark-navy.svg` remain the standalone wordmarks.) Fish school mark in navy, teal, and lime
+- **Existing Archon design system:** A local design-system project containing `archon-tokens.css` and `ARCHON-DESIGN-SYSTEM.md` — the original dark-theme token set for agent orchestration UIs
+- **AgentBox logo:** `assets/logo.svg` (mark), `assets/wordmark.svg` (white wordmark, for dark grounds), `assets/wordmark-navy.svg` (navy wordmark, for light grounds) — fish school mark in navy, teal, and lime
 
 ## Brand Identity
 
@@ -147,16 +147,15 @@ No emoji in the product UI. No custom icon font. Unicode characters are not used
 └─────────┴────────────────────────────┘
 ```
 
-- **Sidebar:** 240px wide (68px collapsed), same surface as the content area (`--color-background-default`) so the two panes share one ground in both themes, vertical flex column
-- **Sidebar border:** `inset -1px 0 0 var(--color-keyline-default)` (right edge shadow, not a CSS border) — the only separator now that the rail shares the content ground
-- **Brand lockup:** `--brand-lockup-width` (130px) — width of the expanded-sidebar horizontal lockup (`logo-light.svg` / `logo-dark.svg`); the collapsed rail shows `logo.svg` instead
+- **Sidebar:** 240px wide (68px collapsed), dark background (`--color-nav-background`), vertical flex column
+- **Sidebar border:** `inset -1px 0 0 var(--color-keyline-default)` (right edge shadow, not a CSS border)
 - **Content area:** `flex: 1`, full height, `overflow-y: auto`
 - **Content padding:** determined by the page, typically 24px
 - **No top bar** — Dagster's current layout uses the left sidebar for all navigation
 
 ### Navigation
 - Nav items: 32px height, 8px border-radius, flex row with icon + label
-- Active item: `--color-background-blue` fill, `--color-text-default` text (white in dark, near-black in light)
+- Active item: `--color-background-blue` fill, white text
 - Hover: `--color-background-lighter` fill
 - Font: 14px, weight 400 (500 when active)
 - Icons: 16×16, stroke currentColor
@@ -174,15 +173,13 @@ No emoji in the product UI. No custom icon font. Unicode characters are not used
 
 ```
 ├── assets/              Logo and visual assets
-│   ├── logo.svg         Standalone mark (collapsed sidebar rail)
-│   ├── logo-light.svg   Horizontal lockup for light grounds (130px, expanded sidebar)
-│   ├── logo-dark.svg    Horizontal lockup for dark grounds (130px, expanded sidebar)
+│   ├── logo.svg
 │   ├── wordmark.svg
 │   └── wordmark-navy.svg
 ├── components/          Reusable React UI primitives
 │   ├── buttons/         Button, IconButton
 │   ├── forms/           TextInput, Select, Checkbox, Toggle
-│   ├── feedback/        Badge, StatusDot, Alert, Spinner
+│   ├── feedback/        Badge, StatusDot, Alert, Spinner, RunStatusTag, SchedulePill
 │   ├── navigation/      Tabs, Breadcrumbs
 │   ├── layout/          Card, Dialog
 │   └── data/            Table
@@ -198,7 +195,6 @@ No emoji in the product UI. No custom icon font. Unicode characters are not used
 ├── ui_kits/             Full-screen product recreations
 │   └── agentbox-app/    Main AgentBox application
 ├── styles.css           Root stylesheet (imports only)
-├── index.html           Served specimen gallery (renders every card from _ds_manifest.json)
 ├── readme.md            This file
 ├── github.md            Source repo association
 ├── SKILL.md             Agent skill manifest
@@ -218,6 +214,8 @@ No emoji in the product UI. No custom icon font. Unicode characters are not used
 | StatusDot | `components/feedback/` | Colored status indicator dot. |
 | Alert | `components/feedback/` | Info/warning/error alert banners. |
 | Spinner | `components/feedback/` | Loading spinner. |
+| RunStatusTag | `components/feedback/` | Run status pill: colored dot + label; neutral gray for started/running. |
+| SchedulePill | `components/feedback/` | Schedule/sensor chip: icon + frequency + inline on/off toggle. |
 | Tabs | `components/navigation/` | Bottom-border tab indicator, matches Dagster. |
 | Card | `components/layout/` | Content container with border, no shadow. |
 | Dialog | `components/layout/` | Modal dialog with backdrop blur. |

@@ -1,23 +1,34 @@
-repo: dagster-io/dagster
-branch: master
-path: js_modules
+# GitHub source
+
+repo: leeclemmer/agentbox
+branch: 009-design-system-migration
+path: ui/design-system
+
+This project (AgentBox Design System) is associated with the AgentBox repository. On the `009-design-system-migration` branch, `ui/design-system/` contains this AgentBox design system (tokens, components, guidelines cards, and the agentbox-app UI kit) — it mirrors this project's structure.
+
+Source URL: https://github.com/leeclemmer/agentbox/tree/009-design-system-migration/ui/design-system
 
 ## Last sync
-date: 2026-09-13T02:16:11Z
+
+date: 2026-09-14T04:15:46Z
+commit: 1070223c4b94 (branch tip; treat as tree ref)
 
 ### Updated in this project
-- Imported Dagster color palettes (CoreColorStyles.css, TranslucentColorStyles.css, DataVizColorStyles.css)
-- Imported Dagster theme mapping (GlobalThemeStyle.css — light/dark semantic token structure)
-- Imported Dagster navigation layout (AppContainer.module.css, MainNavigation.module.css — 240px/68px sidebar)
-- Imported Dagster component patterns (Button.module.css, Tabs.module.css, Page.module.css)
+- Checked upstream: branch tip unchanged at 1070223c4b94 — no new commits since association, nothing to pull.
+- Pulled the two files the project was missing vs the repo: root `index.html` (specimen gallery) and `assets/logo-dark.svg` / `assets/logo-light.svg`.
+- Added `--brand-lockup-width` token (missing upstream) so the gallery header lockup renders.
+- Project remains AHEAD of the branch (not pushed upstream): RunStatusTag + SchedulePill components, Table `fullBleed` rename (repo still has old `bordered`), logo/wordmark updates. Left local files as-is to avoid regressing this work.
 
 ## Screen map
-| Project file | Repo source |
-|---|---|
-| tokens/colors.css | js_modules/ui-components/src/palettes/CoreColorStyles.css, TranslucentColorStyles.css |
-| tokens/theme.css | js_modules/ui-components/src/theme/GlobalThemeStyle.css |
-| tokens/typography.css | js_modules/ui-components/src/fonts/Fonts.css |
-| components/buttons/Button.jsx | js_modules/ui-components/src/components/Button.tsx, css/Button.module.css |
-| components/navigation/Tabs.jsx | js_modules/ui-components/src/components/Tabs.tsx, css/Tabs.module.css |
-| ui_kits/agentbox-app/Sidebar.jsx | js_modules/ui-core/src/app/navigation/AppContainer.tsx, MainNavigation, css/*.module.css |
-| ui_kits/agentbox-app/index.html | js_modules/ui-core/src/app/AppLayout.tsx |
+
+| Project screen / file | Repo source files |
+| --- | --- |
+| tokens/*.css | ui/design-system/tokens/*.css |
+| components/**/*.jsx | ui/design-system/components/**/*.jsx |
+| guidelines/*.html | ui/design-system/guidelines/*.html |
+| ui_kits/agentbox-app/* | ui/design-system/ui_kits/agentbox-app/* |
+| index.html | ui/design-system/index.html |
+
+## Sync history
+
+- 2026-09-14T04:07:12Z — initial association to `main` (ui/design-system held the upstream "Archon" design system).

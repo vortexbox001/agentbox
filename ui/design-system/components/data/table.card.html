@@ -1,19 +1,33 @@
-<!-- @dsCard group="Components" viewport="700x200" name="Table" subtitle="Grid-based data table" -->
-<!DOCTYPE html><html lang="en"><head>
-<meta charset="utf-8">
+<!-- @dsCard group="Components" viewport="700x420" name="Table" subtitle="Detail (inset) and full-bleed (edge-to-edge) data tables" -->
+<!DOCTYPE html><html><head>
 <link rel="stylesheet" href="../../styles.css">
-<link rel="stylesheet" href="/static/app.css">
-</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
-<!-- Production markup: the shared `table` macro emits `ax-table` with a thead/tbody; status
-     cells use the `badge` macro and counts render in mono (design-system content rules). -->
-<table class="ax-table">
-  <thead>
-    <tr><th scope="col">Agent</th><th scope="col">Status</th><th scope="col">Runs</th><th scope="col">Last run</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>summarizer-v2</td><td><span class="ax-badge ax-badge--enabled">running</span></td><td><span class="ax-mono">124</span></td><td>2m ago</td></tr>
-    <tr><td>code-reviewer</td><td><span class="ax-badge ax-badge--enabled">success</span></td><td><span class="ax-mono">89</span></td><td>1h ago</td></tr>
-    <tr><td>data-cleaner</td><td><span class="ax-badge ax-badge--error">error</span></td><td><span class="ax-mono">45</span></td><td>3h ago</td></tr>
-  </tbody>
-</table>
+<script src="../../_ds_bundle.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+</head><body style="margin:0;padding:12px;background:var(--color-background-default);font-family:var(--font-default)">
+<div id="root"></div>
+<script type="text/babel">
+const {Table} = window.AgentBoxDesignSystem_463fbd;
+const {Badge: B} = window.AgentBoxDesignSystem_463fbd;
+const cols=[
+  {key:'name',label:'Agent',width:'2fr'},
+  {key:'status',label:'Status',width:'1fr',render:r=><B label={r.status} intent={r.status} />},
+  {key:'runs',label:'Runs',width:'80px'},
+  {key:'last',label:'Last Run',width:'1fr'},
+];
+const rows=[
+  {name:'summarizer-v2',status:'running',runs:'124',last:'2m ago'},
+  {name:'code-reviewer',status:'success',runs:'89',last:'1h ago'},
+  {name:'data-cleaner',status:'error',runs:'45',last:'3h ago'},
+];
+const L={fontSize:'11px',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:'var(--color-text-lighter)',margin:'0 0 8px'};
+const FRAME={border:'1px solid var(--color-border-default)',borderRadius:'8px',overflow:'hidden',background:'var(--color-background-default)'};
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <div style={{display:'flex',flexDirection:'column',gap:'20px'}}>
+    <div><p style={L}>Detail page (inset from edges)</p><div style={FRAME}><Table columns={cols} rows={rows} /></div></div>
+    <div><p style={L}>Object overview (full bleed — rules touch the edges)</p><div style={FRAME}><Table columns={cols} rows={rows} fullBleed /></div></div>
+  </div>
+);
+</script>
 </body></html>
