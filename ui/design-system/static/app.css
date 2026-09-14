@@ -32,7 +32,7 @@ html[data-sidebar="collapsed"] .ax-app {
   background: var(--color-background-default);
   border-right: thin solid var(--color-keyline-default);
   padding: var(--space-8) var(--space-6);
-  gap: var(--space-8);
+  gap: var(--space-6);
   overflow: hidden;
   min-height: 0;
 }
@@ -51,7 +51,7 @@ html[data-sidebar="collapsed"] .ax-app {
   align-items: center;
   gap: var(--space-4);
   padding: 0 var(--space-4);
-  min-height: var(--space-12);
+  min-height: var(--brand-height);
 }
 /* Expanded rail shows the horizontal lockup; the standalone mark is for the
    collapsed rail only (revealed in the collapsed block below). */

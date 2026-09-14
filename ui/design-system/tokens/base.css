@@ -5,6 +5,7 @@
 :root {
   color-scheme: var(--browser-color-scheme);
   --brand-lockup-width: 130px;
+  --brand-height: 44px;
 }
 
 body {
