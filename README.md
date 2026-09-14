@@ -2,9 +2,9 @@
 
 Self-hosted runner for scheduled AI agents, built for a Raspberry Pi (arm64, Debian Bookworm).
 
-[Dagster](https://dagster.io) reads agent definitions from `agents/*.yaml` and, on a cron
-schedule or on demand, launches one short-lived Docker container per run. Three kinds of
-agent ("harnesses") are supported:
+[Dagster](https://dagster.io) reads agent definitions from the config root's `agents/*.yaml`
+(see [Layout](#layout)) and, on a cron schedule or on demand, launches one short-lived Docker
+container per run. Three kinds of agent ("harnesses") are supported:
 
 | Harness | What runs | Image | Talks to |
 |---|---|---|---|
@@ -48,20 +48,73 @@ dagster-daemon ──► job agent_<name> ──► docker run --rm agentbox/age
 The "Who is on it" column lists the always-on services. Each agent container additionally joins its
 configured network for the duration of its run.
 
-### Host layout (`/data`)
+## Layout
 
-| Path | Purpose |
+agentbox keeps three **kinds** of file strictly apart, so the product can be updated without
+touching your box's config, your config can live in its own git repo, and your state can be backed
+up as a unit. Every path any service uses is derived from one of **three roots**, each with an
+environment variable and a default:
+
+| Kind | Env var | Default | Access | Holds |
+|---|---|---|---|---|
+| **Product tree** | *(the checkout path)* | this repo | read-only in every service | code and product-owned catalogs — identical on every box |
+| **Instance-configuration root** | `AGENTBOX_CONFIG` | `<checkout>/config` | writable by the UI | this box's agents, prompts, and LiteLLM overlay |
+| **Instance-state root** | `AGENTBOX_DATA` | `/data/agentbox` | writable (runtime user) | runs, outputs, workspaces, credentials, keys — backed up as a unit |
+| **Dagster-storage root** | `DAGSTER_HOME` | `/data/dagster` | orchestrator + daemon only | Dagster's own run DB, compute logs, and PIPES transport — nothing agentbox-owned |
+
+The three vars are read in exactly two places — `orchestrator/paths.py` and `ui/config.py` — and
+every other path is derived from a root; no state or config path is hard-coded elsewhere. Leave all
+three unset and the stack comes up on the defaults above; set any of them to relocate that root to
+another disk (`docker compose` follows them, and `scripts/bootstrap.sh` creates whatever they name).
+
+### Instance-configuration root (`$AGENTBOX_CONFIG`)
+
+This box's configuration — the only tree the management UI writes to. It is **gitignored in the
+product repo** (via `/config/`), so you can `git init` it as its own repository without polluting
+this repo's `git status`. A fresh install seeds it by copying `examples/config/` here.
+
+| Subpath | Holds |
 |---|---|
-| `/data/dagster/` | Dagster state (`DAGSTER_HOME`): run history, compute logs |
-| `/data/dagster/agent-logs/<agent>/<date>/<run-id>.jsonl` | Container stdout for every run: the full Claude Code event stream for `claude-code` runs, a one-line JSON status for `api` runs (empty if the runner failed before printing it; see compute logs) |
-| `/data/outputs/<agent>/` | Files the agents write (mounted as `/output`), named `<YYYY-MM-DD_HH-MM>_<descriptive_name>_<session_id>.md` |
-| `/data/workspaces/<agent>/` | Persistent scratch dir for `claude-code` agents (mounted as `/workspace`) |
-| `/data/credentials/claude/` | Optional `.claude.json` (CLI settings) and, only without `CLAUDE_CODE_OAUTH_TOKEN`, a copied `.credentials.json` |
-| `/data/credentials/codex/` | `CODEX_HOME` for the `codex` harness: `auth.json` from a dedicated ChatGPT login, plus codex config and sessions. Mounted read-write |
+| `agents/` | agent definition YAMLs (no `_template-*.yaml` — those are product samples in `examples/`) |
+| `prompts/` | prompt markdown referenced by agents |
+| `projects/`, `external-assets/` | reserved for their owning features |
+| `settings.yaml` | instance settings |
+| `litellm.overlay.yaml` | this box's LiteLLM providers, key names, and alias→model bindings |
+| `litellm.rendered.yaml` | **generated** config the proxy loads (template + overlay); gitignored within the config repo — see [Models and LiteLLM](#models-and-litellm) |
+
+### Instance-state root (`$AGENTBOX_DATA`)
+
+Everything a run reads or writes. `bootstrap.sh` creates this subtree owned by
+`${AGENTBOX_UID}:${AGENTBOX_GID}` (default `1000:1000`), with `credentials/` and `keys/` locked to
+owner-only (`chmod 700`).
+
+| Subpath | Holds |
+|---|---|
+| `runs/<agent>/<YYYY-MM-DD>/<run-id>.jsonl` | Container stdout for every run: the full Claude Code event stream for `claude-code` runs, a one-line JSON status for `api` runs (empty if the runner failed before printing it; see compute logs) |
+| `outputs/<agent>/` | Files agents write (mounted as `/output`), named `<YYYY-MM-DD_HH-MM>_<descriptive_name>_<session_id>.md`; the default `output_dir` |
+| `workspaces/<agent>/` | Persistent scratch dir for `claude-code`, `pi`, and `codex` agents (mounted as `/workspace`); the default `workspace` |
+| `credentials/claude/` | Optional `.claude.json` (CLI settings) and, only without `CLAUDE_CODE_OAUTH_TOKEN`, a copied `.credentials.json` |
+| `credentials/codex/` | `CODEX_HOME` for the `codex` harness: `auth.json` from a dedicated ChatGPT login, plus codex config and sessions. Mounted read-write |
+| `repo-mirrors/`, `provenance/`, `keys/` | reserved for their owning features (`keys/` is owner-only) |
+
+### Dagster-storage root (`$DAGSTER_HOME`)
+
+Dagster's own `storage/`, `history/` (run DB), and `compute_logs/`, plus the transient `pipes/`
+transport wiped per run. It holds **nothing** agentbox-owned — run transcripts live under
+`$AGENTBOX_DATA/runs/`. A migrated box keeps a `agent-logs -> $AGENTBOX_DATA/runs` compatibility
+symlink here so historical transcript links still resolve.
+
+### Migrating an existing box
+
+`scripts/migrate-layout.py` relocates an old single-root box (`agents/`, `prompts/`, and `/data/*`)
+into the three roots. It is **dry-run by default** — it prints the full plan (moves, in-YAML path
+rewrites, the compatibility symlink, and what it leaves untouched) and changes nothing; add
+`--apply` to perform it. Run it on a copy of the box first. See the fresh-install and migration
+walkthroughs in `specs/010-file-layout-overhaul/quickstart.md`.
 
 ## Setup
 
-1. **Prepare the host** (installs Docker, creates `/data`, adds you to the `docker` group):
+1. **Prepare the host** (installs Docker, creates the three roots, adds you to the `docker` group):
    ```bash
    scripts/bootstrap.sh
    ```
@@ -73,9 +126,19 @@ configured network for the duration of its run.
    ```
    Fill in the secrets and adjust the paths and ports for your host. In particular set
    `AGENTBOX_HOST_REPO` to the absolute path of this checkout on the host. The orchestrator uses
-   it to bind-mount prompt files into agent containers, so a wrong value breaks every run.
+   it to bind-mount prompt files into agent containers, so a wrong value breaks every run. To put a
+   root on another disk, set `AGENTBOX_CONFIG`, `AGENTBOX_DATA`, or `DAGSTER_HOME` here too (see
+   [Layout](#layout)); leave them unset for the defaults.
 
-3. **Build the agent images.** Compose does not build these; do it once and again after editing
+3. **Seed the config root** (fresh install). A new checkout's config root is empty; copy the
+   product samples into it, then edit through the UI or by hand:
+   ```bash
+   cp -r examples/config config          # or into $AGENTBOX_CONFIG if you relocated it
+   ```
+   Skip this if you migrated an existing box with `scripts/migrate-layout.py` (see above), which
+   populates the config root for you.
+
+4. **Build the agent images.** Compose does not build these; do it once and again after editing
    `images/`:
    ```bash
    docker build -t agentbox/agent-python images/agent-python
@@ -84,45 +147,49 @@ configured network for the duration of its run.
    docker build -t agentbox/agent-codex   images/agent-codex
    ```
 
-4. **Provide Claude credentials for the `claude-code` harness.** Run `claude setup-token` on any
+5. **Provide Claude credentials for the `claude-code` harness.** Run `claude setup-token` on any
    machine with a browser, and put the long-lived token it prints into `.env` as
    `CLAUDE_CODE_OAUTH_TOKEN`. The orchestrator forwards it into each agent container by name, so it
    never appears in a command line. Skip this step if you only use `api` agents.
 
    Without the token, the orchestrator falls back to a copied interactive login: copy
-   `~/.claude/.credentials.json` into `/data/credentials/claude/`. This is fragile. The copy holds
-   an access token good for about eight hours, and its refresh token dies as soon as the login it
-   was copied from refreshes itself, after which every run fails with a 401 until you copy again.
+   `~/.claude/.credentials.json` into `$AGENTBOX_DATA/credentials/claude/`. This is fragile. The copy
+   holds an access token good for about eight hours, and its refresh token dies as soon as the login
+   it was copied from refreshes itself, after which every run fails with a 401 until you copy again.
 
-   Either way, `/data/credentials/claude/.claude.json` (copied from `~/.claude/.claude.json`) is
-   mounted if present. It carries CLI settings and onboarding state, not secrets.
+   Either way, `$AGENTBOX_DATA/credentials/claude/.claude.json` (copied from
+   `~/.claude/.claude.json`) is mounted if present. It carries CLI settings and onboarding state,
+   not secrets.
 
-5. **Provide Codex credentials for the `codex` harness.** Log in *from inside the agent image* into a
+6. **Provide Codex credentials for the `codex` harness.** Log in *from inside the agent image* into a
    dedicated directory, so the agents own their login and nothing else ever refreshes its tokens:
    ```bash
-   mkdir -p /data/credentials/codex
-   docker run -it --rm -v /data/credentials/codex:/creds agentbox/agent-codex login --device-auth
+   mkdir -p "$AGENTBOX_DATA"/credentials/codex
+   docker run -it --rm -v "$AGENTBOX_DATA"/credentials/codex:/creds agentbox/agent-codex login --device-auth
    ```
    Open the link it prints on any device, enter the code, and sign in with the ChatGPT account whose
-   plan includes Codex. Verify with `docker run --rm -v /data/credentials/codex:/creds agentbox/agent-codex login status`.
+   plan includes Codex. Verify with `docker run --rm -v "$AGENTBOX_DATA"/credentials/codex:/creds agentbox/agent-codex login status`.
    Codex refreshes the tokens itself during runs and writes them back to that directory, which is
    why it is mounted read-write. Do not copy your interactive `~/.codex/auth.json` there instead:
    the two logins would refresh the same token and invalidate each other, exactly the failure the
    `claude-code` fallback has. Skip this step if you do not use `codex` agents.
 
-6. **Start the stack:**
+7. **Start the stack:**
    ```bash
    docker compose up -d
    ```
-   Open the Dagster UI at `http://<host>:3000`. Each enabled agent appears according to its
+   A one-shot `litellm-generate` step renders `$AGENTBOX_CONFIG/litellm.rendered.yaml` from the
+   product template plus your overlay before the proxy loads it (see
+   [Models and LiteLLM](#models-and-litellm)); a missing provider key fails here, not at first
+   request. Open the Dagster UI at `http://<host>:3000`. Each enabled agent appears according to its
    declared nature — an **asset**, a **job** `agent_<name>`, or both — plus a schedule
    `sched_<name>` or an `autocond_<name>` sensor if its `triggers:` block carries a cron
    (see [Automation](#automation)). New triggers start paused — turn them on from the UI, or run a
    job / materialize an asset by hand.
 
 Rebuild the orchestrator image (`docker compose build`) only when `orchestrator/Dockerfile`
-changes. The `orchestrator/`, `agents/`, and `prompts/` directories are bind-mounted, so code and
-config edits need at most a restart.
+changes. The product tree (read-only) and the config root (`agents/`, `prompts/`) are bind-mounted,
+so code and config edits need at most a restart.
 
 ## Asset, job, or both
 
@@ -220,22 +287,25 @@ agent's `triggers:` block (setting `job: true` for job-mode agents) and removes 
 
 The quickest path is the **management UI** at `http://<host>:8080` (the `ui` service; see
 [The management UI](#the-management-ui)). Click **New agent**, optionally start from a template,
-fill in the schema-driven form, and save. The UI writes `agents/<name>.yaml`, can create the prompt
-file for you, and reloads the Dagster workspace so the new job appears without a manual restart.
-Saves regenerate the file from the schema with the standard section comments and one comment per
-field; any keys the UI does not manage are preserved verbatim in an "unmanaged" block, so a
-hand-added key survives an edit.
+fill in the schema-driven form, and save. The UI writes `<config>/agents/<name>.yaml`, can create the
+prompt file for you, and reloads the Dagster workspace so the new job appears without a manual
+restart. Saves regenerate the file from the schema with the standard section comments and one
+comment per field; any keys the UI does not manage are preserved verbatim in an "unmanaged" block,
+so a hand-added key survives an edit.
 
-To do it by hand instead:
+To do it by hand instead (paths below are under the config root, `$AGENTBOX_CONFIG`):
 
-1. Copy a template: `agents/_template-api.yaml`, `agents/_template-claude-code.yaml`,
-   `agents/_template-pi.yaml`, or `agents/_template-codex.yaml`.
-   `agents/_template-repo-librarian.yaml` is a specialised starting point for a `claude-code` agent
-   that clones and reviews a GitHub repo (see `agents/repo-librarian-agentbox.yaml` for a filled-in
-   copy). Files with `enabled: false` (including the templates) are ignored.
-2. Write the prompt in `prompts/<name>.md`.
-3. Create the output directory (and workspace, for `claude-code`) under `/data`.
-4. Restart Dagster so it re-scans `agents/`:
+1. Copy a template from the product samples in `examples/config/agents/`: `_template-api.yaml`,
+   `_template-claude-code.yaml`, `_template-pi.yaml`, or `_template-codex.yaml` into your config
+   root's `agents/`. `_template-repo-librarian.yaml` is a specialised starting point for a
+   `claude-code` agent that clones and reviews a GitHub repo (see the filled-in
+   `repo-librarian-agentbox.yaml`). Files with `enabled: false` (including the templates) are
+   ignored — and templates now live only in `examples/`, so they never appear as instance agents.
+2. Write the prompt in `<config>/prompts/<name>.md`.
+3. Leave `output_dir` unset to take the default (`$AGENTBOX_DATA/outputs/<name>`), or set it to
+   another path under the data root; `bootstrap.sh` already created the state subtree. (`claude-code`,
+   `pi`, and `codex` agents get a default `workspace` under the data root the same way.)
+4. Restart Dagster so it re-scans the config root's `agents/`:
    ```bash
    docker compose restart dagster-webserver dagster-daemon
    ```
@@ -245,11 +315,11 @@ To do it by hand instead:
 
 The `ui` service is a FastAPI app that renders the agent list and a schema-driven create/edit form,
 served on port 8080. It runs as `${AGENTBOX_UID}:${AGENTBOX_GID}` (see `.env`, default `1000:1000`)
-so files it writes into `agents/` and `prompts/` stay owned by you rather than root. It bind-mounts
-`agents/` and `prompts/` read-write (it edits and creates those) and `litellm/config.yaml`
-read-only (the source of the model aliases the form offers). Every field on the form carries the
-same explanation the YAML comments and this README's key table come from — they all read
-`ui/schema.py`. The form flags env values that look like secrets and asks for confirmation before
+so files it writes into the config root's `agents/` and `prompts/` stay owned by you rather than
+root. It bind-mounts the config root read-write (it edits and creates agents and prompts there) and
+the rendered LiteLLM config (`litellm.rendered.yaml`) read-only (the source of the model aliases the
+form offers). Every field on the form carries the same explanation the YAML comments and this
+README's key table come from — they all read `ui/schema.py`. The form flags env values that look like secrets and asks for confirmation before
 writing them, and never logs env values.
 
 The UI is built on the **AgentBox design system**, which lives in the repo at
@@ -335,8 +405,25 @@ ops:
 
 ## Models and LiteLLM
 
-`litellm/config.yaml` defines the aliases `api` and `pi` agents can request (the management UI
-offers the same list, read from that file):
+The config the proxy loads is **generated**, not hand-edited, from two sources:
+
+- **Template** (product-owned) — `litellm/config.template.yaml` defines only the *alias tiers* that
+  agents and the UI depend on: `cheap` (light/default), `smart` (a step up), `opus` (top tier),
+  `kimi` and `kimi-k3` (coding/flagship, via a custom OpenAI-compatible endpoint). Identical on every
+  box; you should not need to edit it.
+- **Overlay** (instance-owned) — `$AGENTBOX_CONFIG/litellm.overlay.yaml` binds each tier to a
+  concrete model, `api_base`, `api_key` env-var **name** (never a value), and pricing. This is where
+  you choose which model each alias resolves to. Copied from `examples/config/litellm.overlay.yaml`.
+
+`litellm/generate.py` deep-merges the overlay over the template (overlay wins) into
+`$AGENTBOX_CONFIG/litellm.rendered.yaml` — the only config the proxy mounts and loads, and the list
+the management UI reads. It keeps `os.environ/<KEY>` references unexpanded and, **before writing**,
+asserts every referenced key is present in the environment — a missing key fails generation naming
+the key, so the proxy never starts against a broken config. It runs automatically as the
+`litellm-generate` step on `docker compose up`; run it by hand (`python3 litellm/generate.py`) after
+editing the overlay.
+
+The example overlay ships these bindings:
 
 | Alias | Model |
 |---|---|
@@ -355,39 +442,52 @@ bypass LiteLLM entirely.
 Given a Dagster run id:
 
 - **Compute logs** (stdout/stderr, including the stack trace on failure). This is Dagster's default
-  location under `DAGSTER_HOME`; `orchestrator/dagster.yaml` does not override it:
+  location under `$DAGSTER_HOME`; `orchestrator/dagster.yaml` does not override it:
   ```bash
-  cat /data/dagster/storage/<run-id>/compute_logs/*.err
+  cat "$DAGSTER_HOME"/storage/<run-id>/compute_logs/*.err
   ```
 - **Full transcript** for `claude-code` runs, one JSON event per line (`system`, `assistant`, `user`,
   final `result`; for `pi` runs the events are pi's own, ending in `agent_end`; for `codex` runs they are
-  codex's `thread.*`, `turn.*`, and `item.*` events):
+  codex's `thread.*`, `turn.*`, and `item.*` events). Transcripts live under the data root's `runs/`
+  (a migrated box also keeps a `$DAGSTER_HOME/agent-logs` symlink pointing here):
   ```bash
   # whole transcript
-  cat /data/dagster/agent-logs/<agent>/<YYYY-MM-DD>/<run-id>.jsonl
+  cat "$AGENTBOX_DATA"/runs/<agent>/<YYYY-MM-DD>/<run-id>.jsonl
   # just the final event, pretty-printed
-  tail -n 1 /data/dagster/agent-logs/<agent>/<YYYY-MM-DD>/<run-id>.jsonl | python3 -m json.tool
+  tail -n 1 "$AGENTBOX_DATA"/runs/<agent>/<YYYY-MM-DD>/<run-id>.jsonl | python3 -m json.tool
   ```
   The Dagster log itself shows only the final event plus the transcript path.
 - **GraphQL** at `http://<host>:3000/graphql` for status and events, or the run page in the UI.
 
 ## Repository layout
 
+This is the **product tree** — code and product-owned catalogs, identical on every box and mounted
+read-only. Your box's agents and prompts are **not** here; they live under the config root (see
+[Layout](#layout)). The product tree holds no instance config or state.
+
 ```
-agents/          agent definitions (YAML); _template-*.yaml are starting points
-prompts/         prompt files referenced by agents
 images/          agent images: agent-python/ (Dockerfile + runner.py), agent-claude/ (Dockerfile),
-                 agent-pi/ (Dockerfile + entrypoint.sh), agent-codex/ (Dockerfile)
-orchestrator/    Dagster code: factory.py (YAML -> job), definitions.py (discovery), dagster.yaml,
-                 workspace.yaml (code location), Dockerfile (orchestrator image)
-ui/              management UI (FastAPI + Jinja2): main.py (routes), schema.py (the field/harness
+                 agent-pi/ (Dockerfile + entrypoint.sh), agent-codex/ (Dockerfile), lib/ (shared
+                 report/invariants library), tests/
+orchestrator/    Dagster code: paths.py (the single path-resolution point — reads the three roots),
+                 factory.py (YAML -> job), definitions.py (discovery from the config root),
+                 dagster.yaml, workspace.yaml (code location), Dockerfile, tests/
+ui/              management UI (FastAPI + Jinja2): main.py (routes), config.py (the UI's path
+                 resolution point — mirrors orchestrator/paths.py), schema.py (the field/harness
                  model that drives the form, YAML comments, and this README's key table),
-                 agents_store.py / prompts_store.py (read + atomic write), dagster.py (workspace
-                 reload), secret_scan.py (secret heuristic), templates/, static/, tests/,
-                 design-system/ (the AgentBox design system — source of truth in
+                 agents_store.py / prompts_store.py (read + atomic write, under the config root),
+                 dagster.py (workspace reload), secret_scan.py (secret heuristic), templates/,
+                 static/, tests/, design-system/ (the AgentBox design system — source of truth in
                  design-system/readme.md; developer reference served at /design-system)
-litellm/         LiteLLM proxy config (model aliases)
-scripts/         bootstrap.sh — idempotent host setup
+litellm/         LiteLLM alias-tier template (config.template.yaml) + generate.py (renders the
+                 template + instance overlay into the config root's litellm.rendered.yaml), tests/
+examples/        product samples that seed a new box: examples/config/ mirrors the config-root shape
+                 (agents/ with _template-*.yaml, prompts/, projects/, settings.yaml,
+                 litellm.overlay.yaml) — copied to the config root on a fresh install
+scripts/         bootstrap.sh (idempotent host setup — creates the three roots) and
+                 migrate-layout.py (relocate an old single-root box into the three roots)
+config/          the default config root ($AGENTBOX_CONFIG); gitignored — your instance config,
+                 not part of the product. Seeded from examples/config/
 docker-compose.yml
-.env.example     every variable the stack reads; copy to .env
+.env.example     every variable the stack reads, incl. the three roots; copy to .env
 ```

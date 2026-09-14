@@ -157,11 +157,11 @@ here.
 
 **Purpose**: Documentation (Constitution VI / FR-027–029) and end-to-end validation.
 
-- [ ] T037 [P] Add a "Layout" section to `README.md` describing the three-kinds model and both instance trees, and rewrite the repo's file-tree listing to match the real subpaths (FR-027).
-- [ ] T038 [P] Update `AGENTS.md` with contributor guidance stating where each kind of file goes: product code in the product, instance config under the config root, state under the data root, samples under `examples/` (FR-028).
-- [ ] T039 [P] Add `.env.example` documenting `AGENTBOX_CONFIG`, `AGENTBOX_DATA`, `DAGSTER_HOME` (with defaults) plus `AGENTBOX_UID`/`AGENTBOX_GID` (FR-029).
-- [ ] T040 Add a docs test (extend `ui/tests/test_design_system_docs.py` pattern or a new `test_docs_layout.py`) asserting all three root vars are documented and the README layout tree lists the real subpaths (Constitution VI preferred automated verification).
-- [ ] T041 Run the full suites (`orchestrator`, `ui`, `images/tests`, and the new `litellm`/`scripts` tests) and execute the quickstart US1/US2 validation on a box copy; confirm SC-001…SC-009 hold.
+- [X] T037 [P] Add a "Layout" section to `README.md` describing the three-kinds model and both instance trees, and rewrite the repo's file-tree listing to match the real subpaths (FR-027).
+- [X] T038 [P] Update `AGENTS.md` with contributor guidance stating where each kind of file goes: product code in the product, instance config under the config root, state under the data root, samples under `examples/` (FR-028).
+- [X] T039 [P] Add `.env.example` documenting `AGENTBOX_CONFIG`, `AGENTBOX_DATA`, `DAGSTER_HOME` (with defaults) plus `AGENTBOX_UID`/`AGENTBOX_GID` (FR-029).
+- [X] T040 Add a docs test (extend `ui/tests/test_design_system_docs.py` pattern or a new `test_docs_layout.py`) asserting all three root vars are documented and the README layout tree lists the real subpaths (Constitution VI preferred automated verification).
+- [~] T041 Run the full suites (`orchestrator`, `ui`, `images/tests`, and the new `litellm`/`scripts` tests) and execute the quickstart US1/US2 validation on a box copy; confirm SC-001…SC-009 hold. **Automated suites all green** (orchestrator 100, ui 372, images 8, litellm 4, scripts 10); SC-008 also confirmed end-to-end via `litellm/generate.py` in an isolated config root. **Remaining:** the quickstart US1/US2/US3/US4 box-copy walkthroughs (SC-001/003/004/005/007 end-to-end) need Docker + a scratch host — run per `quickstart.md` on box-copy hardware before rollout.
 
 ---
 
