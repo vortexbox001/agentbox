@@ -82,13 +82,13 @@ def test_carry_over_writes_per_kind_and_removes_automation(repo, capsys):
     asset = yaml.safe_load((repo / "agents" / "list-commits-pi-kimi.yaml").read_text())
     assert asset["triggers"] == {"asset_schedule": "20 17 * * *"}
     assert "job" not in asset
-    assert "# agentbox-schema: 5" in (repo / "agents" / "list-commits-pi-kimi.yaml").read_text()
+    assert "# agentbox-schema: 6" in (repo / "agents" / "list-commits-pi-kimi.yaml").read_text()
 
     # Job-mode agent: cron on triggers.job_schedule + job: true, current schema.
     job = yaml.safe_load((repo / "agents" / "categorize-commits.yaml").read_text())
     assert job["triggers"] == {"job_schedule": "30 2 * * *"}
     assert job["job"] is True
-    assert "# agentbox-schema: 5" in (repo / "agents" / "categorize-commits.yaml").read_text()
+    assert "# agentbox-schema: 6" in (repo / "agents" / "categorize-commits.yaml").read_text()
 
     # automation/ is gone; the unknown agent was reported and skipped.
     assert not (repo / "automation").exists()

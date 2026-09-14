@@ -79,6 +79,12 @@ def settings(monkeypatch, tmp_agents, tmp_prompts, tmp_templates, litellm_cfg):
     monkeypatch.setattr(config, "PROMPTS_DIR", str(tmp_prompts))
     monkeypatch.setattr(config, "TEMPLATES_DIR", str(tmp_templates))
     monkeypatch.setattr(config, "LITELLM_RENDERED", str(litellm_cfg))
+    # The path-validation rule (US5, FR-025) resolves the data/product roots from config.
+    # The test corpus uses the generic `/data/...` layout for output_dir/workspace/env_file,
+    # so point the data root at `/data` (blessing those paths) and the product tree at the real
+    # checkout (so a path under the repo is correctly rejected as product-tree-owned).
+    monkeypatch.setattr(config, "DATA_ROOT", "/data")
+    monkeypatch.setattr(config, "PRODUCT_ROOT", str(REPO_ROOT))
     return config
 
 

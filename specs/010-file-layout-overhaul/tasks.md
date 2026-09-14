@@ -101,8 +101,8 @@ here.
 
 **Independent Test**: Set both roots to non-default empty dirs, run an agent, confirm all reads/writes hit the configured paths and the default locations receive zero writes (quickstart US3, SC-005).
 
-- [ ] T023 [US3] Audit both resolution modules and `orchestrator/factory.py` for any residual default-location leakage (e.g. a helper that rebuilds a `/data/...` path instead of deriving from `DATA_ROOT`); route every remaining derived path through `paths.py`/`ui/config.py` (FR-004, R-PR-2).
-- [ ] T024 [P] [US3] Add non-default-root leakage tests to `orchestrator/tests/test_paths.py` and `ui/tests/test_config_paths.py`: with roots set to `/mnt/...` paths, assert every derived path is under the configured root and none resolve to `/data/agentbox` or `<repo>/config` (SC-005, R-PR-2).
+- [X] T023 [US3] Audit both resolution modules and `orchestrator/factory.py` for any residual default-location leakage (e.g. a helper that rebuilds a `/data/...` path instead of deriving from `DATA_ROOT`); route every remaining derived path through `paths.py`/`ui/config.py` (FR-004, R-PR-2).
+- [X] T024 [P] [US3] Add non-default-root leakage tests to `orchestrator/tests/test_paths.py` and `ui/tests/test_config_paths.py`: with roots set to `/mnt/...` paths, assert every derived path is under the configured root and none resolve to `/data/agentbox` or `<repo>/config` (SC-005, R-PR-2).
 
 **Checkpoint**: Roots are genuinely relocatable end to end with no default fallback.
 
@@ -114,8 +114,8 @@ here.
 
 **Independent Test**: Check out a separate git repo at the config path, edit an agent + a prompt through the UI, confirm the edits appear in `config/` and the product repo's `git status` is clean (quickstart US4, SC-007).
 
-- [ ] T025 [US4] Verify/adjust `ui/agents_store.py` and `ui/prompts_store.py` so all reads and writes resolve through `config.AGENTS_DIR`/`config.PROMPTS_DIR` (now under `CONFIG_ROOT`) and no write path can reach the product tree (FR-007).
-- [ ] T026 [P] [US4] Add tests in `ui/tests/test_agents_store.py`/`ui/tests/test_prompts_store.py` (monkeypatching `CONFIG_ROOT` to a tmp dir) asserting a create/edit writes under the config root and touches nothing in the product tree (SC-007).
+- [X] T025 [US4] Verify/adjust `ui/agents_store.py` and `ui/prompts_store.py` so all reads and writes resolve through `config.AGENTS_DIR`/`config.PROMPTS_DIR` (now under `CONFIG_ROOT`) and no write path can reach the product tree (FR-007).
+- [X] T026 [P] [US4] Add tests in `ui/tests/test_agents_store.py`/`ui/tests/test_prompts_store.py` (monkeypatching `CONFIG_ROOT` to a tmp dir) asserting a create/edit writes under the config root and touches nothing in the product tree (SC-007).
 
 **Checkpoint**: UI configuration edits are confined to the config root.
 
@@ -127,10 +127,10 @@ here.
 
 **Independent Test**: Submit an agent whose `output_dir` is under the product tree → rejected naming the field and stating the data-root rule; submit one under the data root / omitted / documented default → accepted (quickstart US5, SC-006).
 
-- [ ] T027 [P] [US5] Add tests to `ui/tests/test_schema.py`: `validate` with `output_dir` under the product tree → error dict names `output_dir` and states the data-root rule (R-PV-1); {omitted, documented default, under data root} for each of `output_dir`/`workspace`/`env_file` → no path error (R-PV-2) — contract path-validation §4.
-- [ ] T028 [US5] Add the path-validation rule to `ui/schema.py:validate` (reading `PRODUCT_ROOT`/`DATA_ROOT` from `ui/config.py`, matching the existing `prompt_exists` injection style): reject values under `PRODUCT_ROOT` or outside `DATA_ROOT` unless equal to a documented default; the message names the field and states the rule (FR-025, contract §1).
-- [ ] T029 [US5] In `ui/schema.py`, make `output_dir` optional with the documented default `$AGENTBOX_DATA/outputs/<name>` (was `required=True`, schema.py:257), bump `SCHEMA_VERSION` 5→6, add `migrate_5_to_6` (identity) to the migrations list, and record the root change in the migration docstring (FR-026, contract §2).
-- [ ] T030 [P] [US5] Add a migration round-trip test to `ui/tests/test_schema.py`: a schema-5 fixture reads as version 6 in memory with unchanged fields and re-stamps to 6 only on save (R-PV-3).
+- [X] T027 [P] [US5] Add tests to `ui/tests/test_schema.py`: `validate` with `output_dir` under the product tree → error dict names `output_dir` and states the data-root rule (R-PV-1); {omitted, documented default, under data root} for each of `output_dir`/`workspace`/`env_file` → no path error (R-PV-2) — contract path-validation §4.
+- [X] T028 [US5] Add the path-validation rule to `ui/schema.py:validate` (reading `PRODUCT_ROOT`/`DATA_ROOT` from `ui/config.py`, matching the existing `prompt_exists` injection style): reject values under `PRODUCT_ROOT` or outside `DATA_ROOT` unless equal to a documented default; the message names the field and states the rule (FR-025, contract §1).
+- [X] T029 [US5] In `ui/schema.py`, make `output_dir` optional with the documented default `$AGENTBOX_DATA/outputs/<name>` (was `required=True`, schema.py:257), bump `SCHEMA_VERSION` 5→6, add `migrate_5_to_6` (identity) to the migrations list, and record the root change in the migration docstring (FR-026, contract §2).
+- [X] T030 [P] [US5] Add a migration round-trip test to `ui/tests/test_schema.py`: a schema-5 fixture reads as version 6 in memory with unchanged fields and re-stamps to 6 only on save (R-PV-3).
 
 **Checkpoint**: Config paths cannot point state at the product tree or outside the data root; schema is at version 6.
 

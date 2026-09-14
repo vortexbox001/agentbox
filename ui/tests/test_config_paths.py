@@ -76,3 +76,24 @@ def test_non_default_roots_have_no_default_leakage(monkeypatch):
         assert "/prod/config" not in d, d
     # config paths land under the configured config root, not the product tree
     assert c.AGENTS_DIR.startswith("/mnt/cfg/")
+
+
+# --- SC-005: roots relocated to any disk → no default fallback (US3, T024) ---
+
+def test_relocated_roots_land_every_derived_path_under_its_root(monkeypatch):
+    # US3 quickstart / SC-005: with both instance roots on a different disk, every derived
+    # UI path is under the configured root and none resolve to a default location.
+    c = reload_config(
+        monkeypatch,
+        AGENTBOX_CONFIG="/mnt/disk2/cfg", AGENTBOX_DATA="/mnt/disk2/state",
+        DAGSTER_HOME="/mnt/disk2/dag", AGENTBOX_PRODUCT_ROOT="/prod",
+    )
+    under_config = [c.AGENTS_DIR, c.PROMPTS_DIR, c.LITELLM_RENDERED]
+    for d in under_config:
+        assert d.startswith("/mnt/disk2/cfg/"), d
+    assert c.DATA_ROOT == "/mnt/disk2/state"
+    # SC-005: no derived config path resolves to a default location or the product tree.
+    for d in under_config:
+        assert not d.startswith("/data/agentbox"), d
+        assert not d.startswith("/data/dagster"), d
+        assert "/prod/config" not in d, d

@@ -96,6 +96,35 @@ def test_non_default_roots_have_no_default_leakage(monkeypatch):
         assert os.path.join(p.PRODUCT_ROOT, "config") not in d, d
 
 
+# --- SC-005: roots relocated to any disk → no default fallback (US3, T024) ---
+
+def test_relocated_roots_land_every_derived_path_under_its_root(monkeypatch):
+    # US3 quickstart / SC-005: with both instance roots on a different disk, every derived
+    # path is under the configured root and none resolve to a default location.
+    p = reload_paths(
+        monkeypatch,
+        AGENTBOX_CONFIG="/mnt/disk2/cfg", AGENTBOX_DATA="/mnt/disk2/state",
+        DAGSTER_HOME="/mnt/disk2/dag",
+    )
+    under_config = [p.AGENTS_DIR, p.AGENTS_GLOB, p.PROMPTS_DIR]
+    under_data = [
+        p.RUNS_ROOT, p.OUTPUTS_ROOT, p.WORKSPACES_ROOT, p.CREDENTIALS_ROOT, p.KEYS_ROOT,
+        p.default_output_dir("x"), p.default_workspace("x"),
+    ]
+    under_dagster = [p.PIPES_ROOT]
+    for d in under_config:
+        assert d.startswith("/mnt/disk2/cfg/"), d
+    for d in under_data:
+        assert d.startswith("/mnt/disk2/state/"), d
+    for d in under_dagster:
+        assert d.startswith("/mnt/disk2/dag/"), d
+    # SC-005: no derived path resolves to a default location, config included.
+    for d in under_config + under_data + under_dagster:
+        assert not d.startswith("/data/agentbox"), d
+        assert not d.startswith("/data/dagster"), d
+        assert os.path.join(p.PRODUCT_ROOT, "config") not in d, d
+
+
 # --- host-path bridge (contract §2, R-PR-4 support) --------------------------
 
 def test_host_path_rewrites_product_tree_only(monkeypatch):

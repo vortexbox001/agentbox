@@ -59,3 +59,19 @@ def test_create_makes_directory_when_missing(settings, tmp_path, monkeypatch):
     assert not fresh.exists()
     ps.create_prompt("first.md", "content")
     assert (fresh / "first.md").is_file()
+
+
+# ── Config edits stay under the config root, never the product tree (US4, SC-007) ──
+def test_create_lands_under_config_root_not_product_tree(settings, tmp_path, monkeypatch):
+    # SC-007: prompt creation writes under config.PROMPTS_DIR (derived from CONFIG_ROOT),
+    # never into the product tree.
+    cfg_root = tmp_path / "config-repo"
+    prompts_dir = cfg_root / "prompts"
+    prompts_dir.mkdir(parents=True)
+    monkeypatch.setattr(settings, "CONFIG_ROOT", str(cfg_root))
+    monkeypatch.setattr(settings, "PROMPTS_DIR", str(prompts_dir))
+
+    name = ps.create_prompt("in-config-repo", "hello world")
+    assert (prompts_dir / name).is_file()
+    # nothing was written under the product tree
+    assert not os.path.exists(os.path.join(settings.PRODUCT_ROOT, "prompts", name))

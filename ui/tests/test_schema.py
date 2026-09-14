@@ -28,7 +28,9 @@ def _base(harness, **over):
     """A minimal valid agent for a harness, overridable per test."""
     a = {
         "name": "an-agent", "enabled": True, "harness": harness,
-        "prompt_file": "p.md", "output_dir": "/data/outputs/an-agent",
+        # under the default data root ($AGENTBOX_DATA=/data/agentbox) so validate() is clean
+        # both with and without the `settings` fixture (which repoints the data root to /data).
+        "prompt_file": "p.md", "output_dir": "/data/agentbox/outputs/an-agent",
         "network": schema.HARNESS_BY_ID[harness]["default_network"],
     }
     if harness == "api":
@@ -166,7 +168,7 @@ def test_partition_field_shape():
 
 def test_public_payload_exposes_produces():
     pub = schema.to_public()
-    assert pub["schema_version"] == 5
+    assert pub["schema_version"] == 6
     assert {"id": "produces", "label": "Produces", "group": "runs"} in pub["sections"]
     by_id = {f["id"]: f for f in pub["fields"]}
     assert by_id["asset"]["pattern"] == schema.ASSET_KEY_RE
@@ -326,15 +328,95 @@ def test_job_schedule_on_non_job_is_rejected():
     assert "job_schedule" in schema.validate(a, prompt_exists=ALWAYS_TRUE)
 
 
+# ── Config-path validation against the roots (US5, contract path-validation §1) ──
+def _paths_settings(monkeypatch):
+    """Pin the product/data roots the path rule reads, independent of the ambient env."""
+    import config
+    monkeypatch.setattr(config, "PRODUCT_ROOT", "/opt/agentbox")
+    monkeypatch.setattr(config, "DATA_ROOT", "/data/agentbox")
+    return config
+
+
+def test_output_dir_under_product_tree_rejected(monkeypatch):
+    # R-PV-1 (SC-006): an output_dir under the product tree is rejected, naming the field
+    # (the error key) and stating the data-root rule.
+    _paths_settings(monkeypatch)
+    a = _base("api", output_dir="/opt/agentbox/outputs/x")
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert "output_dir" in errors
+    assert "$AGENTBOX_DATA" in errors["output_dir"]
+    assert "product tree" in errors["output_dir"]
+
+
+@pytest.mark.parametrize("field", ["output_dir", "workspace", "env_file"])
+def test_field_under_product_tree_rejected(monkeypatch, field):
+    # R-PV-1: each of the three path fields is rejected under the product tree.
+    _paths_settings(monkeypatch)
+    a = _base("claude-code", **{field: "/opt/agentbox/x"})
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert field in errors and "product tree" in errors[field]
+
+
+def test_path_outside_data_root_rejected(monkeypatch):
+    # R-PV-1: an absolute path that is neither under the data root nor a documented default.
+    _paths_settings(monkeypatch)
+    a = _base("api", output_dir="/mnt/elsewhere/x")
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert "output_dir" in errors and "$AGENTBOX_DATA" in errors["output_dir"]
+
+
+@pytest.mark.parametrize("field", ["output_dir", "workspace", "env_file"])
+def test_path_under_data_root_accepted(monkeypatch, field):
+    # R-PV-2: a path under the data root is accepted for each field.
+    _paths_settings(monkeypatch)
+    a = _base("claude-code", **{field: f"/data/agentbox/custom/{field}"})
+    assert field not in schema.validate(a, prompt_exists=ALWAYS_TRUE)
+
+
+@pytest.mark.parametrize("field", ["output_dir", "workspace", "env_file"])
+def test_path_omitted_accepted(monkeypatch, field):
+    # R-PV-2: an omitted path is accepted (the documented default applies).
+    _paths_settings(monkeypatch)
+    a = _base("claude-code")
+    a.pop(field, None)
+    assert field not in schema.validate(a, prompt_exists=ALWAYS_TRUE)
+
+
+def test_documented_default_paths_accepted(monkeypatch):
+    # R-PV-2: the documented defaults ($AGENTBOX_DATA/outputs|workspaces/<name>) are accepted.
+    _paths_settings(monkeypatch)
+    a = _base("claude-code", output_dir="/data/agentbox/outputs/an-agent",
+              workspace="/data/agentbox/workspaces/an-agent")
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert "output_dir" not in errors and "workspace" not in errors
+
+
+def test_output_dir_no_longer_required(monkeypatch):
+    # FR-026: output_dir is optional now (was required=True); an agent omitting it is valid.
+    _paths_settings(monkeypatch)
+    a = _base("api", job=True)
+    a.pop("output_dir", None)
+    assert "output_dir" not in schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert schema.FIELDS_BY_ID["output_dir"].required is False
+
+
 # ── Migrations ──────────────────────────────────────────
-def test_schema_version_is_five():
-    assert schema.SCHEMA_VERSION == 5
+def test_schema_version_is_six():
+    assert schema.SCHEMA_VERSION == 6
 
 
 def test_migrate_4_to_5_is_identity():
     # spec 008: produces.checks is additive, so 4->5 leaves a schema-4 file untouched.
     data = {"name": "x", "harness": "api", "produces": {"asset": "a/b"}}
     assert schema.migrate_4_to_5(dict(data)) == data
+
+
+def test_migrate_5_to_6_is_identity():
+    # spec 010 FR-026: output_dir became optional and roots are env-resolved, but no field is
+    # renamed or moved, so 5->6 leaves a schema-5 file (explicit output_dir included) untouched.
+    data = {"name": "x", "harness": "api", "output_dir": "/data/agentbox/outputs/x",
+            "produces": {"asset": "a/b"}}
+    assert schema.migrate_5_to_6(dict(data)) == data
 
 
 def test_migrate_2_to_3_drops_schedule(settings):
@@ -383,6 +465,31 @@ def test_migrate_1_to_2_is_identity(settings):
 def test_schema_too_new_raises():
     with pytest.raises(schema.SchemaTooNew):
         schema.apply_migrations({}, schema.SCHEMA_VERSION + 1)
+
+
+def test_schema_5_file_reads_as_6_and_restamps_only_on_save(settings):
+    # R-PV-3: a schema-5 file migrates to 6 in memory with unchanged fields (zero migration
+    # noise), keeps its `# agentbox-schema: 5` header until the UI next saves it, and re-stamps
+    # to 6 on that save.
+    import os
+
+    import agents_store as st
+
+    path = os.path.join(settings.AGENTS_DIR, "was-five.yaml")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("# agentbox-schema: 5\nname: was-five\nharness: api\nmodel: cheap\n"
+                "prompt_file: p.md\noutput_dir: /data/outputs/was-five\n"
+                "network: agentnet-isolated\njob: true\n")
+    before = open(path).read()
+
+    info = st.read_agent("was-five")
+    assert info["parse_error"] is None
+    assert info["schema_version"] == 5                        # the file's own stamp is unchanged
+    assert info["agent"]["output_dir"] == "/data/outputs/was-five"  # fields preserved
+    assert open(path).read() == before                        # read never rewrote the file
+
+    st.write_agent("was-five", info["agent"])                 # saving re-stamps to the current version
+    assert "# agentbox-schema: 6" in open(path).read()
 
 
 # ── litellm aliases ─────────────────────────────────────

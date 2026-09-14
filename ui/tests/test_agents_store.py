@@ -425,6 +425,25 @@ def test_read_only_dir_raises_storage_error(settings, tmp_path, monkeypatch):
         os.chmod(ro, 0o700)
 
 
+# ── Config edits stay under the config root, never the product tree (US4, SC-007) ──
+def test_write_lands_under_config_root_not_product_tree(settings, tmp_path, monkeypatch):
+    # SC-007: with the config root on its own path (as when a separate git repo is checked
+    # out there), a create/edit writes under config.AGENTS_DIR — derived from CONFIG_ROOT —
+    # and no write path can reach the product tree.
+    cfg_root = tmp_path / "config-repo"
+    agents_dir = cfg_root / "agents"
+    agents_dir.mkdir(parents=True)
+    monkeypatch.setattr(settings, "CONFIG_ROOT", str(cfg_root))
+    monkeypatch.setattr(settings, "AGENTS_DIR", str(agents_dir))
+
+    path = st.write_agent("in-config-repo", GOLDEN["api"])
+    assert path.startswith(str(cfg_root) + os.sep)
+    assert (agents_dir / "in-config-repo.yaml").is_file()
+    # nothing was written under the product tree
+    assert not path.startswith(settings.PRODUCT_ROOT + os.sep)
+    assert not os.path.exists(os.path.join(settings.PRODUCT_ROOT, "agents", "in-config-repo.yaml"))
+
+
 # ── Path safety on the filename stem (FR-010a, CHK041) ──
 @pytest.mark.parametrize("bad", ["../secret", "..", "a/b", "a\\b", "../../etc/passwd"])
 def test_unsafe_stem_is_never_addressable(settings, bad):
