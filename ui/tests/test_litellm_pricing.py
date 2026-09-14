@@ -7,13 +7,17 @@ but NOT for a custom OpenAI-compatible endpoint (a model carrying its own ``api_
 the Moonshot/Kimi models). Without explicit ``*_cost_per_token`` fields such a model reports
 ``cost_usd=None`` (the original bug). This test fails if a custom-endpoint model is added
 without pricing, so the gap can't ship silently again.
+
+Since the layout overhaul (US6/010) per-model pricing is instance overlay data — the product
+template carries only tier names, so pricing lives in the overlay merged into the rendered
+config. This guard reads the example overlay, the product-shipped source of that pricing.
 """
 from pathlib import Path
 
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CONFIG = REPO_ROOT / "litellm" / "config.yaml"
+CONFIG = REPO_ROOT / "examples" / "config" / "litellm.overlay.yaml"
 
 
 def _model_list():

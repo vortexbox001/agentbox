@@ -35,14 +35,10 @@ PROMPTS_DIR = os.environ.get("PROMPTS_DIR") or os.path.join(CONFIG_ROOT, "prompt
 EXAMPLES_DIR = os.environ.get("EXAMPLES_DIR") or os.path.join(PRODUCT_ROOT, "examples", "config")
 TEMPLATES_DIR = os.environ.get("TEMPLATES_DIR") or os.path.join(EXAMPLES_DIR, "agents")
 
-# The GENERATED LiteLLM config the proxy loads (produced by litellm/generate.py under the
-# config root). Model-alias completion moves to this rendered file in US6 (T033).
+# The GENERATED LiteLLM config the proxy loads (produced by litellm/generate.py from the
+# product template + instance overlay, under the config root). This is the single source the
+# UI reads to discover the model aliases pi/api agents may use (never written by the UI).
 LITELLM_RENDERED = os.environ.get("LITELLM_RENDERED") or os.path.join(CONFIG_ROOT, "litellm.rendered.yaml")
-
-# LiteLLM proxy config, read (never written) to discover the model aliases pi/api agents may use.
-# Repointed off the /opt/agentbox literal onto the product tree; US6/T033 switches consumers to
-# LITELLM_RENDERED above and retires this var.
-LITELLM_CONFIG = os.environ.get("LITELLM_CONFIG") or os.path.join(PRODUCT_ROOT, "litellm", "config.yaml")
 
 # Dagster webserver base URL for server-side calls (the reload mutation, status).
 # This is the in-network hostname; it is reachable container-to-container, NOT from

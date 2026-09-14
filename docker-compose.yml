@@ -1,8 +1,31 @@
 services:
+  # Init step (FR-016): regenerate the rendered LiteLLM config from the product template +
+  # instance overlay before the proxy loads it. Reuses the orchestrator image (python3 + pyyaml);
+  # runs once and exits, so litellm waits on its successful completion. A missing referenced key
+  # fails here with a non-zero exit — the proxy never starts against a half-configured file.
+  litellm-generate:
+    build: ./orchestrator
+    env_file: .env
+    environment:
+      # Config root inside the container; the generator writes litellm.rendered.yaml here.
+      AGENTBOX_CONFIG: /opt/agentbox/config
+    volumes:
+      # Product tree read-only (the template lives at litellm/config.template.yaml).
+      - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}:/opt/agentbox:ro
+      # Config root writable — the overlay is read here and the rendered config is written here.
+      - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config:/opt/agentbox/config
+    command: ["python3", "/opt/agentbox/litellm/generate.py"]
+    restart: "no"
+    networks: [agentnet]
+
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     restart: unless-stopped
     env_file: .env
+    depends_on:
+      # Load only after the rendered config has been (re)generated successfully.
+      litellm-generate:
+        condition: service_completed_successfully
     volumes:
       # Only the GENERATED rendered config (config root), read-only. Produced by
       # litellm/generate.py from the product template + instance overlay (US6).

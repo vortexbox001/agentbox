@@ -14,7 +14,7 @@ import config
 ROOT_VARS = ("AGENTBOX_CONFIG", "AGENTBOX_DATA", "DAGSTER_HOME")
 # UI-only overrides that would otherwise mask the derived defaults under test.
 EXTRA_VARS = ("AGENTBOX_PRODUCT_ROOT", "AGENTS_DIR", "PROMPTS_DIR",
-              "EXAMPLES_DIR", "TEMPLATES_DIR", "LITELLM_RENDERED", "LITELLM_CONFIG")
+              "EXAMPLES_DIR", "TEMPLATES_DIR", "LITELLM_RENDERED")
 
 
 def reload_config(monkeypatch, **env):

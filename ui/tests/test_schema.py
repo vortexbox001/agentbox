@@ -392,7 +392,7 @@ def test_litellm_aliases_reads_config(settings):
 
 
 def test_litellm_aliases_fallback_when_missing(settings, monkeypatch):
-    monkeypatch.setattr(schema.config, "LITELLM_CONFIG", "/nonexistent/config.yaml")
+    monkeypatch.setattr(schema.config, "LITELLM_RENDERED", "/nonexistent/litellm.rendered.yaml")
     assert schema.litellm_aliases() == ["cheap", "smart", "opus", "kimi", "kimi-k3"]
 
 

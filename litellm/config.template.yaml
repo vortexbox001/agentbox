@@ -1,0 +1,23 @@
+# LiteLLM config TEMPLATE (product-owned) — the alias tiers features depend on.
+#
+# This file defines only the *tier names* (model_name aliases) that agents and the UI
+# reference by name. The concrete provider `model`, `api_base`, `api_key`
+# (os.environ/<NAME> reference), and per-token pricing for each tier are instance data:
+# they live in the overlay at `$AGENTBOX_CONFIG/litellm.overlay.yaml` and are merged in by
+# `litellm/generate.py`, which writes `$AGENTBOX_CONFIG/litellm.rendered.yaml` — the sole
+# file the LiteLLM container mounts and loads (FR-014/FR-016, R6).
+#
+# Do NOT put provider names, endpoints, keys, or pricing here — the overlay wins on merge
+# and supplies them per instance. Keep this list to the product-contract tiers only.
+model_list:
+  - model_name: cheap     # light/default tier — the everyday model
+  - model_name: smart     # a step up when a light agent needs it
+  - model_name: opus      # top tier, for jobs where judgment matters more than cost
+  - model_name: kimi      # coding-agent tier (custom OpenAI-compatible endpoint)
+  - model_name: kimi-k3   # flagship (custom OpenAI-compatible endpoint)
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

@@ -412,13 +412,14 @@ def is_valid_cron(value) -> bool:
 
 
 def litellm_aliases() -> list[str]:
-    """Model aliases pi/api agents may use, read from litellm/config.yaml.
+    """Model aliases pi/api agents may use, read from the rendered LiteLLM config.
 
-    Falls back to the hardcoded default set when the file is missing or unreadable
-    so the form still works without the config mounted.
+    Reads ``config.LITELLM_RENDERED`` (produced by ``litellm/generate.py`` from the product
+    template + instance overlay, US6). Falls back to the hardcoded default set when the file
+    is missing or unreadable so the form still works before the config is generated.
     """
     try:
-        with open(config.LITELLM_CONFIG) as f:
+        with open(config.LITELLM_RENDERED) as f:
             data = yaml.safe_load(f) or {}
         names = [m["model_name"] for m in data.get("model_list", []) if m.get("model_name")]
         return names or list(_LITELLM_FALLBACK)
