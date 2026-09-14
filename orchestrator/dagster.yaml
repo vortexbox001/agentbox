@@ -1,3 +1,11 @@
+# Dagster instance config. Dagster roots ALL of its own storage — run/event-log storage,
+# schedule/history, and compute logs — at $DAGSTER_HOME by default (storage/, history/,
+# compute_logs/), so those paths already derive from the Dagster-storage root and are left
+# at their defaults here intentionally. Nothing agentbox-owned resolves under $DAGSTER_HOME:
+# per-run transcripts moved to $AGENTBOX_DATA/runs (FR-010), and the only agentbox artifact
+# that stays is the transient Dagster Pipes messages dir ($DAGSTER_HOME/pipes), which must sit
+# on a host==container bind mount for Docker-outside-of-Docker (FR-010/FR-012, R4).
+
 run_coordinator:
   module: dagster.core.run_coordinator
   class: QueuedRunCoordinator

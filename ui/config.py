@@ -7,14 +7,42 @@ rather than importing the names directly, so tests can monkeypatch them.
 import os
 from pathlib import Path
 
-# Directory of agent YAML files the UI lists, creates, edits, and deletes.
-AGENTS_DIR = os.environ.get("AGENTS_DIR", "/opt/agentbox/agents")
+# --- Root resolution (FR-002, SC-009) ----------------------------------------
+# The UI's single root-resolution point: the three root env vars are read *once* here and
+# every config/state path derives from them — no other UI module reads a root env var or
+# carries a literal /opt/agentbox path. This module mirrors orchestrator/paths.py (the two
+# processes run in separate containers with no shared import); a shared-fixture parity test
+# pins the duplicated constants (root names, default subpaths) in agreement.
 
-# Directory of prompt markdown files the UI lists and creates.
-PROMPTS_DIR = os.environ.get("PROMPTS_DIR", "/opt/agentbox/prompts")
+# Product tree (the repo checkout) — read-only; the anchor the FR-025 "under the product tree"
+# path-validation check needs. ui/config.py -> ui/ -> product root; overridable for tests.
+PRODUCT_ROOT = os.environ.get("AGENTBOX_PRODUCT_ROOT") or str(Path(__file__).resolve().parent.parent)
+
+# The three roots (contracts/path-resolution.md §1), read once at import.
+CONFIG_ROOT = os.environ.get("AGENTBOX_CONFIG") or os.path.join(PRODUCT_ROOT, "config")
+DATA_ROOT = os.environ.get("AGENTBOX_DATA") or "/data/agentbox"
+DAGSTER_ROOT = os.environ.get("DAGSTER_HOME") or "/data/dagster"
+
+# Directory of agent YAML files the UI lists, creates, edits, and deletes — under the config
+# root, so UI edits never touch the product tree (FR-007). Explicit env override wins.
+AGENTS_DIR = os.environ.get("AGENTS_DIR") or os.path.join(CONFIG_ROOT, "agents")
+
+# Directory of prompt markdown files the UI lists and creates — under the config root.
+PROMPTS_DIR = os.environ.get("PROMPTS_DIR") or os.path.join(CONFIG_ROOT, "prompts")
+
+# Product-owned sample trees (read-only). The template picker sources starters from here, not
+# from the instance agents dir (FR-008); TEMPLATES_DIR is the agents subtree of the examples.
+EXAMPLES_DIR = os.environ.get("EXAMPLES_DIR") or os.path.join(PRODUCT_ROOT, "examples", "config")
+TEMPLATES_DIR = os.environ.get("TEMPLATES_DIR") or os.path.join(EXAMPLES_DIR, "agents")
+
+# The GENERATED LiteLLM config the proxy loads (produced by litellm/generate.py under the
+# config root). Model-alias completion moves to this rendered file in US6 (T033).
+LITELLM_RENDERED = os.environ.get("LITELLM_RENDERED") or os.path.join(CONFIG_ROOT, "litellm.rendered.yaml")
 
 # LiteLLM proxy config, read (never written) to discover the model aliases pi/api agents may use.
-LITELLM_CONFIG = os.environ.get("LITELLM_CONFIG", "/opt/agentbox/litellm/config.yaml")
+# Repointed off the /opt/agentbox literal onto the product tree; US6/T033 switches consumers to
+# LITELLM_RENDERED above and retires this var.
+LITELLM_CONFIG = os.environ.get("LITELLM_CONFIG") or os.path.join(PRODUCT_ROOT, "litellm", "config.yaml")
 
 # Dagster webserver base URL for server-side calls (the reload mutation, status).
 # This is the in-network hostname; it is reachable container-to-container, NOT from

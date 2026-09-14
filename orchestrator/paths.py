@@ -1,0 +1,91 @@
+"""The orchestrator's single root-resolution point (FR-002, SC-009).
+
+Every path the orchestrator/daemon touches derives from the three root env vars read
+*once* here at import — no other orchestrator module reads a state/config root env var or
+carries a literal ``/data`` / ``/opt/agentbox`` path. The UI mirrors this module in
+``ui/config.py`` (the two processes run in separate containers with no shared import);
+a shared-fixture parity test pins the duplicated constants in agreement.
+
+Roots (contracts/path-resolution.md §1):
+
+  * ``AGENTBOX_CONFIG`` — instance-configuration root (default ``<product>/config``)
+  * ``AGENTBOX_DATA``   — instance-state root       (default ``/data/agentbox``)
+  * ``DAGSTER_HOME``    — Dagster-storage root      (default ``/data/dagster``)
+
+Access these as module attributes (``paths.RUNS_ROOT``) rather than importing the names
+directly, so tests can monkeypatch / reload them.
+"""
+import os
+from pathlib import Path
+
+# --- Product tree ------------------------------------------------------------
+# The repo checkout, read-only in every service. In the orchestrator container the repo is
+# mounted at /opt/agentbox; on a dev host this is the real checkout. Derived from this file's
+# location (orchestrator/paths.py -> orchestrator/ -> product root) so it is right in both.
+PRODUCT_ROOT = str(Path(__file__).resolve().parent.parent)
+
+# Host path of the product checkout, for Docker-outside-of-Docker `-v` sources: agent
+# containers are launched by the HOST daemon, which resolves bind-mount sources against the
+# host filesystem, so a source under the container's product mount must be rewritten to its
+# host equivalent (see `host_path`). Defaults to PRODUCT_ROOT (correct on a dev host).
+HOST_REPO = os.environ.get("AGENTBOX_HOST_REPO") or PRODUCT_ROOT
+
+# --- The three roots (read once at import) -----------------------------------
+CONFIG_ROOT = os.environ.get("AGENTBOX_CONFIG") or os.path.join(PRODUCT_ROOT, "config")
+DATA_ROOT = os.environ.get("AGENTBOX_DATA") or "/data/agentbox"
+DAGSTER_ROOT = os.environ.get("DAGSTER_HOME") or "/data/dagster"
+
+# --- Instance-configuration subpaths (under CONFIG_ROOT) ---------------------
+AGENTS_DIR = os.path.join(CONFIG_ROOT, "agents")
+AGENTS_GLOB = os.path.join(AGENTS_DIR, "*.yaml")
+PROMPTS_DIR = os.path.join(CONFIG_ROOT, "prompts")
+
+# --- Instance-state subpaths (under DATA_ROOT — FR-010/FR-011) ---------------
+# Per-run records incl. the transcripts the Dagster home used to hold (moved out, FR-010/R3).
+RUNS_ROOT = os.path.join(DATA_ROOT, "runs")
+OUTPUTS_ROOT = os.path.join(DATA_ROOT, "outputs")
+WORKSPACES_ROOT = os.path.join(DATA_ROOT, "workspaces")
+CREDENTIALS_ROOT = os.path.join(DATA_ROOT, "credentials")  # owner-only (700), FR-011
+KEYS_ROOT = os.path.join(DATA_ROOT, "keys")                # owner-only (700), FR-011
+
+# --- Dagster-storage subpaths (under DAGSTER_ROOT) ---------------------------
+# The transient Dagster Pipes messages dir is the ONLY agentbox-owned thing that stays under
+# the Dagster home: agent containers are launched Docker-outside-of-Docker, so the pipes dir
+# MUST sit on a host==container bind mount, which the Dagster home is (FR-010/FR-012, R4).
+PIPES_ROOT = os.path.join(DAGSTER_ROOT, "pipes")
+
+
+def default_output_dir(name: str) -> str:
+    """The documented default ``output_dir`` for an agent — ``$AGENTBOX_DATA/outputs/<name>``."""
+    return os.path.join(OUTPUTS_ROOT, name)
+
+
+def default_workspace(name: str) -> str:
+    """The default ``workspace`` for an agent — ``$AGENTBOX_DATA/workspaces/<name>``."""
+    return os.path.join(WORKSPACES_ROOT, name)
+
+
+def host_path(container_path: str) -> str:
+    """Rewrite a container-visible path under the product tree to its host equivalent.
+
+    Agent containers are launched Docker-outside-of-Docker: the host daemon resolves
+    ``docker run -v`` sources against the HOST filesystem, so a bind source under the
+    orchestrator container's product mount (``PRODUCT_ROOT``, e.g. ``/opt/agentbox``) must be
+    rewritten to ``HOST_REPO`` before it reaches ``docker run``. Paths under the data and
+    Dagster roots are bind-mounted host==container, so they pass through unchanged.
+    """
+    p = os.path.abspath(container_path)
+    if p == PRODUCT_ROOT:
+        return HOST_REPO
+    if p.startswith(PRODUCT_ROOT + os.sep):
+        return HOST_REPO + p[len(PRODUCT_ROOT):]
+    return p
+
+
+# Host-path forms used when composing `docker run -v` sources (contract §2). Config content
+# (e.g. prompt files) may live under the product tree by default, so its bind sources need the
+# host rewrite; data/dagster roots are host==container and rewrite to themselves.
+CONFIG_ROOT_HOST = host_path(CONFIG_ROOT)
+PROMPTS_DIR_HOST = host_path(PROMPTS_DIR)
+DATA_ROOT_HOST = host_path(DATA_ROOT)
+DAGSTER_ROOT_HOST = host_path(DAGSTER_ROOT)

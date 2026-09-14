@@ -16,3 +16,6 @@ build/
 Thumbs.db
 .vscode/
 uploads/
+# Instance-configuration root (FR-006): a config git repo may be checked out here without
+# polluting the product repo. Its generated litellm.rendered.yaml lives inside this tree (R-LL-4).
+/config/

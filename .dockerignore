@@ -11,3 +11,4 @@ specs/
 .claude/
 .specify/
 CLAUDE.local.md
+/config/
