@@ -102,15 +102,64 @@ def test_no_bespoke_save_banner_remains():
         assert "ax-automation-banner" not in text, f"stale save banner in {os.path.basename(path)}"
 
 
-def test_theme_control_is_accessible_icon_buttons():
-    # FR-003 accessibility "move" (finding I2): US2 removes the foot theme radiogroup —
-    # the theme control now lives in the settings modal. This half asserts the sidebar
-    # radiogroup is gone; the modal-dropdown half is added in US3 (T028) once the modal
-    # exists.
+def test_theme_control_is_accessible_icon_buttons(client):
+    # FR-003 accessibility "move" (finding I2): US2 removed the foot theme radiogroup and
+    # US3 (T028) relocates the theme control to the settings modal dropdown. This asserts
+    # both halves of the move.
     base = open(os.path.join(_TEMPLATES, "base.html"), encoding="utf-8").read()
+    # US2 half: the sidebar radiogroup is gone.
     assert "ax-theme-control" not in base, "the foot theme radiogroup must be removed (FR-003)"
     assert 'role="radiogroup"' not in base, "no theme radiogroup remains in the shell (FR-003)"
     assert "data-theme-choice" not in base, "the radiogroup theme-choice buttons must be gone"
+
+    # US3 half: the theme control lives in a labelled settings-modal dropdown with iconed
+    # options (contract shell-and-modal §D/§E, FR-005/007). The modal markup lives in a
+    # <template> in base.html rendered on every page (via the ui.select macro), so this
+    # reads the rendered HTML. settings.js clones the template and enhances the native
+    # select with the shared dropdown, so at runtime the panel is an accessible
+    # role="listbox" of role="option" rows (that mechanism lives in dropdown.js, below).
+    html = client.get("/agents").text  # any page renders the shell (base.html) + the modal
+    modal = re.search(r'<template id="ax-settings-modal">(.*?)</template>', html, re.DOTALL)
+    assert modal, "the settings modal template must render into the shell (#ax-settings-modal)"
+    mtext = modal.group(1)
+    assert 'role="dialog"' in mtext and 'aria-modal="true"' in mtext, \
+        "the settings modal must be a role=dialog / aria-modal panel (FR-005)"
+    assert 'aria-labelledby="ax-settings-title"' in mtext and ">User settings<" in mtext, \
+        "the settings modal must be labelled 'User settings' (FR-005)"
+    # A labelled theme control (the select the shared dropdown enhances).
+    assert re.search(r'<label for="ax-theme-select">\s*Theme\s*</label>', mtext), \
+        "the Theme row must carry a <label for> tying it to the theme control (FR-007)"
+    theme_select = re.search(r'<select\b[^>]*id="ax-theme-select"[^>]*>', mtext)
+    assert theme_select and "ax-select" in theme_select.group(0), \
+        "the theme control must be an ax-select the shared dropdown enhances (research R5)"
+    # Iconed options: Light / Dark / Use system setting, each with a lead icon; no indigo.
+    for icon in ("theme-light", "theme-dark", "theme-system"):
+        assert f'data-icon="{icon}"' in mtext, f"theme option missing its lead icon {icon} (FR-007)"
+    assert "Use system setting" in mtext, "the 'Use system setting' option must be present"
+    assert "indigo" not in mtext.lower() and "Dagster Indigo" not in mtext, \
+        "the mock's fourth 'Dagster Indigo' theme option must be dropped (contract §C)"
+
+    # The accessible listbox roles come from the shared dropdown (one keyboard model).
+    dd = open(os.path.join(_STATIC, "dropdown.js"), encoding="utf-8").read()
+    assert '"listbox"' in dd and '"option"' in dd, \
+        "dropdown.js must build the role=listbox/role=option accessible control"
+    settings = open(os.path.join(_STATIC, "settings.js"), encoding="utf-8").read()
+    assert "enhanceSelect" in settings, \
+        "settings.js must enhance the theme select with the shared dropdown (FR-007, R5)"
+
+
+def test_settings_theme_persists_and_stamps_html():
+    # SC-003 static coverage (finding G1): settings.js persists the theme preference to
+    # localStorage["agentbox.theme"] and applies it by stamping/clearing data-theme on the
+    # <html> element (FR-008/009). The full apply-without-reload / survives-reload / OS-flip
+    # behaviour is the manual US3 quickstart check (browser-only).
+    settings = open(os.path.join(_STATIC, "settings.js"), encoding="utf-8").read()
+    assert '"agentbox.theme"' in settings, "settings.js must use the agentbox.theme localStorage key"
+    assert "localStorage.setItem" in settings, "settings.js must persist the theme preference"
+    assert re.search(r"localStorage\.getItem", settings), "settings.js must read the stored theme"
+    assert 'setAttribute("data-theme"' in settings, "settings.js must stamp data-theme on <html>"
+    assert 'removeAttribute("data-theme")' in settings, "settings.js must clear data-theme for light"
+    assert "documentElement" in settings, "settings.js must apply the theme to <html>"
 
 
 def test_shell_foot_has_dagster_keyline_and_links():
