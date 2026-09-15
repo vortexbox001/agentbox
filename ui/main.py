@@ -292,6 +292,26 @@ async def _api_agents_activity():
     return JSONResponse(await dagster.activity(listing["agents"]))
 
 
+@app.post("/api/schedules/toggle")
+async def _api_schedules_toggle(request: Request):
+    # Flip one schedule/sensor from the list. Body: {name, kind, running}. Always 200 —
+    # the outcome (ok/running/message) is data, mirroring /api/dagster/reload (contract §B).
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "running": None, "message": "invalid request body"})
+    name = str(body.get("name") or "")
+    kind = str(body.get("kind") or "")
+    if not name or kind not in ("schedule", "sensor"):
+        return JSONResponse({"ok": False, "running": None, "message": "name and kind are required"})
+    outcome = await dagster.set_instigation(kind, name, bool(body.get("running")))
+    logger.info("event=schedule_toggled name=%s kind=%s running=%s ok=%s",
+                name, kind, bool(body.get("running")), outcome.get("ok"))
+    return JSONResponse(outcome)
+
+
 def _normalise_prompt_filename(new_prompt: dict | None) -> str | None:
     """The .md filename a new_prompt block will produce, or None when absent."""
     if not new_prompt:

@@ -181,6 +181,47 @@ def test_agents_activity_degrades_to_unreachable(client, dagster_stub):
     assert resp.json() == {"reachable": False, "agents": {}}
 
 
+# ── Schedule toggle endpoint (spec 011 US4, contract dagster-activity §B) ──
+def test_schedule_toggle_success_returns_new_state(client, dagster_stub):
+    # A successful flip returns the new running state, always HTTP 200, and forwards
+    # {name, kind, running} to set_instigation verbatim.
+    dagster_stub.set_instigation_result = {"ok": True, "running": True, "message": ""}
+    resp = client.post("/api/schedules/toggle",
+                       json={"name": "sched_hello_example", "kind": "schedule", "running": True})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "running": True, "message": ""}
+    assert dagster_stub.set_instigation_calls == [
+        {"kind": "schedule", "name": "sched_hello_example", "running": True}
+    ]
+
+
+def test_schedule_toggle_sensor_kind_forwarded(client, dagster_stub):
+    dagster_stub.set_instigation_result = {"ok": True, "running": False, "message": ""}
+    resp = client.post("/api/schedules/toggle",
+                       json={"name": "autocond_hello_example", "kind": "sensor", "running": False})
+    assert resp.status_code == 200
+    assert resp.json()["running"] is False
+    assert dagster_stub.set_instigation_calls[0]["kind"] == "sensor"
+
+
+def test_schedule_toggle_reports_degradation(client, dagster_stub):
+    # An errored/unauthorised mutation is data, not an error: still 200, ok:false signal.
+    dagster_stub.set_instigation_result = {"ok": False, "running": None, "message": "Turn on from Dagster"}
+    resp = client.post("/api/schedules/toggle",
+                       json={"name": "sched_hello_example", "kind": "schedule", "running": True})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": False, "running": None, "message": "Turn on from Dagster"}
+
+
+def test_schedule_toggle_rejects_bad_kind(client, dagster_stub):
+    # A missing/invalid kind never reaches Dagster; returns the ok:false data shape at 200.
+    resp = client.post("/api/schedules/toggle",
+                       json={"name": "sched_hello_example", "kind": "bogus", "running": True})
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is False
+    assert dagster_stub.set_instigation_calls == []
+
+
 # ── No navigation link to the design system (R13) ───────
 def test_base_page_has_no_design_system_nav_link(client):
     html = client.get("/agents").text

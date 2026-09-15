@@ -172,6 +172,49 @@ function fillChecks(row, checks) {
   cell.innerHTML = `<div class="ax-check-grid">${cells}</div>`;
 }
 
+// Toggle kind is derived from the store's canonical cron type (contract §0):
+// job_schedule → schedule, asset_schedule → sensor.
+function kindFromType(type) {
+  return type === "asset_schedule" ? "sensor" : "schedule";
+}
+
+// Flip one schedule/sensor: POST {name, kind, running}, then reflect the returned state.
+// On failure, revert to the prior state and surface the message (contract §B/§C, FR-021).
+function bindToggle(input, pill) {
+  if (input.dataset.bound === "1") return;
+  input.dataset.bound = "1";
+  input.addEventListener("change", async () => {
+    const name = pill.dataset.dagsterName || input.name;
+    const kind = kindFromType(pill.dataset.type);
+    const running = input.checked;
+    input.disabled = true;
+    let out;
+    try {
+      const resp = await fetch("/api/schedules/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, kind, running }),
+      });
+      out = await resp.json();
+    } catch (e) {
+      out = { ok: false, running: null, message: "Dagster unreachable" };
+    }
+    if (out && out.ok) {
+      input.checked = out.running === true;
+      input.disabled = false;
+      pill.removeAttribute("title");
+    } else {
+      input.checked = !running;                 // revert; state change did not take
+      input.disabled = false;
+      const msg = (out && out.message) || "Schedule toggle failed";
+      pill.setAttribute("title", msg);
+      if (window.agentbox && window.agentbox.showStatus) {
+        window.agentbox.showStatus({ message: msg, ok: false });
+      }
+    }
+  });
+}
+
 function fillToggles(row, schedules, reachable) {
   const rowDisabled = row.dataset.enabled === "false";
   row.querySelectorAll(".ax-schedule-pill").forEach((pill) => {
@@ -192,6 +235,7 @@ function fillToggles(row, schedules, reachable) {
       input.disabled = false;
       input.checked = sched.running === true;
       pill.removeAttribute("title");
+      bindToggle(input, pill);                   // enabled: wire the write endpoint
     }
   });
 }

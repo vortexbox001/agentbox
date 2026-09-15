@@ -271,14 +271,15 @@ Crons run in the box's timezone — the `TZ` set in `.env` (e.g. `America/New_Yo
 UTC if unset — so `7 17 * * *` fires at 17:07 local, the way ordinary cron does. Set `TZ=UTC` to
 schedule in UTC. This applies to both job schedules and asset automation conditions.
 
-New triggers start **paused** — turn them on from the Dagster UI. The `sched_<name>` /
-`autocond_<name>` names are stable, so Dagster preserves each trigger's on/off state across a
-reload.
+New triggers start **paused** — turn them on from the management UI's agents list (flip the
+schedule/sensor pill in the **Schedules / Sensors** column) or from the Dagster UI. The
+`sched_<name>` / `autocond_<name>` names are stable, so Dagster preserves each trigger's on/off
+state across a reload.
 
-Edit triggers from the management UI's **Automation** view — it shows each agent with a row per
-kind (asset, job, or both grouped together), each switchable on-demand ↔ cron, and writes the
-change onto the agent's own `triggers:` block, then reloads Dagster. If you are upgrading from a
-version that kept triggers in a standalone `automation/` directory, run the one-off
+Edit the cron itself on the agent's own `triggers:` block via the create/edit form; the on/off
+state is a live toggle from the agents list (see [The management UI](#the-management-ui)). If you
+are upgrading from a version that kept triggers in a standalone `automation/` directory, run the
+one-off
 `python3 scripts/migrate-automation-to-triggers.py` once: it folds each cron onto the right
 agent's `triggers:` block (setting `job: true` for job-mode agents) and removes the directory
 (idempotent).
@@ -335,6 +336,47 @@ build every screen from the shared component **macros** in `ui/templates/compone
 rather than bespoke markup. A served developer reference of the whole system lives at
 [`/design-system`](http://localhost:8080/design-system) (a developer aid, not linked from the app
 navigation).
+
+#### The agents list
+
+The home page is a full-bleed, tabbed table of every enabled agent, sorted by name, that answers
+four glance questions per agent: what it is (Name, Harness, Model, Kind badges), when it runs
+(Schedules / Sensors — a pill per cron with a clock icon for a `job_schedule`, a sensor icon for
+an `asset_schedule`, the cron rendered in plain words in the box timezone, and a live on/off
+toggle), how it last did (Latest run — a status dot, relative time, and a link into Dagster), and
+whether it is healthy (Checks and a Run-history sparkline of the last ten runs).
+
+- **Tabs** — All / Assets / Jobs / Scheduled / Disabled, each with a live count. The active tab is
+  reflected in the URL (`?tab=scheduled`) so a view is shareable and survives reload.
+- **Toolbar** — a filter box (matches name, harness, model), a *Show disabled* checkbox (remembered
+  per browser), and the primary **New agent** button.
+- Columns 1–5 render server-side and never depend on Dagster; the Dagster-derived columns (Latest
+  run, Checks, Run history) and the toggle states fill after first paint from a single
+  `/api/agents/activity` read. If Dagster is unreachable those columns show em-dashes and the
+  toggles disable with an explanatory title — the page still renders.
+- Flip a schedule/sensor pill to start or stop it in Dagster (`POST /api/schedules/toggle`). The
+  toggle disables (with a title) when the agent is disabled, Dagster is down, or the state is
+  unknown.
+
+#### Shell, foot, and settings
+
+Every page shares the sidebar shell. The primary nav links only to **Agents**; below a keyline the
+**foot** carries a Dagster connection-status block, a **Hide navigation** control that collapses
+the sidebar to 68px (its accessible name flips to *Show navigation* when collapsed), and a
+**Settings** link. The collapse choice persists per browser.
+
+**Settings** opens a *User settings* modal (`role="dialog"`) with a Preferences section and a
+**Theme** dropdown — Light, Dark, or *Use system setting*. Choosing an option applies immediately
+(no reload) and persists across reloads; *Use system setting* follows the OS light/dark flip. There
+is no Save button — the choice takes effect on selection, and **Done** or Escape closes the modal.
+
+#### The indigo Dagster accent
+
+Points where the UI reaches into Dagster — the foot connection-status block, the Latest-run and
+Run-history links, and the checked track of a schedule/sensor toggle — are rendered in a dedicated
+**indigo** accent (Dagster's colour), distinct from the theme accent used everywhere else, so a
+Dagster-backed control reads as such at a glance. Indigo is a theme-independent token defined in
+`ui/design-system/tokens/`, AA-legible in both light and dark.
 
 ### Agent YAML reference
 

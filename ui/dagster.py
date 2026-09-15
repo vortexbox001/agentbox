@@ -219,3 +219,87 @@ async def activity(agents: list[dict]) -> dict:
             "schedules": _parse_schedules(data, meta["inst"]),
         }
     return {"reachable": True, "agents": out}
+
+
+# ── Schedule / sensor toggle (start / stop one instigator) ──────────────────
+# The contract's failure signals are exactly PythonError, UnauthorizedError, and top-level
+# GraphQL errors (dagster-activity.md §B); anything else is a successful flip. Start is
+# selector-keyed; stop is id-keyed on this Dagster (T002), so a stop first resolves the
+# InstigationState id before firing the id-keyed stop mutation.
+_ERROR_ARMS = ("PythonError", "UnauthorizedError")
+
+
+async def _instigation_id(client, url: str, selector: str, name: str) -> str | None:
+    """Resolve the InstigationState id for the id-keyed stop mutations, or None if unknown."""
+    query = (
+        f"query {{ instigationStateOrError(instigationSelector: {{{selector}, name: {_q(name)}}}) "
+        f"{{ __typename ... on InstigationState {{ id }} }} }}"
+    )
+    resp = await client.post(url, json={"query": query})
+    resp.raise_for_status()
+    node = ((resp.json() or {}).get("data") or {}).get("instigationStateOrError") or {}
+    if node.get("__typename") == "InstigationState":
+        return node.get("id")
+    return None
+
+
+def _mutation_outcome(payload, field: str, running: bool) -> dict:
+    """Shape one mutation response into {ok, running, message} per the contract §B rule."""
+    if not isinstance(payload, dict):
+        return {"ok": False, "running": None, "message": "Dagster error"}
+    if payload.get("errors"):
+        return {"ok": False, "running": None,
+                "message": payload["errors"][0].get("message", "unknown GraphQL error")}
+    node = (payload.get("data") or {}).get(field) or {}
+    if node.get("__typename") in _ERROR_ARMS or "message" in node:
+        return {"ok": False, "running": None, "message": node.get("message", "mutation failed")}
+    return {"ok": True, "running": bool(running), "message": ""}
+
+
+async def set_instigation(kind: str, name: str, running: bool) -> dict:
+    """Start or stop one schedule/sensor. Returns {"ok", "running", "message"} (FR-021, §B).
+
+    ``kind`` ∈ {"schedule", "sensor"} (the §0 toggle-kind, derived by the caller from the
+    store row's cron ``type``); ``name`` is the registered instigator name (``sched_<stem>``
+    or ``autocond_<stem>``). Start is selector-keyed; stop is id-keyed (T002), so a stop
+    resolves the InstigationState id first. Every transport/Dagster failure is plain data.
+    """
+    location = config.DAGSTER_LOCATION
+    selector = _SELECTOR.format(location=location)
+    url = f"{config.DAGSTER_URL}/graphql"
+    err_arms = (
+        " __typename ... on PythonError { message } ... on UnauthorizedError { message } "
+    )
+    try:
+        async with httpx.AsyncClient(timeout=config.RELOAD_TIMEOUT_S) as client:
+            if running:
+                if kind == "schedule":
+                    field = "startSchedule"
+                    mutation = (
+                        f"mutation {{ startSchedule(scheduleSelector: "
+                        f"{{{selector}, scheduleName: {_q(name)}}}) {{{err_arms}}} }}"
+                    )
+                else:
+                    field = "startSensor"
+                    mutation = (
+                        f"mutation {{ startSensor(sensorSelector: "
+                        f"{{{selector}, sensorName: {_q(name)}}}) {{{err_arms}}} }}"
+                    )
+            else:
+                inst_id = await _instigation_id(client, url, selector, name)
+                if not inst_id:
+                    # State never resolved: the toggle should already be disabled (§C).
+                    return {"ok": False, "running": None, "message": "Turn on from Dagster"}
+                if kind == "schedule":
+                    field = "stopRunningSchedule"
+                    mutation = f"mutation {{ stopRunningSchedule(id: {_q(inst_id)}) {{{err_arms}}} }}"
+                else:
+                    field = "stopSensor"
+                    mutation = f"mutation {{ stopSensor(id: {_q(inst_id)}) {{{err_arms}}} }}"
+            resp = await client.post(url, json={"query": mutation})
+            resp.raise_for_status()
+            payload = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return {"ok": False, "running": None, "message": "Dagster unreachable"}
+
+    return _mutation_outcome(payload, field, running)
