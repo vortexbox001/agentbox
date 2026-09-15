@@ -105,14 +105,14 @@ overflow; collapsed foot link's accessible name reads "Show navigation".
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Update `ui/templates/base.html`: primary nav = Agents only, below the retained `.ax-nav-divider` keyline; foot = Dagster status block + keyline + "Hide navigation" (collapse icon) + "Settings" (gear icon); remove the `.ax-theme-control` three-button radiogroup; keep `#ax-modal-root` and the pre-paint theme/sidebar head script (contract shell-and-modal §A/§B/§F, FR-001/002/003) — depends on T008.
-- [ ] T022 [US2] Update `ui/static/shell.js`: foot "Hide navigation"/"Show navigation" accessible-name toggle on collapse (persistence `agentbox.sidebar` unchanged), remove the radiogroup theme handler, keep the Dagster status poll (contract §B, FR-004) — depends on T021.
-- [ ] T022a [US2] Remove the now-stale radiogroup half of the FR-003 accessibility "move": delete the `.ax-theme-control` radiogroup assertions inside `test_theme_control_is_accessible_icon_buttons` in `ui/tests/test_ui_consistency.py` so US2 ships green (the modal-dropdown assertion is added in T028; the two halves of the move are split across the stories that own each end — resolves finding I2) — depends on T021.
-- [ ] T023 [US2] Apply the indigo accent classes to the Dagster connection points — the foot Dagster status block, and (in `ui/templates/agents/list.html` / `ui/static/app.css`) the Latest-run + Run-history links and the schedule/sensor toggle checked track — non-Dagster elements keep the theme accent (contract §C, FR-010) — depends on T009, T021.
+- [X] T021 [US2] Update `ui/templates/base.html`: primary nav = Agents only, below the retained `.ax-nav-divider` keyline; foot = Dagster status block + keyline + "Hide navigation" (collapse icon) + "Settings" (gear icon); remove the `.ax-theme-control` three-button radiogroup; keep `#ax-modal-root` and the pre-paint theme/sidebar head script (contract shell-and-modal §A/§B/§F, FR-001/002/003) — depends on T008.
+- [X] T022 [US2] Update `ui/static/shell.js`: foot "Hide navigation"/"Show navigation" accessible-name toggle on collapse (persistence `agentbox.sidebar` unchanged), remove the radiogroup theme handler, keep the Dagster status poll (contract §B, FR-004) — depends on T021.
+- [X] T022a [US2] Remove the now-stale radiogroup half of the FR-003 accessibility "move": delete the `.ax-theme-control` radiogroup assertions inside `test_theme_control_is_accessible_icon_buttons` in `ui/tests/test_ui_consistency.py` so US2 ships green (the modal-dropdown assertion is added in T028; the two halves of the move are split across the stories that own each end — resolves finding I2) — depends on T021.
+- [X] T023 [US2] Apply the indigo accent classes to the Dagster connection points — the foot Dagster status block, and (in `ui/templates/agents/list.html` / `ui/static/app.css`) the Latest-run + Run-history links and the schedule/sensor toggle checked track — non-Dagster elements keep the theme accent (contract §C, FR-010) — depends on T009, T021.
 
 ### Tests for User Story 2
 
-- [ ] T024 [US2] Extend `ui/tests/test_ui_consistency.py` (and `ui/tests/test_api.py` for render): the foot on every page shows the Dagster block, keyline, Hide-navigation, and Settings with no theme radiogroup, and the collapsed foot link exposes the "Show navigation" accessible name (SC-004).
+- [X] T024 [US2] Extend `ui/tests/test_ui_consistency.py` (and `ui/tests/test_api.py` for render): the foot on every page shows the Dagster block, keyline, Hide-navigation, and Settings with no theme radiogroup, and the collapsed foot link exposes the "Show navigation" accessible name (SC-004).
 
 **Checkpoint**: The revised shell frames every page (SC-004).
 

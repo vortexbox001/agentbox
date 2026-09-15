@@ -103,24 +103,45 @@ def test_no_bespoke_save_banner_remains():
 
 
 def test_theme_control_is_accessible_icon_buttons():
-    # Bug theme-control-overflow: the sidebar theme control is a radiogroup of three
-    # icon-only buttons (System/Light/Dark) that fits the narrow column, each with an
-    # accessible name (aria-label) and a hover tooltip (title); no native <select>.
+    # FR-003 accessibility "move" (finding I2): US2 removes the foot theme radiogroup —
+    # the theme control now lives in the settings modal. This half asserts the sidebar
+    # radiogroup is gone; the modal-dropdown half is added in US3 (T028) once the modal
+    # exists.
     base = open(os.path.join(_TEMPLATES, "base.html"), encoding="utf-8").read()
-    group = re.search(r'<div class="ax-theme-control"[^>]*>(.*?)</div>', base, re.DOTALL)
-    assert group, "theme control radiogroup not found"
-    block = group.group(0)
-    assert 'role="radiogroup"' in block and 'aria-label="Theme"' in block
-    assert "<select" not in block, "theme control must not use a native <select>"
-    choices = re.findall(r'data-theme-choice="(system|light|dark)"', block)
-    assert set(choices) == {"system", "light", "dark"}, f"expected all three choices, got {choices}"
-    # Every option is a button with an accessible name and a hover title.
-    for m in re.finditer(r"<button\b[^>]*>", block):
-        tag = m.group(0)
-        assert 'data-theme-choice="' in tag
-        assert "aria-label=" in tag, f"theme option missing aria-label: {tag}"
-        assert "title=" in tag, f"theme option missing hover title: {tag}"
-        assert "ax-btn" in tag, f"theme option missing design-system button class: {tag}"
+    assert "ax-theme-control" not in base, "the foot theme radiogroup must be removed (FR-003)"
+    assert 'role="radiogroup"' not in base, "no theme radiogroup remains in the shell (FR-003)"
+    assert "data-theme-choice" not in base, "the radiogroup theme-choice buttons must be gone"
+
+
+def test_shell_foot_has_dagster_keyline_and_links():
+    # US2 (contract shell-and-modal §B, SC-004): the foot on every page (base.html) shows,
+    # top to bottom, the Dagster status block → a keyline → Hide navigation → Settings.
+    base = open(os.path.join(_TEMPLATES, "base.html"), encoding="utf-8").read()
+    foot = re.search(r'<div class="ax-sidebar-foot">(.*?)</div>\s*</aside>', base, re.DOTALL)
+    assert foot, "sidebar foot not found"
+    block = foot.group(1)
+    # Dagster status block (its own indigo styling comes from .ax-dagster in app.css).
+    assert "ax-dagster" in block, "foot missing the Dagster status block"
+    # The keyline + the two foot links live in .ax-foot-links (border-top keyline in app.css).
+    assert "ax-foot-links" in block, "foot missing the keyline'd foot-links group"
+    # Hide navigation (the collapse control) and Settings, each a design-system button.
+    hide = re.search(r'<button[^>]*id="ax-collapse-toggle"[^>]*>', block)
+    settings = re.search(r'<button[^>]*id="ax-settings-link"[^>]*>', block)
+    assert hide and "ax-btn" in hide.group(0), "foot missing Hide-navigation button"
+    assert 'aria-label="Hide navigation"' in hide.group(0), "collapse link is not named 'Hide navigation'"
+    assert settings and "ax-btn" in settings.group(0), "foot missing Settings button"
+    assert 'aria-label="Settings"' in settings.group(0), "settings link is not named 'Settings'"
+    # No theme radiogroup remains in the foot.
+    assert "ax-theme-control" not in block, "the theme radiogroup must be gone from the foot"
+
+
+def test_shell_collapse_exposes_show_navigation_name():
+    # SC-004: collapsed, the foot collapse link's accessible name reads "Show navigation";
+    # shell.js flips the aria-label on collapse (the label span is hidden by CSS).
+    shell = open(os.path.join(_STATIC, "shell.js"), encoding="utf-8").read()
+    assert "Show navigation" in shell and "Hide navigation" in shell, \
+        "shell.js must toggle the collapse link between 'Hide navigation' and 'Show navigation'"
+    assert "ax-theme-control" not in shell, "shell.js must not still wire the removed theme radiogroup"
 
 
 # ── US5: checks require an asset — the Checks card lives inside the Asset card ──

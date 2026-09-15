@@ -46,12 +46,19 @@
         <img class="ax-brand-lockup ax-brand-lockup--light" src="/design-system/assets/logo-light.svg" alt="agentbox">
         <img class="ax-brand-lockup ax-brand-lockup--dark" src="/design-system/assets/logo-dark.svg" alt="agentbox">
       </div>
+      {# Primary nav links only to pages that exist: Agents (contract shell-and-modal §A,
+         FR-001). The .ax-nav-divider keyline is retained so the group lands where the mock
+         places it; Overview/Runs return when 012/023 ship those pages. #}
       <nav class="ax-nav" aria-label="Primary">
+        <div class="ax-nav-divider" aria-hidden="true"></div>
         <a class="ax-nav-item" href="/agents" data-nav="/agents">
           <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#agents"></use></svg>
           <span class="ax-nav-label">Agents</span>
         </a>
       </nav>
+      {# Foot (contract §B, FR-002/003/004): Dagster status block (indigo, a Dagster
+         connection point) → keyline → Hide navigation → Settings. The old three-button
+         theme radiogroup is gone; the theme control now lives in the settings modal. #}
       <div class="ax-sidebar-foot">
         <a class="ax-dagster" href="{{ dagster_url }}" target="_blank" rel="noopener" id="ax-dagster-link">
           <span class="ax-dagster-dot" data-state="unknown" id="ax-dagster-dot"></span>
@@ -61,21 +68,16 @@
           </span>
           <svg class="ax-icon ax-dagster-open" width="16" height="16" aria-hidden="true"><use href="#external"></use></svg>
         </a>
-        <div class="ax-theme-control" role="radiogroup" aria-label="Theme">
-          <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="system" title="System" aria-label="System theme">
-            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#theme-system"></use></svg>
+        <div class="ax-foot-links">
+          <button class="ax-btn ax-foot-link" id="ax-collapse-toggle" type="button" aria-label="Hide navigation">
+            <svg class="ax-icon ax-collapse-icon" width="16" height="16" aria-hidden="true"><use href="#collapse"></use></svg>
+            <span class="ax-foot-label">Hide navigation</span>
           </button>
-          <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="light" title="Light" aria-label="Light theme">
-            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#theme-light"></use></svg>
-          </button>
-          <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="dark" title="Dark" aria-label="Dark theme">
-            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#theme-dark"></use></svg>
+          <button class="ax-btn ax-foot-link" id="ax-settings-link" type="button" aria-label="Settings">
+            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#settings"></use></svg>
+            <span class="ax-foot-label">Settings</span>
           </button>
         </div>
-        <button class="ax-btn ax-collapse-toggle" id="ax-collapse-toggle" type="button" aria-label="Collapse sidebar">
-          <svg class="ax-icon ax-collapse-icon" width="16" height="16" aria-hidden="true"><use href="#collapse"></use></svg>
-          <span class="ax-collapse-label">Collapse</span>
-        </button>
       </div>
     </aside>
 

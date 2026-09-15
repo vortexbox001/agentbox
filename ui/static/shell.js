@@ -32,25 +32,10 @@ function stampTheme(pref) {
 }
 
 function initTheme() {
-  // The sidebar theme control is a radiogroup of icon-only buttons (System/Light/
-  // Dark). Reflect the stored preference as aria-checked; a click writes it and
-  // re-stamps <html> with no reload (Acceptance 2).
-  const group = document.querySelector(".ax-theme-control");
-  const buttons = group ? Array.from(group.querySelectorAll("[data-theme-choice]")) : [];
-  const reflect = () => {
-    const pref = readTheme();
-    buttons.forEach((b) => b.setAttribute("aria-checked", b.dataset.themeChoice === pref ? "true" : "false"));
-  };
-  buttons.forEach((b) => {
-    b.addEventListener("click", () => {
-      const next = b.dataset.themeChoice;
-      try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* not persisted */ }
-      stampTheme(next);
-      reflect();
-    });
-  });
-  reflect();
-  // While preference = system, follow the OS live with no reload flash (Acceptance 3).
+  // The theme control now lives in the settings modal (settings.js, US3); the sidebar
+  // no longer carries a radiogroup (FR-003). All that stays here is following the OS
+  // live while preference = system, with no reload flash (FR-009): the pre-paint script
+  // stamped <html> on load; re-stamp when the OS setting flips.
   const mq = window.matchMedia("(prefers-color-scheme: dark)");
   const onChange = () => { if (readTheme() === "system") stampTheme("system"); };
   if (mq.addEventListener) mq.addEventListener("change", onChange);
@@ -66,7 +51,9 @@ function initSidebar() {
     if (collapsed) root.setAttribute("data-sidebar", "collapsed");
     else root.removeAttribute("data-sidebar");
     toggle.setAttribute("aria-pressed", collapsed ? "true" : "false");
-    toggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    // Collapsed the label is hidden, so the foot link's accessible name flips to
+    // "Show navigation"; expanded it reads "Hide navigation" (contract §B, FR-004).
+    toggle.setAttribute("aria-label", collapsed ? "Show navigation" : "Hide navigation");
   };
   let collapsed = false;
   try { collapsed = localStorage.getItem(SIDEBAR_KEY) === "collapsed"; } catch (e) { /* default expanded */ }

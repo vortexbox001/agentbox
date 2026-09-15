@@ -83,6 +83,17 @@ def test_agents_page_renders_shell(client):
     assert "agentbox" in resp.text
 
 
+def test_shell_foot_renders_dagster_and_links(client):
+    # US2 (contract shell-and-modal §B, SC-004): a served page's foot renders the Dagster
+    # status block plus the Hide-navigation and Settings links, and no theme radiogroup.
+    html = client.get("/agents").text
+    assert "ax-dagster" in html
+    assert "ax-foot-links" in html
+    assert 'aria-label="Hide navigation"' in html
+    assert 'aria-label="Settings"' in html
+    assert "ax-theme-control" not in html
+
+
 # ── Schema ──────────────────────────────────────────────
 def test_api_schema_shape(client):
     data = client.get("/api/schema").json()

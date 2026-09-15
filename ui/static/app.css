@@ -464,6 +464,10 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 
 /* LATEST RUN cell: status dot + relative time. */
 .ax-latest-run { display: inline-flex; align-items: center; gap: var(--space-3); font: var(--type-body-sm); color: var(--color-text-light); }
+/* When the latest run links out to Dagster it is a Dagster connection point, so it
+   takes the indigo accent (FR-010), not the theme link colour the agent-name link keeps. */
+a.ax-latest-run { color: var(--color-core-indigo400); }
+a.ax-latest-run:hover { color: var(--color-core-indigo300); }
 
 /* RUN HISTORY sparkline: fixed-width bars, newest at the right. */
 .ax-run-history { display: flex; gap: var(--space-1); align-items: stretch; height: var(--space-9); }
