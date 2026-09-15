@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Run Detail" description="Single agent-run detail page: header (breadcrumb, status, meta, actions) + stat strip over a transcript timeline beside a configuration / checks / usage rail." -->
+<helmet>
+<script src="./ds-base.js"></script>
+<style>html,body{margin:0;padding:0;height:100%}</style>
+</helmet>
+<div class="ax-app">
+  <dc-import name="Sidebar" active="runs" hint-size="240px,100%"></dc-import>
+  <div class="ax-main">
+    <div class="ax-run-view">
+      <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+        <symbol id="box" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"></rect><line x1="2.5" y1="6" x2="13.5" y2="6"></line></symbol>
+        <symbol id="clock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 4.5V8l2.4 1.4"></path></symbol>
+        <symbol id="timer" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="5"></circle><line x1="8" y1="9" x2="8" y2="6"></line><line x1="6.4" y1="1.8" x2="9.6" y2="1.8"></line><line x1="8" y1="1.8" x2="8" y2="4"></line></symbol>
+        <symbol id="download" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v7.5"></path><path d="M5 6.7 8 9.7l3-3"></path><path d="M3 11.5v1a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1"></path></symbol>
+        <symbol id="sliders" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4.5" x2="13.5" y2="4.5"></line><line x1="2.5" y1="8" x2="13.5" y2="8"></line><line x1="2.5" y1="11.5" x2="13.5" y2="11.5"></line><circle cx="6" cy="4.5" r="1.6" fill="var(--color-background-default)"></circle><circle cx="10.5" cy="8" r="1.6" fill="var(--color-background-default)"></circle><circle cx="5" cy="11.5" r="1.6" fill="var(--color-background-default)"></circle></symbol>
+        <symbol id="rerun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 6.5A5 5 0 1 0 13 9"></path><path d="M13 2.5V6.5H9"></path></symbol>
+        <symbol id="book" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.2A1.2 1.2 0 0 1 3.7 2H8v11H3.7a1.2 1.2 0 0 0-1.2 1.2z"></path><path d="M13.5 3.2A1.2 1.2 0 0 0 12.3 2H8v11h4.3a1.2 1.2 0 0 1 1.2 1.2z"></path></symbol>
+        <symbol id="chev-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"></path></symbol>
+        <symbol id="chev-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"></path></symbol>
+        <symbol id="bulb" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8a4 4 0 0 0-2.4 7.2c.5.4.8.9.9 1.5H9.5c.1-.6.4-1.1.9-1.5A4 4 0 0 0 8 1.8Z"></path><line x1="6.4" y1="13" x2="9.6" y2="13"></line><line x1="7" y1="14.6" x2="9" y2="14.6"></line></symbol>
+        <symbol id="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.4 6.2 11.6 13 4.8"></path></symbol>
+        <symbol id="warn-tri" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.3 14.6 13.4a.6.6 0 0 1-.5.9H1.9a.6.6 0 0 1-.5-.9z"></path><line x1="8" y1="6.4" x2="8" y2="9.6"></line><circle cx="8" cy="11.6" r="0.7" fill="currentColor" stroke="none"></circle></symbol>
+        <symbol id="lock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.2"></rect><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path></symbol>
+      </svg>
+
+      <div class="ax-run-header">
+        <div class="ax-run-headline">
+          <span class="ax-run-crumb"><a href="#">Runs</a><span class="ax-run-crumb-sep">/</span><span class="ax-run-crumb-id">4f2a9c1</span></span>
+          <span class="ax-run-status-tag" data-state="success"><span class="ax-status-dot" data-state="success" aria-hidden="true"></span>success</span>
+          <span class="ax-run-meta-chip"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#box"></use></svg>nightly-dep-upgrade</span>
+          <span class="ax-run-meta-chip"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#clock"></use></svg>Sep 14, 03:00:04</span>
+          <span class="ax-run-meta-chip"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#timer"></use></svg>0:02:18</span>
+        </div>
+        <div class="ax-run-actions">
+          <button type="button" class="ax-btn ax-btn--outlined"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#download"></use></svg><span>Download logs</span></button>
+          <button type="button" class="ax-btn ax-btn--dagster"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#sliders"></use></svg><span>View config</span></button>
+          <button type="button" class="ax-btn ax-btn--dagster"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#rerun"></use></svg><span>Re-run</span></button>
+        </div>
+      </div>
+
+      <div class="ax-run-stats">
+        <div class="ax-run-stat"><span class="ax-run-stat-label">Duration</span><span class="ax-run-stat-value">2m 18s</span></div>
+        <div class="ax-run-stat"><span class="ax-run-stat-label">Exit code</span><span class="ax-run-stat-value">0</span></div>
+        <div class="ax-run-stat"><span class="ax-run-stat-label">Harness</span><span class="ax-run-stat-value">claude-code</span></div>
+        <div class="ax-run-stat"><span class="ax-run-stat-label">Model</span><span class="ax-run-stat-value">sonnet-4-5</span></div>
+        <div class="ax-run-stat"><span class="ax-run-stat-label">Turns</span><span class="ax-run-stat-value">5 <span class="ax-dim">/ 40</span></span></div>
+        <div class="ax-run-stat"><span class="ax-run-stat-label">Cost</span><span class="ax-run-stat-value">$0.21</span></div>
+      </div>
+
+      <div class="ax-run-body {{ bodyMod }}">
+        <div class="ax-run-main">
+          <div class="ax-transcript-head">
+            <h2>Transcript</h2>
+            <div class="ax-segmented" role="tablist" aria-label="Transcript view">
+              <button type="button" class="ax-seg {{ readableActive }}" role="tab" onClick="{{ setReadable }}">Readable</button>
+              <button type="button" class="ax-seg {{ rawActive }}" role="tab" onClick="{{ setRaw }}">Raw log</button>
+            </div>
+          </div>
+
+          <div class="ax-context">
+            <div class="ax-context-head">
+              <span class="ax-context-title"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#book"></use></svg>Context given to the agent</span>
+              <span class="ax-context-meta">3 sources · 4,182 tokens</span>
+            </div>
+            <div class="ax-context-row">
+              <span class="ax-context-tag">system</span>
+              <span class="ax-context-desc">claude-code harness system prompt — sandbox rules, tool definitions, /output convention</span>
+              <span class="ax-context-lines">312 lines<svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#chev-right"></use></svg></span>
+            </div>
+            <div class="ax-context-row">
+              <span class="ax-context-tag">injected</span>
+              <span class="ax-context-desc">/workspace file tree (depth 2) + package.json</span>
+              <span class="ax-context-lines">128 lines<svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#chev-right"></use></svg></span>
+            </div>
+            <div class="ax-context-row" style="flex-direction:column;gap:var(--space-5)">
+              <div style="display:flex;align-items:flex-start;gap:var(--space-6);width:100%">
+                <span class="ax-context-tag">prompt</span>
+                <span class="ax-context-desc"><span class="ax-inline-code">agents/nightly-dep-upgrade/prompt.md</span></span>
+                <span class="ax-context-lines">6 lines<svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#chev-down"></use></svg></span>
+              </div>
+              <p class="ax-context-prompt">Check /workspace for outdated npm dependencies. Upgrade every package that only needs a patch or minor bump — never a major version. After upgrading, run the full test suite. If it passes, write a short summary of what changed and why to /output/report.md. If tests fail and you cannot fix them, stop and report the failure instead.</p>
+            </div>
+          </div>
+
+          <div class="ax-timeline">
+            <div class="ax-entry">
+              <div class="ax-entry-gutter"><span class="ax-entry-dot"></span><span class="ax-entry-line"></span></div>
+              <div class="ax-entry-body">
+                <div class="ax-entry-label"><b>Task</b><span class="ax-entry-meta">· 03:00:06</span></div>
+                <p class="ax-entry-msg">Run the nightly dependency upgrade for this repository and report what changed.</p>
+              </div>
+            </div>
+
+            <div class="ax-entry">
+              <div class="ax-entry-gutter"><span class="ax-entry-dot"></span><span class="ax-entry-line"></span></div>
+              <div class="ax-entry-body">
+                <div class="ax-entry-label"><b>Agent</b><span class="ax-entry-meta">· turn 1 · 03:00:11 · 1,204 tokens</span></div>
+                <p class="ax-entry-msg">I'll start by checking which dependencies are outdated before changing anything.</p>
+                <div class="ax-tool">
+                  <div class="ax-tool-head"><span class="ax-tool-dot"></span><span class="ax-tool-name">Bash</span><span class="ax-tool-arg">npm outdated --json</span></div>
+                  <div class="ax-tool-out">date-fns   2.29.3 → 2.30.0    (minor)
+lodash     4.17.20 → 4.17.21   (patch)
+zod        3.22.2 → 3.22.4     (patch)
+react      17.0.2 → 18.3.1     (major)</div>
+                  <div class="ax-tool-note">+ 3 more packages</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="ax-entry">
+              <div class="ax-entry-gutter"><span class="ax-entry-dot"></span><span class="ax-entry-line"></span></div>
+              <div class="ax-entry-body">
+                <div class="ax-entry-label"><b>Agent</b><span class="ax-entry-meta">· turn 2 · 03:00:29 · 2,010 tokens</span></div>
+                <p class="ax-entry-msg">Six packages have patch or minor updates. <code>react 17 → 18</code> is a major bump, so per the task I'm leaving it. Updating the other six in <code>package.json</code>.</p>
+                <div class="ax-tool">
+                  <div class="ax-tool-head"><span class="ax-tool-dot"></span><span class="ax-tool-name">Read</span><span class="ax-tool-arg">package.json</span></div>
+                  <div class="ax-tool-out">42 lines read</div>
+                </div>
+                <div class="ax-tool">
+                  <div class="ax-tool-head"><span class="ax-tool-dot"></span><span class="ax-tool-name">Edit</span><span class="ax-tool-arg">package.json</span></div>
+                  <div class="ax-tool-out"><span class="ax-diff-del">- "date-fns": "2.29.3",</span>
+<span class="ax-diff-add">+ "date-fns": "2.30.0",</span>
+<span class="ax-diff-del">- "lodash": "4.17.20",</span>
+<span class="ax-diff-add">+ "lodash": "4.17.21",</span></div>
+                  <div class="ax-tool-note">+ 4 more edits · 6 changed, +6 −6</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="ax-entry">
+              <div class="ax-entry-gutter"><span class="ax-entry-dot" data-state="error"></span><span class="ax-entry-line"></span></div>
+              <div class="ax-entry-body">
+                <div class="ax-entry-label"><b>Agent</b><span class="ax-entry-meta">· turn 3 · 03:00:52 · 1,880 tokens</span></div>
+                <p class="ax-entry-msg">Installing the updated versions, then running the test suite.</p>
+                <div class="ax-tool">
+                  <div class="ax-tool-head"><span class="ax-tool-dot"></span><span class="ax-tool-name">Bash</span><span class="ax-tool-arg">npm install</span></div>
+                  <div class="ax-tool-out">changed 6 packages, and audited 812 packages in 4s
+found 0 vulnerabilities</div>
+                </div>
+                <div class="ax-tool">
+                  <div class="ax-tool-head"><span class="ax-tool-dot" data-state="error"></span><span class="ax-tool-name">Bash</span><span class="ax-tool-arg">npm test</span><span class="ax-tool-exit">exit 1</span></div>
+                  <div class="ax-tool-out ax-tool-out--fail">FAIL  src/format.test.js
+  ● formats a short date
+    Expected: "Jan 5"
+    Received: "Jan 05"
+Tests: 1 failed, 147 passed, 148 total</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="ax-entry">
+              <div class="ax-entry-gutter"><span class="ax-entry-dot"></span><span class="ax-entry-line"></span></div>
+              <div class="ax-entry-body">
+                <div class="ax-entry-label"><b>Agent</b><span class="ax-entry-meta">· turn 4 · 03:01:20 · 2,540 tokens</span></div>
+                <div class="ax-think">
+                  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#bulb"></use></svg>
+                  <p>date-fns 2.30 changed the default padding of the <span class="ax-inline-code">d</span> token. The test expects an unpadded day, so the format string must be using <span class="ax-inline-code">dd</span>. I'll fix the format string rather than pin the old version.</p>
+                </div>
+                <p class="ax-entry-msg">The failure is a formatting change in the date-fns minor bump, not a real regression. Fixing the format string in <code>src/format.js</code>.</p>
+                <div class="ax-tool">
+                  <div class="ax-tool-head"><span class="ax-tool-dot"></span><span class="ax-tool-name">Edit</span><span class="ax-tool-arg">src/format.js</span></div>
+                  <div class="ax-tool-out"><span class="ax-diff-del">- format(d, 'MMM dd')</span>
+<span class="ax-diff-add">+ format(d, 'MMM d')</span></div>
+                </div>
+                <div class="ax-tool">
+                  <div class="ax-tool-head"><span class="ax-tool-dot"></span><span class="ax-tool-name">Bash</span><span class="ax-tool-arg">npm test</span></div>
+                  <div class="ax-tool-out">Tests: 148 passed, 148 total
+Time:  6.1s</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="ax-entry">
+              <div class="ax-entry-gutter"><span class="ax-entry-dot"></span><span class="ax-entry-line"></span></div>
+              <div class="ax-entry-body">
+                <div class="ax-entry-label"><b>Agent</b><span class="ax-entry-meta">· turn 5 · 03:02:18 · 1,768 tokens</span></div>
+                <p class="ax-entry-msg">All 148 tests pass. Writing the upgrade summary to the output directory.</p>
+                <div class="ax-tool">
+                  <div class="ax-tool-head"><span class="ax-tool-dot"></span><span class="ax-tool-name">Write</span><span class="ax-tool-arg">/output/report.md</span><span class="ax-entry-meta">2.3 KB</span></div>
+                  <div class="ax-report">Upgraded 6 dependencies (5 patch, 1 minor). The date-fns 2.30 bump changed date-token padding and broke one formatting test; fixed by switching <span class="ax-inline-code">MMM dd</span> → <span class="ax-inline-code">MMM d</span>. react 18 was left untouched as a major version. All 148 tests pass.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ax-run-foot">Run finished · exit 0 · 5 turns · 8 tool calls · 2m 18s</div>
+        </div>
+
+        <sc-if value="{{ showConfig }}" hint-placeholder-val="{{ true }}">
+          <aside class="ax-run-aside">
+            <div class="ax-run-section">
+              <div class="ax-run-section-title">Configuration</div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Harness</span><span class="ax-run-kv-val ax-mono">claude-code</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Model</span><span class="ax-run-kv-val ax-mono">claude-sonnet-4-5-20250929</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Fallback model</span><span class="ax-run-kv-val ax-dim">none</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Permission mode</span><span class="ax-run-kv-val ax-mono">acceptEdits</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Max turns</span><span class="ax-run-kv-val ax-mono">40</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Allowed tools</span><span class="ax-run-kv-val ax-mono">Bash, Read, Write, Edit, Grep</span></div>
+            </div>
+
+            <div class="ax-run-section">
+              <div class="ax-run-section-title">Container</div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Image</span><span class="ax-run-kv-val ax-mono">node:20-bookworm</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">CPU / memory</span><span class="ax-run-kv-val">2 vCPU · 4 GiB</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Network</span><span class="ax-run-kv-val">restricted <span class="ax-dim">· 3 hosts</span></span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Started</span><span class="ax-run-kv-val ax-mono">03:00:04</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Exited</span><span class="ax-run-kv-val ax-mono">03:02:22</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Exit code</span><span class="ax-run-kv-val ax-mono">0</span></div>
+            </div>
+
+            <div class="ax-run-section">
+              <div class="ax-run-section-title">Context &amp; inputs</div>
+              <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+                <span class="ax-run-kv-key">Prompt file</span>
+                <a class="ax-run-link" href="#">agents/nightly-dep-upgrade/prompt.md</a>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+                <span class="ax-run-kv-key">Mounted directories</span>
+                <span class="ax-mount"><span class="ax-mount-path">/workspace</span><span class="ax-mount-mode">repo · rw</span></span>
+                <span class="ax-mount"><span class="ax-mount-path">/output</span><span class="ax-mount-mode">rw</span></span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:var(--space-4)">
+                <span class="ax-run-kv-key">Environment · 4 vars</span>
+                <div class="ax-env-pills">
+                  <span class="ax-env-pill">NODE_ENV</span>
+                  <span class="ax-env-pill">CI</span>
+                  <span class="ax-env-pill">TZ</span>
+                  <span class="ax-env-pill" data-secret><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#lock"></use></svg>NPM_TOKEN</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="ax-run-section">
+              <div class="ax-run-section-title">Checks<span class="ax-run-section-note">6 passed · 1 warning</span></div>
+              <div class="ax-check-list">
+                <div class="ax-check-item"><span class="ax-result ax-result--pass"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#check"></use></svg></span><div><div class="ax-check-title">Output artifact present</div><div class="ax-check-sub">/output/report.md · 2.3 KB</div></div></div>
+                <div class="ax-check-item"><span class="ax-result ax-result--pass"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#check"></use></svg></span><div><div class="ax-check-title">Exit code is 0</div></div></div>
+                <div class="ax-check-item"><span class="ax-result ax-result--pass"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#check"></use></svg></span><div><div class="ax-check-title">Test suite passing</div><div class="ax-check-sub">148 / 148</div></div></div>
+                <div class="ax-check-item"><span class="ax-result ax-result--pass"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#check"></use></svg></span><div><div class="ax-check-title">No major-version upgrades</div></div></div>
+                <div class="ax-check-item"><span class="ax-result ax-result--pass"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#check"></use></svg></span><div><div class="ax-check-title">No secrets in output or logs</div></div></div>
+                <div class="ax-check-item"><span class="ax-result ax-result--pass"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#check"></use></svg></span><div><div class="ax-check-title">Stayed within network allowlist</div></div></div>
+                <div class="ax-check-item"><span class="ax-result ax-result--warn"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#warn-tri"></use></svg></span><div><div class="ax-check-title">Modified a file outside the upgrade</div><div class="ax-check-sub">src/format.js — allowed, review advised</div></div></div>
+              </div>
+            </div>
+
+            <div class="ax-run-section">
+              <div class="ax-run-section-title">Usage</div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Input tokens</span><span class="ax-run-kv-val ax-mono">38,410</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Output tokens</span><span class="ax-run-kv-val ax-mono">9,402</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Cache read</span><span class="ax-run-kv-val ax-mono">31,200</span></div>
+              <div class="ax-run-kv"><span class="ax-run-kv-key">Tool calls</span><span class="ax-run-kv-val ax-mono">8</span></div>
+              <div class="ax-run-kv ax-run-total"><span class="ax-run-kv-key">Total cost</span><span class="ax-run-kv-val ax-mono">$0.21</span></div>
+            </div>
+          </aside>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:840},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;'dark' | 'light'&quot;,&quot;section&quot;:&quot;Appearance&quot;},&quot;transcriptView&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Readable&quot;,&quot;Raw log&quot;],&quot;default&quot;:&quot;Readable&quot;,&quot;tsType&quot;:&quot;'Readable' | 'Raw log'&quot;,&quot;section&quot;:&quot;Transcript&quot;},&quot;showConfig&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+class Component extends DCLogic {
+  state = { view: null };
+  componentDidMount() { this.applyTheme(); }
+  componentDidUpdate() { this.applyTheme(); }
+  applyTheme() { document.documentElement.setAttribute('data-theme', this.props.theme || 'dark'); }
+  renderVals() {
+    const showConfig = this.props.showConfig !== false;
+    const view = this.state.view || this.props.transcriptView || 'Readable';
+    return {
+      showConfig,
+      bodyMod: showConfig ? '' : 'ax-run-body--solo',
+      readableActive: view === 'Readable' ? 'is-active' : '',
+      rawActive: view === 'Raw log' ? 'is-active' : '',
+      setReadable: () => this.setState({ view: 'Readable' }),
+      setRaw: () => this.setState({ view: 'Raw log' }),
+    };
+  }
+}
+</script>
+</body>
+</html>

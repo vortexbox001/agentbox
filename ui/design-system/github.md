@@ -1,20 +1,22 @@
 # GitHub source
 
 repo: leeclemmer/agentbox
-branch: 010-file-layout-overhaul
+branch: main
 path: ui/design-system
 
-This project (AgentBox Design System) is associated with the AgentBox repository. On the `009-design-system-migration` branch, `ui/design-system/` contains this AgentBox design system (tokens, components, guidelines cards, and the agentbox-app UI kit) — it mirrors this project's structure.
+This project (AgentBox Design System) is associated with the AgentBox repository. `ui/design-system/` on the repo mirrors this project's structure (tokens, components, guidelines cards, the agentbox-app UI kit, and the tabbed-list/agentbox templates). The `ui-lhn-agent-listing` feature branch (agent-listing UI work) has been merged to `main`.
 
-Source URL: https://github.com/leeclemmer/agentbox/tree/010-file-layout-overhaul/ui/design-system
+Source URL: https://github.com/leeclemmer/agentbox/tree/main/ui/design-system
 
 ## Last sync
 
-date: 2026-09-14T22:52:40Z
-commit: (branch tip 010-file-layout-overhaul @ tree 12a7d16dc105; commit sha unknown)
+date: 2026-09-15T17:56:12Z
+commit: (main tip @ tree 87abd0a6317d; commit sha unknown)
 
 ### Updated in this project
-- Checked 010 tip 12a7d16dc105 — 52 files changed across 7 commits, but ALL outside `ui/design-system/` (config layout moved to examples/config, orchestrator path resolution, litellm generator, specs, ui/*.py backend + tests). No design-system files changed. Nothing to pull.
+- Switched tracked branch from `010-file-layout-overhaul` to `main` per user request.
+- main tip 87abd0a6317d has blob hashes IDENTICAL to branch `ui-lhn-agent-listing` across all 122 `ui/design-system/` files — the agent-listing session work (indigo tokens + Dagster Indigo theme, nav divider Overview/Runs · Agents, checks column, slim buttons, tabbed-list + agentbox templates) is fully merged to main.
+- Spot-checked the two heaviest session-edited files (`tokens/colors.css`, `templates/tabbed-list/Sidebar.dc.html`): both match the project's content exactly. Nothing to pull; project is in sync with main.
 
 ### History (earlier this session)
 - Adopted the upstream `ax-*` specimen `index.html` + component cards; vendored `static/app.css`+icons and rewrote server-absolute `/static/…` paths to project-relative (see LOCAL ADAPTATION note below).
@@ -36,6 +38,7 @@ commit: (branch tip 010-file-layout-overhaul @ tree 12a7d16dc105; commit sha unk
 
 ## Sync history
 
+- 2026-09-14T22:52:40Z — on branch 010-file-layout-overhaul: 52 files changed across 7 commits but all outside ui/design-system/; nothing pulled.
 - 2026-09-14T12:38:30Z — checked upstream, no changes since bf66c0d761d8.
 - 2026-09-14T12:16:00Z — adopted upstream ax-/app.css specimen index.html + cards; vendored static/; rewrote /static/ paths to relative.
 - 2026-09-14T12:13:30Z — pulled spacing.css border-width tokens.
