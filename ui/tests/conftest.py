@@ -122,8 +122,12 @@ def dagster_stub(monkeypatch):
     class Stub:
         reload_result = {"ok": True, "message": "Workspace reloaded"}
         status_result = {"url": "http://dagster-test:3000", "reachable": True}
+        activity_result = {"reachable": True, "agents": {}}
+        set_instigation_result = {"ok": True, "running": True, "message": ""}
+        set_instigation_calls = None
 
     stub = Stub()
+    stub.set_instigation_calls = []
 
     async def fake_reload():
         return stub.reload_result
@@ -131,6 +135,15 @@ def dagster_stub(monkeypatch):
     async def fake_status():
         return stub.status_result
 
+    async def fake_activity(agents):
+        return stub.activity_result
+
+    async def fake_set_instigation(kind, name, running):
+        stub.set_instigation_calls.append({"kind": kind, "name": name, "running": running})
+        return stub.set_instigation_result
+
     monkeypatch.setattr(dagster, "reload", fake_reload)
     monkeypatch.setattr(dagster, "status", fake_status)
+    monkeypatch.setattr(dagster, "activity", fake_activity)
+    monkeypatch.setattr(dagster, "set_instigation", fake_set_instigation)
     return stub

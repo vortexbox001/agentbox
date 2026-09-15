@@ -20,14 +20,13 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import agents_store
-import automation_store
 import config
+import cron_text
 import dagster
 import prompts_store
 import schema
 import secret_scan
 from agents_store import StorageError
-from automation_store import AutomationError
 from prompts_store import PromptValidationError
 
 _UI_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +35,18 @@ _STATIC_DIR = os.path.join(_UI_DIR, "static")
 
 app = FastAPI(title="Agentbox")
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+
+# Inline the icon sprite once per page (research R3, FR-023): base.html renders {{ icon_sprite }}
+# so every <use href="#id"> resolves document-relative with no separate sprite fetch (works with
+# egress blocked, SC-007). Read once at import; ui/static/icons.svg stays the single source the
+# design-system sync test pins.
+with open(os.path.join(_STATIC_DIR, "icons.svg"), encoding="utf-8") as _sprite_fh:
+    _ICON_SPRITE = _sprite_fh.read()
+templates.env.globals["icon_sprite"] = _ICON_SPRITE
+
+# One shared cron-to-text helper (research R6, FR-016): the schedules/sensors column renders
+# each cron's human label server-side, in the box timezone, so it ships with first paint.
+templates.env.globals["cron_text"] = cron_text.cron_text
 
 # Operational logging (T050): one INFO line per mutating action so an operator can
 # trace what the UI wrote. Env values are never logged — only stems and outcomes.
@@ -156,17 +167,44 @@ async def _root_redirect():
     return RedirectResponse("/agents", status_code=302)
 
 
+# The tabbed list's five tabs, in render order (contract agents-list-view §B). Ids are the
+# lowercase URL `?tab=` values; counts are computed server-side and correct with Dagster down.
+_TAB_IDS = ("all", "assets", "jobs", "scheduled", "disabled")
+
+
+def _tab_counts(rows: list[dict]) -> dict:
+    """Server-side tab counts (FR-013). Both-kind agents count in both Assets and Jobs."""
+    return {
+        "all": len(rows),
+        "assets": sum(1 for r in rows if r.get("is_asset")),
+        "jobs": sum(1 for r in rows if r.get("is_job")),
+        "scheduled": sum(1 for r in rows if r.get("crons")),
+        "disabled": sum(1 for r in rows if r.get("enabled") is False),
+    }
+
+
 @app.get("/agents")
 async def _agents_page(request: Request):
     # The list reflects the filesystem exactly: every non-template agent, templates
-    # excluded. Row Dagster links are built in the template from the browser-facing
-    # base URL (dagster_url in the shell context) plus each row's dagster_path
-    # (asset page for an asset agent, job page otherwise).
+    # excluded. Columns 1–5 render from the store row (Schedules/Sensors renders the pills,
+    # icon, and cron-to-text label live; only the toggle state and columns 6–8 fill after
+    # first paint via GET /api/agents/activity). Row Dagster links are built in the template
+    # from the browser-facing base URL (dagster_url) plus each row's dagster_path.
     listing = agents_store.list_agents()
+    rows = listing["agents"]
+    active_tab = (request.query_params.get("tab") or "all").lower()
+    if active_tab not in _TAB_IDS:
+        active_tab = "all"
     return templates.TemplateResponse(
         request,
         "agents/list.html",
-        _shell_context(request, title="Agents", agents=listing["agents"]),
+        _shell_context(
+            request,
+            title="Agents",
+            agents=rows,
+            tab_counts=_tab_counts(rows),
+            active_tab=active_tab,
+        ),
     )
 
 
@@ -243,6 +281,35 @@ async def _api_agents():
     # Broken files carry parse_error with other fields null; a file written by a
     # newer schema is reported editable: false (agents_store.list_agents).
     return JSONResponse(agents_store.list_agents())
+
+
+@app.get("/api/agents/activity")
+async def _api_agents_activity():
+    # Dagster-derived columns 6–8 + pill toggle state, filled after first paint. Always 200:
+    # the outcome is data (mirroring /api/dagster/status). One bounded aliased read; a
+    # reachable:false payload leaves the client's columns 6–8 as em-dashes (contract §C).
+    listing = agents_store.list_agents()
+    return JSONResponse(await dagster.activity(listing["agents"]))
+
+
+@app.post("/api/schedules/toggle")
+async def _api_schedules_toggle(request: Request):
+    # Flip one schedule/sensor from the list. Body: {name, kind, running}. Always 200 —
+    # the outcome (ok/running/message) is data, mirroring /api/dagster/reload (contract §B).
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "running": None, "message": "invalid request body"})
+    name = str(body.get("name") or "")
+    kind = str(body.get("kind") or "")
+    if not name or kind not in ("schedule", "sensor"):
+        return JSONResponse({"ok": False, "running": None, "message": "name and kind are required"})
+    outcome = await dagster.set_instigation(kind, name, bool(body.get("running")))
+    logger.info("event=schedule_toggled name=%s kind=%s running=%s ok=%s",
+                name, kind, bool(body.get("running")), outcome.get("ok"))
+    return JSONResponse(outcome)
 
 
 def _normalise_prompt_filename(new_prompt: dict | None) -> str | None:
@@ -555,51 +622,6 @@ async def _api_create_prompt(request: Request):
         return JSONResponse({"error": "validation", "message": str(e)}, status_code=400)
     logger.info("event=prompt_created file=%s", created)
     return JSONResponse({"filename": created}, status_code=201)
-
-
-@app.get("/automation")
-async def _automation_page(request: Request):
-    # The Automation view (spec 006): every non-template agent with its per-kind schedule
-    # rows (asset / job / both, grouped), editable. Rows are fetched client-side from
-    # GET /api/automation so a reload reflects the agent files.
-    return templates.TemplateResponse(
-        request,
-        "automation/list.html",
-        _shell_context(request, title="Automation"),
-    )
-
-
-@app.get("/api/automation")
-async def _api_automation():
-    try:
-        return JSONResponse({"agents": automation_store.per_agent_view()})
-    except AutomationError as e:
-        # A malformed automation file on disk: surface it so the operator can fix it.
-        return JSONResponse({"error": "automation", "message": e.message}, status_code=422)
-
-
-@app.put("/api/automation")
-async def _api_put_automation(request: Request):
-    # Body: {"triggers": {"<name>": {"asset_schedule"?, "job_schedule"?}}}. Each edit is written
-    # onto the agent's own `triggers:` block via agents_store (spec 006), then Dagster reloads.
-    body = await request.json()
-    triggers = (body or {}).get("triggers", {})
-    if not isinstance(triggers, dict):
-        return JSONResponse(
-            {"error": "validation", "fields": {"triggers": "must be a map of agent name -> trigger"}},
-            status_code=400,
-        )
-    try:
-        automation_store.validate(triggers)
-    except AutomationError as e:
-        return JSONResponse(
-            {"error": "validation", "fields": {e.field or "triggers": e.message}}, status_code=400,
-        )
-    automation_store.write(triggers)
-    logger.info("event=automation_written agents=%d", len(triggers))
-    outcome = await dagster.reload()
-    logger.info("event=dagster_reloaded ok=%s", outcome.get("ok"))
-    return JSONResponse({"ok": outcome.get("ok", False), "message": outcome.get("message", ""), "reload": outcome})
 
 
 @app.get("/api/schema")

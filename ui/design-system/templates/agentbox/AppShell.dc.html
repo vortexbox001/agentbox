@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+@keyframes ab-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+html,body{margin:0;padding:0;height:100%}
+</style>
+</helmet>
+<div class="ax-app">
+  <dc-import name="Sidebar" active="agents" hint-size="240px,100%"></dc-import>
+  <div class="ax-main">
+    <main class="ax-content">
+      <header class="ax-page-header">
+        <div class="ax-page-header-heading">
+          <nav class="ax-breadcrumb" aria-label="Breadcrumb"></nav>
+          <h1 class="ax-page-title">Page title</h1>
+        </div>
+        <div class="ax-page-actions"></div>
+      </header>
+      <div class="ax-card">
+        <p class="ax-muted" style="margin:0">Page content goes here. AppShell is the base scaffold — the sidebar, nav, Dagster status, theme control, and the content frame. Page templates fill the header title, actions, and this content area.</p>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:720}}">
+class Component extends DCLogic {
+  componentDidMount() { document.documentElement.setAttribute('data-theme', 'dark'); }
+}
+</script>
+</body>
+</html>

@@ -83,6 +83,17 @@ def test_agents_page_renders_shell(client):
     assert "agentbox" in resp.text
 
 
+def test_shell_foot_renders_dagster_and_links(client):
+    # US2 (contract shell-and-modal §B, SC-004): a served page's foot renders the Dagster
+    # status block plus the Hide-navigation and Settings links, and no theme radiogroup.
+    html = client.get("/agents").text
+    assert "ax-dagster" in html
+    assert "ax-foot-links" in html
+    assert 'aria-label="Hide navigation"' in html
+    assert 'aria-label="Settings"' in html
+    assert "ax-theme-control" not in html
+
+
 # ── Schema ──────────────────────────────────────────────
 def test_api_schema_shape(client):
     data = client.get("/api/schema").json()
@@ -136,6 +147,79 @@ def test_dagster_reload_reports_failure(client, dagster_stub):
 def test_dagster_status_uses_stub(client, dagster_stub):
     data = client.get("/api/dagster/status").json()
     assert set(data) == {"url", "reachable"}
+
+
+# ── Agents activity endpoint (spec 011 US1, contract §C) ──
+def test_agents_activity_reachable_returns_payload(client, dagster_stub):
+    # A reachable read returns the contract payload verbatim, always HTTP 200.
+    dagster_stub.activity_result = {
+        "reachable": True,
+        "agents": {
+            "hello-example": {
+                "latest_run": {"run_id": "r1", "status": "SUCCESS", "start_time": 1.0, "end_time": 2.0},
+                "history": ["SUCCESS", "FAILURE"],
+                "checks": None,
+                "schedules": {"sched_hello_example": {"running": True, "id": "i1"}},
+            }
+        },
+    }
+    resp = client.get("/api/agents/activity")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reachable"] is True
+    agent = body["agents"]["hello-example"]
+    assert agent["latest_run"]["status"] == "SUCCESS"
+    assert agent["history"] == ["SUCCESS", "FAILURE"]
+    assert agent["schedules"]["sched_hello_example"]["running"] is True
+
+
+def test_agents_activity_degrades_to_unreachable(client, dagster_stub):
+    # The degradation path is data, not an error: still 200, with the reachable:false signal.
+    dagster_stub.activity_result = {"reachable": False, "agents": {}}
+    resp = client.get("/api/agents/activity")
+    assert resp.status_code == 200
+    assert resp.json() == {"reachable": False, "agents": {}}
+
+
+# ── Schedule toggle endpoint (spec 011 US4, contract dagster-activity §B) ──
+def test_schedule_toggle_success_returns_new_state(client, dagster_stub):
+    # A successful flip returns the new running state, always HTTP 200, and forwards
+    # {name, kind, running} to set_instigation verbatim.
+    dagster_stub.set_instigation_result = {"ok": True, "running": True, "message": ""}
+    resp = client.post("/api/schedules/toggle",
+                       json={"name": "sched_hello_example", "kind": "schedule", "running": True})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "running": True, "message": ""}
+    assert dagster_stub.set_instigation_calls == [
+        {"kind": "schedule", "name": "sched_hello_example", "running": True}
+    ]
+
+
+def test_schedule_toggle_sensor_kind_forwarded(client, dagster_stub):
+    dagster_stub.set_instigation_result = {"ok": True, "running": False, "message": ""}
+    resp = client.post("/api/schedules/toggle",
+                       json={"name": "autocond_hello_example", "kind": "sensor", "running": False})
+    assert resp.status_code == 200
+    assert resp.json()["running"] is False
+    assert dagster_stub.set_instigation_calls[0]["kind"] == "sensor"
+
+
+def test_schedule_toggle_reports_degradation(client, dagster_stub):
+    # An errored/unauthorised mutation is data, not an error: still 200, ok:false signal.
+    dagster_stub.set_instigation_result = {"ok": False, "running": None, "message": "Turn on from Dagster"}
+    resp = client.post("/api/schedules/toggle",
+                       json={"name": "sched_hello_example", "kind": "schedule", "running": True})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": False, "running": None, "message": "Turn on from Dagster"}
+
+
+def test_schedule_toggle_rejects_bad_kind(client, dagster_stub):
+    # A missing/invalid kind never reaches Dagster; returns the ok:false data shape at 200.
+    resp = client.post("/api/schedules/toggle",
+                       json={"name": "sched_hello_example", "kind": "bogus", "running": True})
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is False
+    assert dagster_stub.set_instigation_calls == []
 
 
 # ── No navigation link to the design system (R13) ───────
@@ -275,23 +359,15 @@ def test_agents_page_links_each_agent_and_new(client):
     assert "_template-pi" not in html
 
 
-def test_agents_page_dagster_links_use_code_location_path(client):
+def test_agents_page_carries_dagster_runs_base(client):
     html = client.get("/agents").text
-    # Dagster job URLs are <base>/locations/<location>/jobs/<job>; the bare
-    # /jobs/<job> form 404s in the Dagster webserver.
-    assert "/locations/definitions.py/jobs/agent_hello_example" in html
-    assert "/jobs/agent_hello_example" not in html.replace(
-        "/locations/definitions.py/jobs/agent_hello_example", ""
-    )
-
-
-def test_agents_page_asset_agent_links_to_asset_page(client):
-    html = client.get("/agents").text
-    # An asset agent's row links to its Dagster asset page, not a (nonexistent
-    # for asset-only agents) job page.
-    assert "/assets/reports/hello" in html
-    # hello-asset-example is an asset agent, so it must not also carry a bare job link.
-    assert '/jobs/agent_hello_asset_example"' not in html
+    # Spec 011 removed the per-row "runs" button / job link column (contract §B, FR-018):
+    # the Latest-run + Run-history Dagster deep links are built client-side from the
+    # browser-facing base URL, exposed once as data-runs-base on the list view.
+    assert 'data-runs-base="' in html
+    # The old server-rendered job/asset deep-link column is gone from the list markup.
+    assert "/locations/definitions.py/jobs/agent_hello_example" not in html
+    assert "/assets/reports/hello" not in html
 
 
 def test_agents_page_empty_state(client, tmp_agents):
@@ -1027,66 +1103,6 @@ def test_edit_agent_page_has_lead_strip_and_group_grid(client, tmp_agents):
             < html.index('id="ax-form-sections"'))
     # Edit mode has no template picker in the lead strip.
     assert 'id="ax-template-select"' not in html
-
-
-# ── Automation view (spec 006: US3) ─────────────────────
-def _write_job_agent(tmp_agents, name="auto-agent"):
-    _write(tmp_agents, f"{name}.yaml",
-           f"name: {name}\nenabled: true\nharness: api\nmodel: cheap\n"
-           f"prompt_file: hello-example.md\noutput_dir: /data/outputs/{name}\njob: true\n")
-    return name
-
-
-def _write_asset_agent(tmp_agents, name="auto-asset"):
-    _write(tmp_agents, f"{name}.yaml",
-           f"name: {name}\nenabled: true\nharness: api\nmodel: cheap\n"
-           f"prompt_file: hello-example.md\noutput_dir: /data/outputs/{name}\n"
-           f"produces:\n  asset: repo-review/{name}\n  partition: daily\n")
-    return name
-
-
-def test_automation_page_renders(client):
-    html = client.get("/automation").text
-    assert "Automation" in html and 'id="ax-automation-rows"' in html
-
-
-def test_api_automation_lists_agents_with_per_kind_rows(client, tmp_agents):
-    job = _write_job_agent(tmp_agents)
-    asset = _write_asset_agent(tmp_agents)
-    data = client.get("/api/automation").json()
-    rows = {r["name"]: r for r in data["agents"]}
-    assert rows[job]["kinds"] == ["job"]
-    assert [s["kind"] for s in rows[job]["schedules"]] == ["job"]
-    assert rows[job]["schedules"][0]["cron"] is None  # on-demand by default
-    assert rows[asset]["kinds"] == ["asset"]
-    assert rows[asset]["schedules"][0]["fallback"] is False
-
-
-def test_api_put_automation_writes_onto_agent_file_and_reloads(client, dagster_stub, tmp_agents):
-    name = _write_job_agent(tmp_agents)
-    resp = client.put("/api/automation", json={"triggers": {name: {"job_schedule": "30 2 * * *"}}})
-    assert resp.status_code == 200 and resp.json()["ok"] is True
-    # the cron is written onto the agent's own triggers block, not a separate store
-    text = (tmp_agents / f"{name}.yaml").read_text()
-    assert "triggers:" in text and "job_schedule: 30 2 * * *" in text
-
-
-def test_api_put_automation_rejects_unknown_agent(client, dagster_stub, tmp_agents):
-    resp = client.put("/api/automation", json={"triggers": {"ghost-agent": {"job_schedule": "30 2 * * *"}}})
-    assert resp.status_code == 400 and resp.json()["error"] == "validation"
-    assert "ghost-agent" in resp.json()["fields"]
-
-
-def test_api_put_automation_rejects_invalid_cron(client, dagster_stub, tmp_agents):
-    name = _write_job_agent(tmp_agents)
-    resp = client.put("/api/automation", json={"triggers": {name: {"job_schedule": "@daily"}}})
-    assert resp.status_code == 400 and name in resp.json()["fields"]
-
-
-def test_api_put_automation_rejects_off_kind_schedule(client, dagster_stub, tmp_agents):
-    name = _write_job_agent(tmp_agents)  # a job, not an asset
-    resp = client.put("/api/automation", json={"triggers": {name: {"asset_schedule": "30 2 * * *"}}})
-    assert resp.status_code == 400 and name in resp.json()["fields"]
 
 
 def test_agent_form_has_no_schedule_card(client):

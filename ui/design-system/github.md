@@ -1,30 +1,25 @@
 # GitHub source
 
 repo: leeclemmer/agentbox
-branch: 009-design-system-migration
+branch: 010-file-layout-overhaul
 path: ui/design-system
 
 This project (AgentBox Design System) is associated with the AgentBox repository. On the `009-design-system-migration` branch, `ui/design-system/` contains this AgentBox design system (tokens, components, guidelines cards, and the agentbox-app UI kit) — it mirrors this project's structure.
 
-Source URL: https://github.com/leeclemmer/agentbox/tree/009-design-system-migration/ui/design-system
+Source URL: https://github.com/leeclemmer/agentbox/tree/010-file-layout-overhaul/ui/design-system
 
 ## Last sync
 
-date: 2026-09-14T12:16:00Z
-commit: (branch tip 009-design-system-migration @ tree f5105a861f34; commit sha unknown)
+date: 2026-09-14T22:52:40Z
+commit: (branch tip 010-file-layout-overhaul @ tree 12a7d16dc105; commit sha unknown)
 
 ### Updated in this project
-- CORRECTION to the previous two syncs: the upstream `index.html` and component cards do NOT use iframes. They use production `ax-*` markup styled by `/static/app.css` (fully token-based — every value resolves from tokens/*.css). My earlier "iframe direction conflict" was wrong; there is no conflict.
-- Vendored the stylesheet so the server-absolute paths resolve in this project: copied `ui/static/app.css` → `static/app.css`, `ui/static/icons.svg` → `static/icons.svg`, `ui/static/favicon.svg` → `static/favicon.svg`.
-- REQUIRED LOCAL ADAPTATION (do not treat as drift; re-apply after every sync of these files): upstream references the stylesheet/icons with server-absolute `/static/…` paths (correct for the Flask server, where `/static/` maps to ui/static/). In this preview a leading-slash path resolves to the sandbox ORIGIN root, not the project root, so it 404s. Rewrote `/static/` → project-relative in the adopted files: `index.html` uses `static/…`; `components/*/*.card.html` (two levels deep) use `../../static/…` for both `app.css` and `icons.svg#…` icon refs. Verified: ax- rules load, buttons/badges/tags/pills/alert all styled.
-- PULLED (now render correctly): upstream `index.html` (inline specimen, `ax-*` Components section, no iframes, no React/CDN) and all six component cards (buttons/data/feedback/forms/layout/navigation) — production `ax-*` markup. Verified the specimen page renders (Brand, Colors, Type, Spacing, Components all styled).
-- NOT PULLED (this one really is an iframe): `ui_kits/agentbox-app/index.html` upstream is `<iframe src="/agents">`, which needs the live Flask server and violates the user's no-iframe rule. Kept the project's React app-kit recreation. Open question: rebuild the app kit as static `ax-*` HTML of the /agents view instead.
-- PULLED earlier this session: self-hosted fonts + typography.css (local @font-face), readme.md, spacing.css border-width tokens. — added `fonts/Inter*.woff2` + `fonts/SourceCodePro*.woff2`, and `tokens/typography.css` now declares local `@font-face` and drops the Google Fonts `@import` (spec 009 FR-015 / US4: renders with egress blocked). Fonts now register as Inter + Source Code Pro. Also pulled the expanded `readme.md` (fonts/ + Lucide sprite sections).
-- NOT PULLED (conflicts with this session's explicit work — left project versions in place, flagged for the user):
-  1. `index.html` — upstream reverted to the iframe-based specimen gallery. The user explicitly instructed "DO NOT EVER USE IFRAMES", so the project keeps its inline, React-mounted, no-iframe specimen page.
-  2. Component card HTMLs (`buttons/data/feedback/forms/layout/navigation`) — upstream rewrote them to production `ax-*` markup styled by `/static/app.css` (served by the Flask app). That absolute server path does not resolve in this design-system project, so the cards would render unstyled here. Project keeps its bundle-mounted React cards.
-  3. `ui_kits/agentbox-app/index.html` — upstream replaced the React kit with an iframe to the live `/agents` route (same iframe + no-server-path issues).
-- These three are a real divergence in direction (upstream = production HTML served by Flask; project = self-contained inline/React). Needs a decision on which wins — see caveat below.
+- Checked 010 tip 12a7d16dc105 — 52 files changed across 7 commits, but ALL outside `ui/design-system/` (config layout moved to examples/config, orchestrator path resolution, litellm generator, specs, ui/*.py backend + tests). No design-system files changed. Nothing to pull.
+
+### History (earlier this session)
+- Adopted the upstream `ax-*` specimen `index.html` + component cards; vendored `static/app.css`+icons and rewrote server-absolute `/static/…` paths to project-relative (see LOCAL ADAPTATION note below).
+- LOCAL ADAPTATION (re-apply after any future sync of these files): `/static/…` → `static/…` in `index.html`, `../../static/…` in `components/*/*.card.html` (app.css + icons.svg refs). Needed because a leading-slash path resolves to the sandbox origin root here, not the project root.
+- Pulled self-hosted fonts + typography.css (local @font-face), readme.md, spacing.css border-width tokens.
 
 ## Screen map
 
@@ -41,6 +36,8 @@ commit: (branch tip 009-design-system-migration @ tree f5105a861f34; commit sha 
 
 ## Sync history
 
+- 2026-09-14T12:38:30Z — checked upstream, no changes since bf66c0d761d8.
+- 2026-09-14T12:16:00Z — adopted upstream ax-/app.css specimen index.html + cards; vendored static/; rewrote /static/ paths to relative.
 - 2026-09-14T12:13:30Z — pulled spacing.css border-width tokens.
 - 2026-09-14T11:54:30Z — pulled self-hosted fonts + typography.css (local @font-face) + readme; MISjudged index.html/cards as an iframe conflict (corrected 12:16 — they are ax-/app.css markup, now pulled).
 - 2026-09-14T11:45:00Z — verified 1070223c4b94→3fe54e126a8a was the round-trip of session work (spacing.css, Sidebar.jsx byte-identical); nothing pulled.

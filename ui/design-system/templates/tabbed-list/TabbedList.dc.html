@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<x-dc>
+<!-- @template name="Object List — Tabbed" description="Object index with tabs (no page header): tab bar + toolbar over a full-bleed table. Example: agents/runs overview." -->
+<helmet>
+<script src="./ds-base.js"></script>
+<style>html,body{margin:0;padding:0;height:100%}</style>
+</helmet>
+<div class="ax-app">
+  <dc-import name="Sidebar" active="agents" hint-size="240px,100%"></dc-import>
+  <div class="ax-main">
+    <div class="ax-list-view">
+      <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+        <symbol id="filter" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h12l-4.5 5v4l-3 1.5v-5.5z"></path></symbol>
+        <symbol id="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="3" x2="8" y2="13"></line><line x1="3" y1="8" x2="13" y2="8"></line></symbol>
+        <symbol id="clock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 4.5V8l2.4 1.4"></path></symbol>
+        <symbol id="sensor" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"></circle><path d="M5.4 10.6a3.8 3.8 0 0 1 0-5.2M10.6 5.4a3.8 3.8 0 0 1 0 5.2"></path><path d="M3.5 12.5a6.6 6.6 0 0 1 0-9M12.5 3.5a6.6 6.6 0 0 1 0 9"></path></symbol>
+        <symbol id="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.2 8.2 7 10l3.8-4"></path></symbol>
+        <symbol id="warn-tri" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.3 14.6 13.4a.6.6 0 0 1-.5.9H1.9a.6.6 0 0 1-.5-.9z"></path><line x1="8" y1="6.4" x2="8" y2="9.6"></line><circle cx="8" cy="11.6" r="0.7" fill="currentColor" stroke="none"></circle></symbol>
+        <symbol id="x-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"></circle><line x1="6" y1="6" x2="10" y2="10"></line><line x1="10" y1="6" x2="6" y2="10"></line></symbol>
+      </svg>
+      <div class="ax-list-tabs">
+        <nav class="ax-tabs" role="tablist" aria-label="Object filters">
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
+            <button type="button" class="{{ t.tabClass }}" role="tab" aria-selected="{{ t.selected }}" onClick="{{ t.choose }}">{{ t.label }} <span class="ax-tab-count">{{ t.count }}</span></button>
+          </sc-for>
+        </nav>
+      </div>
+      <div class="ax-list-toolbar">
+        <div class="ax-list-toolbar-group">
+          <button type="button" class="ax-btn ax-btn--outlined"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#filter"></use></svg><span>Filter</span></button>
+          <label class="ax-checkbox"><input type="checkbox"><span>Show disabled agents</span></label>
+        </div>
+        <div class="ax-list-toolbar-group">
+          <button type="button" class="ax-btn ax-btn--primary"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#plus"></use></svg><span>New agent</span></button>
+        </div>
+      </div>
+      <table class="ax-table ax-table--full-bleed">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Harness</th>
+            <th scope="col">Model</th>
+            <th scope="col">Kind</th>
+            <th scope="col">Schedules/Sensors</th>
+            <th scope="col">Latest run</th>
+            <th scope="col">Checks</th>
+            <sc-if value="{{ showRunHistory }}" hint-placeholder-val="{{ true }}"><th scope="col">Run history</th></sc-if>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{ rows }}" as="a" hint-placeholder-count="8">
+            <tr class="{{ a.rowClass }}">
+              <td><a class="ax-mono" href="#" style="color:var(--color-link-default)">{{ a.name }}</a></td>
+              <td><span class="ax-mono">{{ a.harness }}</span></td>
+              <td><span class="ax-mono">{{ a.model }}</span></td>
+              <td><span class="{{ a.kindClass }}">{{ a.kind }}</span></td>
+              <td>
+                <sc-if value="{{ a.hasSchedule }}" hint-placeholder-val="{{ true }}"><span class="ax-schedule-pill" data-type="{{ a.scheduleType }}"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="{{ a.scheduleIcon }}"></use></svg><span class="ax-schedule-pill-label">{{ a.scheduleLabel }}</span><label class="ax-toggle"><input type="checkbox" checked="{{ a.scheduleOn }}"><span class="ax-toggle-track" aria-hidden="true"></span></label></span></sc-if>
+                <sc-if value="{{ a.noSchedule }}" hint-placeholder-val="{{ false }}"><span style="color:var(--color-text-lighter)">—</span></sc-if>
+              </td>
+              <td>
+                <sc-if value="{{ a.hasRun }}" hint-placeholder-val="{{ true }}"><span class="ax-latest-run"><span class="ax-status-dot" data-state="{{ a.runDot }}" aria-hidden="true"></span>{{ a.runText }}</span></sc-if>
+                <sc-if value="{{ a.noRun }}" hint-placeholder-val="{{ false }}"><span style="color:var(--color-text-lighter)">—</span></sc-if>
+              </td>
+              <td>
+                <sc-if value="{{ a.hasChecks }}" hint-placeholder-val="{{ true }}"><div class="ax-check-grid"><sc-for list="{{ a.checks }}" as="c" hint-placeholder-count="4"><span class="{{ c.cls }}" title="{{ c.title }}"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="{{ c.icon }}"></use></svg></span></sc-for></div></sc-if>
+                <sc-if value="{{ a.noChecks }}" hint-placeholder-val="{{ false }}"><span style="color:var(--color-text-lighter)">—</span></sc-if>
+              </td>
+              <sc-if value="{{ showRunHistory }}" hint-placeholder-val="{{ true }}">
+                <td><div class="ax-run-history"><sc-for list="{{ a.history }}" as="h" hint-placeholder-count="10"><i data-state="{{ h }}"></i></sc-for></div></td>
+              </sc-if>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:760},&quot;defaultTab&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;All&quot;,&quot;Assets&quot;,&quot;Jobs&quot;,&quot;Scheduled&quot;,&quot;Disabled&quot;],&quot;default&quot;:&quot;All&quot;,&quot;tsType&quot;:&quot;'All' | 'Assets' | 'Jobs' | 'Scheduled' | 'Disabled'&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;showRunHistory&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+const TAB_DEFS = [
+  { label: 'All', count: 23 },
+  { label: 'Assets', count: 11 },
+  { label: 'Jobs', count: 14 },
+  { label: 'Scheduled', count: 6 },
+  { label: 'Disabled', count: 5 },
+];
+const AGENTS = [
+  { name: 'categorize-commits', harness: 'claude-code', model: 'sonnet', kind: 'asset', run: 'success', runText: '2 hours ago', hist: 'ssssfsssss', checks: 'pp' },
+  { name: 'hello-api-kimi3', harness: 'api', model: 'kimi-k3', kind: 'job', schedule: 'Every day at 7:00 AM', scheduleOn: true, run: 'success', runText: '3 hours ago', hist: 'ssssssssss' },
+  { name: 'hello-api-opus', harness: 'api', model: 'opus', kind: 'job', run: 'success', runText: '2 days ago', hist: '...ffssss.' },
+  { name: 'hello-cc-fable', harness: 'claude-code', model: 'fable', kind: 'job', run: 'failure', runText: '5 days ago', hist: 'sffffsssf', checks: 'ppwf' },
+  { name: 'hello-codex', harness: 'codex', model: 'gpt-5.6-sol', kind: 'job', schedule: 'Every day at 2:30 AM', scheduleOn: true, run: 'success', runText: '9 hours ago', hist: 'ssssssssss' },
+  { name: 'hello-pi-kimi3', harness: 'pi', model: 'kimi-k3', kind: 'job', run: 'running', runText: 'running now', hist: 'ssssssssss' },
+  { name: 'list-commits-pi-kimi', harness: 'pi', model: 'kimi', kind: 'asset', schedule: 'Every day at 5:20 PM', scheduleOn: true, run: 'success', runText: '1 day ago', hist: 'ssssssssss', checks: 'ppppww' },
+  { name: 'repo-librarian-agentbox', harness: 'claude-code', model: 'claude-opus-4-8\u2026', kind: 'asset', run: 'success', runText: '2 hours ago', hist: 'ssssssssss', checks: 'ppp' },
+  { name: 'repo-librarian-codex', harness: 'codex', model: 'gpt-6-astra', kind: 'asset', run: 'failure', runText: '3 days ago', hist: 'ffffsssssf', checks: 'pwff' },
+  { name: 'verify-fail', harness: 'claude-code', model: 'haiku', kind: 'job', run: 'failure', runText: '12 days ago', hist: 'fffssssssf' },
+  { name: 'verify-timeout', harness: 'api', model: 'cheap', kind: 'job', disabled: true, hist: '..........' },
+];
+function histStates(s) {
+  return s.split('').map(c => c === 's' ? 'success' : c === 'f' ? 'failure' : 'none');
+}
+const CHECK_META = {
+  p: { cls: 'ax-result ax-result--pass', icon: '#check-circle', title: 'Passed' },
+  w: { cls: 'ax-result ax-result--warn', icon: '#warn-tri', title: 'Failed (warning)' },
+  f: { cls: 'ax-result ax-result--fail', icon: '#x-circle', title: 'Failed' },
+};
+function checkStates(s) {
+  return (s || '').split('').map(c => CHECK_META[c]).filter(Boolean);
+}
+function runDot(run, disabled) {
+  if (disabled || !run) return 'idle';
+  if (run === 'failure') return 'error';
+  if (run === 'running') return 'running';
+  return 'success';
+}
+class Component extends DCLogic {
+  state = { activeTab: null };
+  componentDidMount() { document.documentElement.setAttribute('data-theme', 'dark'); }
+  renderVals() {
+    const active = this.state.activeTab || this.props.defaultTab || 'All';
+    const showRunHistory = this.props.showRunHistory !== false;
+    const source = this.props.agents || AGENTS;
+    return {
+      showRunHistory,
+      tabs: TAB_DEFS.map(t => ({
+        label: t.label,
+        count: t.count,
+        selected: t.label === active ? 'true' : 'false',
+        tabClass: 'ax-btn ax-tab' + (t.label === active ? ' is-active' : ''),
+        choose: () => this.setState({ activeTab: t.label }),
+      })),
+      rows: source.map(a => ({
+        name: a.name,
+        harness: a.harness,
+        model: a.model,
+        kind: a.kind,
+        kindClass: 'ax-badge ax-badge--' + a.kind,
+        rowClass: a.disabled ? 'ax-row--disabled' : '',
+        dotState: runDot(a.run, a.disabled),
+        hasSchedule: !!a.schedule,
+        noSchedule: !a.schedule,
+        scheduleLabel: a.schedule || '',
+        scheduleType: a.kind === 'asset' ? 'sensor' : 'schedule',
+        scheduleIcon: a.kind === 'asset' ? '#sensor' : '#clock',
+        scheduleOn: !!a.scheduleOn,
+        hasRun: !!a.run,
+        noRun: !a.run,
+        runDot: runDot(a.run, a.disabled),
+        runText: a.runText || '',
+        hasChecks: !!a.checks,
+        noChecks: !a.checks,
+        checks: checkStates(a.checks),
+        history: histStates(a.hist || '..........'),
+      })),
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+{% import "components/macros.html" as ui %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -32,6 +33,9 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+  {# Inline icon sprite (research R3, FR-023): a hidden <svg> of <symbol>s so every
+     <use href="#id"> below resolves document-relative with no /static/icons.svg fetch. #}
+  {{ icon_sprite|safe }}
   <div class="ax-app">
     <aside class="ax-sidebar">
       <div class="ax-brand">
@@ -43,16 +47,19 @@
         <img class="ax-brand-lockup ax-brand-lockup--light" src="/design-system/assets/logo-light.svg" alt="agentbox">
         <img class="ax-brand-lockup ax-brand-lockup--dark" src="/design-system/assets/logo-dark.svg" alt="agentbox">
       </div>
+      {# Primary nav links only to pages that exist: Agents (contract shell-and-modal §A,
+         FR-001). The .ax-nav-divider keyline is retained so the group lands where the mock
+         places it; Overview/Runs return when 012/023 ship those pages. #}
       <nav class="ax-nav" aria-label="Primary">
+        <div class="ax-nav-divider" aria-hidden="true"></div>
         <a class="ax-nav-item" href="/agents" data-nav="/agents">
-          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#agents"></use></svg>
+          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#agents"></use></svg>
           <span class="ax-nav-label">Agents</span>
         </a>
-        <a class="ax-nav-item" href="/automation" data-nav="/automation">
-          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#automation"></use></svg>
-          <span class="ax-nav-label">Automation</span>
-        </a>
       </nav>
+      {# Foot (contract §B, FR-002/003/004): Dagster status block (indigo, a Dagster
+         connection point) → keyline → Hide navigation → Settings. The old three-button
+         theme radiogroup is gone; the theme control now lives in the settings modal. #}
       <div class="ax-sidebar-foot">
         <a class="ax-dagster" href="{{ dagster_url }}" target="_blank" rel="noopener" id="ax-dagster-link">
           <span class="ax-dagster-dot" data-state="unknown" id="ax-dagster-dot"></span>
@@ -60,28 +67,25 @@
             <span class="ax-dagster-label">Dagster</span>
             <span class="ax-dagster-status" id="ax-dagster-status">checking…</span>
           </span>
-          <svg class="ax-icon ax-dagster-open" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#external"></use></svg>
+          <svg class="ax-icon ax-dagster-open" width="16" height="16" aria-hidden="true"><use href="#external"></use></svg>
         </a>
-        <div class="ax-theme-control" role="radiogroup" aria-label="Theme">
-          <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="system" title="System" aria-label="System theme">
-            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#theme-system"></use></svg>
+        <div class="ax-foot-links">
+          <button class="ax-btn ax-foot-link" id="ax-collapse-toggle" type="button" aria-label="Hide navigation">
+            <svg class="ax-icon ax-collapse-icon" width="16" height="16" aria-hidden="true"><use href="#collapse"></use></svg>
+            <span class="ax-foot-label">Hide navigation</span>
           </button>
-          <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="light" title="Light" aria-label="Light theme">
-            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#theme-light"></use></svg>
-          </button>
-          <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="dark" title="Dark" aria-label="Dark theme">
-            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#theme-dark"></use></svg>
+          <button class="ax-btn ax-foot-link" id="ax-settings-link" type="button" aria-label="Settings">
+            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#settings"></use></svg>
+            <span class="ax-foot-label">Settings</span>
           </button>
         </div>
-        <button class="ax-btn ax-collapse-toggle" id="ax-collapse-toggle" type="button" aria-label="Collapse sidebar">
-          <svg class="ax-icon ax-collapse-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#collapse"></use></svg>
-          <span class="ax-collapse-label">Collapse</span>
-        </button>
       </div>
     </aside>
 
     <div class="ax-main">
-      <main class="ax-content">
+      {# A page renders full-bleed (edge-to-edge, no content inset) by overriding
+         content_class with "ax-content--flush" — its own regions carry their insets. #}
+      <main class="ax-content {% block content_class %}{% endblock %}">
         {% block page_header %}
         <header class="ax-page-header">
           <div class="ax-page-header-heading">
@@ -100,7 +104,35 @@
   <div class="ax-toast-region" id="ax-toast-region" aria-live="polite"></div>
   <div class="ax-modal-root" id="ax-modal-root" hidden></div>
 
+  {# User settings modal (contract shell-and-modal §D/§E, FR-005–011). The shared
+     #ax-modal-root above is filled dynamically by other modals (confirm/preview) which
+     replaceChildren() it, so the settings markup lives in a template; settings.js clones
+     it into the root on open and enhances the theme picker with the shared listbox
+     (dropdown.js), so at runtime the panel carries role="listbox"/role="option" with a lead
+     icon per option (the FR-003 accessibility control, moved here from the removed foot
+     radiogroup). One Preferences section, one Theme row, a single primary Done — no Save. #}
+  <template id="ax-settings-modal">
+    <div class="ax-modal" role="dialog" aria-modal="true" aria-labelledby="ax-settings-title">
+      <h2 id="ax-settings-title">User settings</h2>
+      <div class="ax-settings-section">
+        <div class="ax-settings-heading">Preferences</div>
+        <div class="ax-settings-row">
+          <label for="ax-theme-select">Theme</label>
+          {{ ui.select(id="ax-theme-select", name="theme", value="system", options=[
+              {"value": "light", "label": "Light", "icon": "theme-light"},
+              {"value": "dark", "label": "Dark", "icon": "theme-dark"},
+              {"value": "system", "label": "Use system setting", "icon": "theme-system"}
+          ]) }}
+        </div>
+      </div>
+      <div class="ax-modal-actions">
+        <button class="ax-btn ax-btn--primary" type="button" id="ax-settings-done">Done</button>
+      </div>
+    </div>
+  </template>
+
   <script type="module" src="/static/shell.js"></script>
+  <script type="module" src="/static/settings.js"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

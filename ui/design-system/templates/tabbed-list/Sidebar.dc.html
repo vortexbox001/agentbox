@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./ds-base.js"></script>
+<style>@keyframes ab-pulse{0%,100%{opacity:1}50%{opacity:.4}}</style>
+</helmet>
+<aside class="ax-sidebar" style="height:100%">
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="agents" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="5" height="5" rx="1"></rect><rect x="9" y="2.5" width="5" height="5" rx="1"></rect><rect x="2" y="9" width="5" height="5" rx="1"></rect><rect x="9" y="9" width="5" height="5" rx="1"></rect></symbol>
+    <symbol id="overview" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="12" height="11" rx="1.5"></rect><line x1="2" y1="6" x2="14" y2="6"></line><line x1="6" y1="6" x2="6" y2="13.5"></line></symbol>
+    <symbol id="runs" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M6.5 5.4 11 8l-4.5 2.6z" fill="currentColor" stroke="none"></path></symbol>
+    <symbol id="external" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3"></path><line x1="9" y1="7" x2="13" y2="3"></line><path d="M9.5 3H13v3.5"></path></symbol>
+    <symbol id="automation" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 1.5 3 8.5h3.5l-1 6 6-8H8z"></path></symbol>
+    <symbol id="collapse" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"></rect><line x1="6" y1="2.5" x2="6" y2="13.5"></line><path d="M11.5 6 9.5 8l2 2"></path></symbol>
+    <symbol id="settings" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2"></circle><path d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1M12.6 12.6l-1.1-1.1M4.5 4.5 3.4 3.4"></path></symbol>
+    <symbol id="theme-light" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"></circle><line x1="8" y1="1.5" x2="8" y2="3"></line><line x1="8" y1="13" x2="8" y2="14.5"></line><line x1="1.5" y1="8" x2="3" y2="8"></line><line x1="13" y1="8" x2="14.5" y2="8"></line><line x1="3.4" y1="3.4" x2="4.5" y2="4.5"></line><line x1="11.5" y1="11.5" x2="12.6" y2="12.6"></line><line x1="12.6" y1="3.4" x2="11.5" y2="4.5"></line><line x1="4.5" y1="11.5" x2="3.4" y2="12.6"></line></symbol>
+    <symbol id="theme-dark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 9.4A5.5 5.5 0 0 1 6.6 2.5 5.5 5.5 0 1 0 13.5 9.4Z"></path></symbol>
+    <symbol id="theme-system" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1"></rect><line x1="6" y1="13.5" x2="10" y2="13.5"></line><line x1="8" y1="11" x2="8" y2="13.5"></line></symbol>
+  </svg>
+  <div class="ax-brand">
+    <img class="ax-brand-mark" src="../../assets/logo.svg" alt="" aria-hidden="true" width="24" height="24">
+    <img class="ax-brand-lockup ax-brand-lockup--light" src="../../assets/logo-light.svg" alt="agentbox">
+    <img class="ax-brand-lockup ax-brand-lockup--dark" src="../../assets/logo-dark.svg" alt="agentbox">
+  </div>
+  <nav class="ax-nav" aria-label="Primary">
+    <a class="ax-nav-item" href="#"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#overview"></use></svg><span class="ax-nav-label">Overview</span></a>
+    <a class="ax-nav-item" href="#"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#runs"></use></svg><span class="ax-nav-label">Runs</span></a>
+    <div class="ax-nav-divider" aria-hidden="true"></div>
+    <a class="{{ agentsClass }}" href="#"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#agents"></use></svg><span class="ax-nav-label">Agents</span></a>
+  </nav>
+  <div class="ax-sidebar-foot" style="border-top:0;padding-top:0">
+    <a class="ax-dagster" href="#"><span class="ax-dagster-dot" data-state="ok"></span><span class="ax-dagster-text"><span class="ax-dagster-label">Dagster</span><span class="ax-dagster-status">running</span></span><svg class="ax-icon ax-dagster-open" width="16" height="16" aria-hidden="true"><use href="#external"></use></svg></a>
+    <div class="ax-foot-links">
+      <button class="ax-btn ax-foot-link" type="button" aria-label="Hide navigation" onClick="{{ toggleCollapse }}"><svg class="ax-icon ax-collapse-icon" width="16" height="16" aria-hidden="true"><use href="#collapse"></use></svg><span class="ax-foot-label">Hide navigation</span></button>
+      <button class="ax-btn ax-foot-link" type="button" aria-label="Settings" onClick="{{ openSettings }}"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#settings"></use></svg><span class="ax-foot-label">Settings</span></button>
+    </div>
+  </div>
+</aside>
+<sc-if value="{{ settingsOpen }}" hint-placeholder-val="{{ false }}">
+  <div class="ax-modal-root" onClick="{{ closeSettings }}">
+    <div class="ax-modal" role="dialog" aria-modal="true" aria-label="User settings" onClick="{{ stopClick }}">
+      <h2>User settings</h2>
+      <div class="ax-settings-section">
+        <div class="ax-settings-heading">Preferences</div>
+        <div class="ax-settings-row">
+          <label>Theme</label>
+          <div class="ax-dropdown{{ themeOpenClass }}">
+            <button type="button" class="ax-dropdown-trigger" aria-haspopup="listbox" aria-expanded="{{ themeExpanded }}" onClick="{{ toggleThemeMenu }}">
+              <span class="ax-dropdown-lead"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="{{ themeIconHref }}"></use></svg></span>
+              <span class="ax-dropdown-value">{{ themeLabel }}</span>
+              <svg class="ax-dropdown-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            </button>
+            <div class="ax-dropdown-panel" hidden="{{ themeHidden }}">
+              <ul class="ax-dropdown-list" role="listbox" style="list-style:none;margin:0;padding:0">
+                <sc-for list="{{ themeOptions }}" as="opt" hint-placeholder-count="3">
+                  <li class="ax-dropdown-option" role="option" aria-selected="{{ opt.selected }}" onClick="{{ opt.choose }}"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="{{ opt.iconHref }}"></use></svg><span class="ax-dropdown-opt-label">{{ opt.label }}</span></li>
+                </sc-for>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ax-modal-actions">
+        <button class="ax-btn ax-btn--primary" type="button" onClick="{{ closeSettings }}">Done</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:240,&quot;height&quot;:560},&quot;active&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;agents&quot;,&quot;automation&quot;],&quot;default&quot;:&quot;agents&quot;,&quot;tsType&quot;:&quot;'agents' | 'automation'&quot;}}">
+const THEME_OPTIONS = [
+  { value: 'light', label: 'Light', iconHref: '#theme-light' },
+  { value: 'dark', label: 'Dark', iconHref: '#theme-dark' },
+  { value: 'indigo', label: 'Dagster Indigo', iconHref: '#theme-dark' },
+  { value: 'system', label: 'Use system setting', iconHref: '#theme-system' },
+];
+class Component extends DCLogic {
+  state = { settingsOpen: false, themeMenuOpen: false, theme: 'system' };
+  componentDidMount() { this.applyTheme('system'); }
+  applyTheme(theme) {
+    let resolved = theme;
+    if (theme === 'system') {
+      // Default to dark: honour an explicit light system preference, else dark.
+      resolved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', resolved);
+  }
+  renderVals() {
+    const active = this.props.active || 'agents';
+    const current = THEME_OPTIONS.find(o => o.value === this.state.theme) || THEME_OPTIONS[2];
+    return {
+      agentsClass: 'ax-nav-item' + (active === 'agents' ? ' is-active' : ''),
+      automationClass: 'ax-nav-item' + (active === 'automation' ? ' is-active' : ''),
+      toggleCollapse: () => {
+        const el = document.documentElement;
+        el.setAttribute('data-sidebar', el.getAttribute('data-sidebar') === 'collapsed' ? 'expanded' : 'collapsed');
+      },
+      settingsOpen: this.state.settingsOpen,
+      openSettings: () => this.setState({ settingsOpen: true, themeMenuOpen: false }),
+      closeSettings: () => this.setState({ settingsOpen: false, themeMenuOpen: false }),
+      stopClick: (e) => e.stopPropagation(),
+      // Theme dropdown (custom listbox using the DS .ax-dropdown chrome).
+      themeOpenClass: this.state.themeMenuOpen ? ' is-open' : '',
+      themeExpanded: this.state.themeMenuOpen ? 'true' : 'false',
+      themeHidden: !this.state.themeMenuOpen,
+      themeLabel: current.label,
+      themeIconHref: current.iconHref,
+      toggleThemeMenu: (e) => { e.stopPropagation(); this.setState(s => ({ themeMenuOpen: !s.themeMenuOpen })); },
+      themeOptions: THEME_OPTIONS.map(o => ({
+        label: o.label,
+        iconHref: o.iconHref,
+        selected: o.value === this.state.theme ? 'true' : 'false',
+        choose: (e) => {
+          e.stopPropagation();
+          this.setState({ theme: o.value, themeMenuOpen: false });
+          this.applyTheme(o.value);
+        },
+      })),
+    };
+  }
+}
+</script>
+</body>
+</html>

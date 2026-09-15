@@ -72,6 +72,21 @@
   --color-core-lime50: rgba(248, 252, 234, 1);
   --color-core-lime10: rgba(252, 254, 245, 1);
 
+  /* ── Core: Indigo (Dagster brand — #4f43ef) ── */
+  --color-core-indigo990: rgba(15, 13, 38, 1);
+  --color-core-indigo950: rgba(22, 19, 54, 1);
+  --color-core-indigo900: rgba(30, 26, 74, 1);
+  --color-core-indigo800: rgba(42, 36, 110, 1);
+  --color-core-indigo700: rgba(56, 48, 152, 1);
+  --color-core-indigo600: rgba(68, 58, 205, 1);
+  --color-core-indigo500: rgba(79, 67, 239, 1);
+  --color-core-indigo400: rgba(112, 102, 242, 1);
+  --color-core-indigo300: rgba(150, 143, 246, 1);
+  --color-core-indigo200: rgba(188, 183, 249, 1);
+  --color-core-indigo100: rgba(222, 220, 252, 1);
+  --color-core-indigo50: rgba(238, 237, 253, 1);
+  --color-core-indigo10: rgba(247, 246, 254, 1);
+
   /* ── Core: Red (status — from Dagster) ── */
   --color-core-red990: rgba(33, 15, 27, 1);
   --color-core-red950: rgba(44, 18, 28, 1);
@@ -124,6 +139,13 @@
   --color-translucent-teal20: rgba(48, 136, 126, 0.20);
   --color-translucent-teal25: rgba(48, 136, 126, 0.25);
   --color-translucent-teal30: rgba(48, 136, 126, 0.30);
+
+  /* ── Translucent: Indigo (Dagster) ── */
+  --color-translucent-indigo12: rgba(79, 67, 239, 0.12);
+  --color-translucent-indigo15: rgba(79, 67, 239, 0.15);
+  --color-translucent-indigo20: rgba(79, 67, 239, 0.20);
+  --color-translucent-indigo25: rgba(79, 67, 239, 0.25);
+  --color-translucent-indigo30: rgba(79, 67, 239, 0.30);
 
   /* ── Translucent: Gray (from Dagster) ── */
   --color-translucent-gray12: rgba(103, 116, 138, 0.12);
