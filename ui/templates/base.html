@@ -83,7 +83,9 @@
     </aside>
 
     <div class="ax-main">
-      <main class="ax-content">
+      {# A page renders full-bleed (edge-to-edge, no content inset) by overriding
+         content_class with "ax-content--flush" — its own regions carry their insets. #}
+      <main class="ax-content {% block content_class %}{% endblock %}">
         {% block page_header %}
         <header class="ax-page-header">
           <div class="ax-page-header-heading">

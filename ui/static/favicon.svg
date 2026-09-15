@@ -1,16 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 22 84 76" fill="none">
-  <!-- agentbox mark: a container holding a grid of agents in different states.
-       Transparent ground, cropped tight so the mark fills the browser-tab icon. -->
-  <rect x="26" y="30" width="68" height="60" rx="8" stroke="#00e5ff" stroke-width="6"/>
-  <g stroke="none">
-    <rect x="35" y="39" width="15" height="15" rx="3" fill="#00e5ff"/>
-    <rect x="53" y="39" width="15" height="15" rx="3" fill="#ffffff" fill-opacity=".2"/>
-    <rect x="71" y="39" width="15" height="15" rx="3" fill="#e040fb"/>
-    <rect x="35" y="57" width="15" height="15" rx="3" fill="#ffffff" fill-opacity=".2"/>
-    <rect x="53" y="57" width="15" height="15" rx="3" fill="#69f0ae"/>
-    <rect x="71" y="57" width="15" height="15" rx="3" fill="#ffffff" fill-opacity=".2"/>
-    <rect x="35" y="75" width="15" height="9" rx="3" fill="#ffd740"/>
-    <rect x="53" y="75" width="15" height="9" rx="3" fill="#ffffff" fill-opacity=".2"/>
-    <rect x="71" y="75" width="15" height="9" rx="3" fill="#00e5ff" fill-opacity=".6"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 4 416 416" fill="none">
+  <title>agentbox</title>
+  <desc>The agentbox mark: two teal fish and an indigo lead fish, cropped tight for the browser tab.</desc>
+  <!-- Paths lifted verbatim from design-system/assets/logo.svg (three-fish symbol),
+       stripped of the wordmark canvas and C2PA metadata so the mark fills the tab icon. -->
+  <path fill="#19b6c5" fill-rule="evenodd" d="     M 66,26     C 66,18 71,14 79,17     C 132,36 190,70 224,101     C 231,107 231,111 224,117     C 185,152 127,183 80,200     C 71,204 66,200 66,191     L 66,126 L 23,155     C 19,158 16,156 16,152     L 16,70     C 16,65 19,64 23,67     L 66,96 Z     M 158,108.5 A 13.5,13.5 0 1 0 185,108.5 A 13.5,13.5 0 1 0 158,108.5 Z"></path>
+  <path fill="#19b6c5" fill-rule="evenodd" d="     M 66,228     C 66,220 72,216 80,219     C 134,239 192,273 223,302     C 230,308 230,313 223,319     C 185,353 128,384 80,400     C 72,403 66,400 66,391     L 66,324 L 23,353     C 19,356 16,354 16,350     L 16,270     C 16,265 19,264 23,267     L 66,296 Z     M 158,308.5 A 13.5,13.5 0 1 0 185,308.5 A 13.5,13.5 0 1 0 158,308.5 Z"></path>
+  <path fill="#4f43ef" fill-rule="evenodd" d="     M 259,132     C 259,124 264,120 272,123     C 326,142 386,175 417,206     C 424,212 424,217 417,223     C 379,257 321,288 273,304     C 264,307 259,303 259,294     L 259,228 L 215,258     C 211,261 208,259 208,254     L 208,174     C 208,169 211,167 215,170     L 259,201 Z     M 352,212.5 A 13.5,13.5 0 1 0 379,212.5 A 13.5,13.5 0 1 0 352,212.5 Z"></path>
 </svg>

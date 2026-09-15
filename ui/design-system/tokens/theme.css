@@ -6,7 +6,7 @@
 :root, .themeLight {
   --browser-color-scheme: light;
   --color-keyline-default: var(--color-translucent-gray20);
-  --color-link-default: var(--color-core-teal700);
+  --color-link-default: var(--color-core-teal600);
   --color-link-hover: var(--color-core-teal500);
   --color-link-disabled: var(--color-core-gray150);
   --color-text-default: var(--color-core-gray990);

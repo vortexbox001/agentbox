@@ -5,6 +5,10 @@
    agents-list-view §B, FR-012). The tab bar + toolbar stand in for the header. #}
 {% block page_header %}{% endblock %}
 
+{# Full-bleed: drop the content inset so the table bleeds edge-to-edge; the tab bar and
+   toolbar keep their own horizontal padding (contract agents-list-view §B, FR-012). #}
+{% block content_class %}ax-content--flush{% endblock %}
+
 {% set tab_defs = [
   {"id": "all", "label": "All", "count": tab_counts.all},
   {"id": "assets", "label": "Assets", "count": tab_counts.assets},
@@ -12,6 +16,28 @@
   {"id": "scheduled", "label": "Scheduled", "count": tab_counts.scheduled},
   {"id": "disabled", "label": "Disabled", "count": tab_counts.disabled},
 ] %}
+
+{# The five per-object columns (Kind → Run history). Rendered once for a single-nature
+   agent and once per sub-row for a dual asset+job agent, with only that nature's kind
+   badge and matching-type schedules shown. #}
+{% macro object_cells(a, stem, show_kinds, show_crons) %}
+<td>
+  {% if show_kinds %}
+    {% for k in show_kinds %}{{ ui.badge(k, intent=k) }}{% endfor %}
+  {% else %}<span class="ax-muted">—</span>{% endif %}
+</td>
+<td class="ax-col-schedules">
+  {% if show_crons %}
+    {% for c in show_crons %}
+      {{ ui.schedule_pill(type=c.type, label=cron_text(c.expr), name=c.dagster_name,
+                          attrs={"data-agent": a.name or stem, "data-dagster-name": c.dagster_name}) }}
+    {% endfor %}
+  {% else %}<span class="ax-muted">—</span>{% endif %}
+</td>
+<td class="ax-col-latest"><span class="ax-muted">—</span></td>
+<td class="ax-col-checks"><span class="ax-muted">—</span></td>
+<td class="ax-col-history"><span class="ax-muted">—</span></td>
+{% endmacro %}
 
 {% block content %}
 <div class="ax-list-view" id="ax-agents-list" data-runs-base="{{ dagster_url }}">
@@ -51,14 +77,16 @@
       {% set kinds = [] %}
       {% if a.is_asset %}{% set _ = kinds.append("asset") %}{% endif %}
       {% if a.is_job %}{% set _ = kinds.append("job") %}{% endif %}
-      <tr {% if a.enabled is false %}class="ax-row--disabled"{% endif %}
-          data-name="{{ a.name or stem }}"
-          data-harness="{{ a.harness or '' }}"
-          data-model="{{ a.model or '' }}"
-          data-kind="{{ kinds|join(' ') }}"
-          data-scheduled="{{ 'true' if a.crons else 'false' }}"
-          data-enabled="{{ 'false' if a.enabled is false else ('unknown' if a.enabled is none else 'true') }}">
-        <td>
+      {# An asset+job agent renders as one grouped pair of rows: Name/Harness/Model span
+         both (rowspan), then one sub-row per nature. Both sub-rows carry the same data-*
+         so the list JS narrows and fills them as a single unit. #}
+      {% set dual = a.is_asset and a.is_job and not a.parse_error %}
+      {% set asset_crons = a.crons | selectattr("type", "equalto", "asset_schedule") | list %}
+      {% set job_crons = a.crons | selectattr("type", "equalto", "job_schedule") | list %}
+      {% set row_attrs %}data-name="{{ a.name or stem }}" data-harness="{{ a.harness or '' }}" data-model="{{ a.model or '' }}" data-kind="{{ kinds|join(' ') }}" data-scheduled="{{ 'true' if a.crons else 'false' }}" data-enabled="{{ 'false' if a.enabled is false else ('unknown' if a.enabled is none else 'true') }}"{% endset %}
+      {% set row_cls = "ax-row--disabled" if a.enabled is false else "" %}
+      <tr class="{{ (row_cls ~ (' ax-row--group-lead' if dual else '')) | trim }}" {{ row_attrs }}>
+        <td{% if dual %} rowspan="2"{% endif %}>
           <a class="ax-mono" href="/agents/{{ stem }}">{{ a.name or stem }}</a>
           {% if a.name_mismatch %}
             {{ ui.badge("name mismatch", intent="scheduled", attrs={"title": "The name inside the file differs from the filename; it is normalised to \"" ~ stem ~ "\" on save."}) }}
@@ -70,26 +98,20 @@
           <span class="ax-muted">{{ a.parse_error }}</span>
         </td>
         {% else %}
-        <td>{% if a.harness %}<span class="ax-mono">{{ a.harness }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
-        <td>{% if a.model %}<span class="ax-mono" title="{{ a.model }}">{{ a.model }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
-        <td>
-          {% if kinds %}
-            {% for k in kinds %}{{ ui.badge(k, intent=k) }}{% endfor %}
-          {% else %}<span class="ax-muted">—</span>{% endif %}
-        </td>
-        <td class="ax-col-schedules">
-          {% if a.crons %}
-            {% for c in a.crons %}
-              {{ ui.schedule_pill(type=c.type, label=cron_text(c.expr), name=c.dagster_name,
-                                  attrs={"data-agent": a.name or stem, "data-dagster-name": c.dagster_name}) }}
-            {% endfor %}
-          {% else %}<span class="ax-muted">—</span>{% endif %}
-        </td>
-        <td class="ax-col-latest"><span class="ax-muted">—</span></td>
-        <td class="ax-col-checks"><span class="ax-muted">—</span></td>
-        <td class="ax-col-history"><span class="ax-muted">—</span></td>
+        <td{% if dual %} rowspan="2"{% endif %}>{% if a.harness %}<span class="ax-mono">{{ a.harness }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+        <td{% if dual %} rowspan="2"{% endif %}>{% if a.model %}<span class="ax-mono" title="{{ a.model }}">{{ a.model }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+        {% if dual %}
+          {{ object_cells(a, stem, ["asset"], asset_crons) }}
+        {% else %}
+          {{ object_cells(a, stem, kinds, a.crons) }}
+        {% endif %}
         {% endif %}
       </tr>
+      {% if dual %}
+      <tr class="{{ (row_cls ~ ' ax-row--group-tail') | trim }}" {{ row_attrs }}>
+        {{ object_cells(a, stem, ["job"], job_crons) }}
+      </tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   {% endcall %}

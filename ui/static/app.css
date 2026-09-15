@@ -89,7 +89,6 @@ html[data-theme="dark"] .ax-brand-lockup--dark { display: block; }
   flex-direction: column;
   gap: var(--space-2);
   padding-top: var(--space-6);
-  border-top: thin solid var(--color-keyline-default);
 }
 .ax-dagster {
   display: flex;
@@ -211,6 +210,9 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
   container-type: inline-size;
   container-name: ax-content;
 }
+/* Full-bleed pages (e.g. the tabbed list) drop the content inset entirely so their
+   regions run edge-to-edge; the two-class selector also wins over the mobile override. */
+.ax-content.ax-content--flush { padding: 0; }
 
 /* ── Page header (in the content area; replaces the old top bar) ── */
 .ax-page-header {
@@ -254,7 +256,6 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
   color: var(--color-text-default);
 }
 .ax-table tr:hover td { background: var(--color-background-default-hover); }
-.ax-table .ax-mono { color: var(--color-text-light); }
 /* Full-bleed variant (Table.d.ts fullBleed) — object-overview lists: vertical column
    rules between cells and a double-thickness rule above the first row; the flush frame/page
    gives the edge-to-edge horizontal bleed. */
@@ -338,6 +339,9 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 .ax-btn--outlined { background: none; color: var(--color-accent-teal); border-color: var(--color-border-default); }
 .ax-btn--outlined:hover:not(:disabled) { background: var(--color-background-blue); border-color: var(--color-accent-teal); }
 
+/* The Filter toggle keeps white label text over the outlined chrome. */
+#ax-filter-toggle { color: var(--color-always-white); }
+
 /* ── Spinner (Spinner.d.ts) ───────────────────────────── */
 /* A token-sized ring spinning on ab-spin (animations.css); shown by `button loading`. */
 .ax-spinner {
@@ -385,11 +389,31 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 .ax-schedule-pill .ax-toggle input:checked + .ax-toggle-track { background: var(--color-core-indigo500); }
 
 /* ── Checkbox (Checkbox.d.ts) ─────────────────────────── */
-/* Native input tinted to the brand via accent-color; token box + gap. */
+/* Custom box (appearance:none) so the unchecked fill is the page ground in BOTH themes:
+   a native checkbox ignores background-color and paints its own mid-gray under
+   color-scheme:dark, which reads as a lighter square than the dark surface. The box is
+   the background token with a token border; :checked fills with the checkbox accent and
+   draws a clip-path tick in the ground colour (AA on the accent in light and dark). */
 .ax-checkbox { display: inline-flex; align-items: center; gap: var(--space-4); cursor: pointer; font: var(--type-body-md); color: var(--color-text-default); }
-.ax-checkbox input { width: var(--icon-sm); height: var(--icon-sm); margin: 0; accent-color: var(--color-checkbox-checked); background-color: var(--color-background-default); flex: none; cursor: pointer; }
+.ax-checkbox input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: var(--icon-sm); height: var(--icon-sm); margin: 0; flex: none; cursor: pointer;
+  background-color: var(--color-background-default);
+  border: thin solid var(--color-checkbox-unchecked);
+  border-radius: var(--radius-sm);
+  display: inline-grid; place-content: center;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.ax-checkbox input:checked { background-color: var(--color-checkbox-checked); border-color: var(--color-checkbox-checked); }
+.ax-checkbox input:checked::before {
+  content: "";
+  width: var(--space-5); height: var(--space-5);
+  background: var(--color-background-default);
+  clip-path: polygon(14% 44%, 0 65%, 40% 100%, 100% 16%, 82% 0, 39% 62%);
+}
 .ax-checkbox input:focus-visible { outline: thin solid var(--color-focus-ring); outline-offset: var(--space-1); }
-.ax-checkbox input:disabled { cursor: default; }
+.ax-checkbox input:disabled { cursor: default; opacity: 0.5; }
 
 /* ── StatusDot (StatusDot.d.ts) ───────────────────────── */
 /* An 8px dot coloured from the status accents; state = data-state on the span. */
@@ -457,6 +481,10 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 .ax-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); padding: var(--space-7) var(--space-9); flex-wrap: wrap; }
 .ax-list-toolbar-group { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; }
 .ax-list-toolbar .ax-checkbox { color: var(--color-text-light); }
+/* When the Filter toggle reveals the input, it sits inline to the right of the button
+   at a fixed width (no full-bleed wrap) and matches the button's height via the button's
+   vertical padding. */
+#ax-filter-input { flex: none; width: 14rem; padding-top: var(--space-2); padding-bottom: var(--space-2); }
 
 /* KIND column badges. */
 .ax-badge--asset { background: var(--color-core-indigo900); color: var(--color-core-indigo300); }
@@ -464,10 +492,9 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 
 /* LATEST RUN cell: status dot + relative time. */
 .ax-latest-run { display: inline-flex; align-items: center; gap: var(--space-3); font: var(--type-body-sm); color: var(--color-text-light); }
-/* When the latest run links out to Dagster it is a Dagster connection point, so it
-   takes the indigo accent (FR-010), not the theme link colour the agent-name link keeps. */
-a.ax-latest-run { color: var(--color-core-indigo400); }
-a.ax-latest-run:hover { color: var(--color-core-indigo300); }
+/* The latest-run link reads white by default and shifts to the brand teal on hover. */
+a.ax-latest-run { color: var(--color-always-white); }
+a.ax-latest-run:hover { color: var(--color-accent-teal); }
 
 /* RUN HISTORY sparkline: fixed-width bars, newest at the right. */
 .ax-run-history { display: flex; gap: var(--space-1); align-items: stretch; height: var(--space-9); }
