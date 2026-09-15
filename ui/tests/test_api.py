@@ -1029,66 +1029,6 @@ def test_edit_agent_page_has_lead_strip_and_group_grid(client, tmp_agents):
     assert 'id="ax-template-select"' not in html
 
 
-# ── Automation view (spec 006: US3) ─────────────────────
-def _write_job_agent(tmp_agents, name="auto-agent"):
-    _write(tmp_agents, f"{name}.yaml",
-           f"name: {name}\nenabled: true\nharness: api\nmodel: cheap\n"
-           f"prompt_file: hello-example.md\noutput_dir: /data/outputs/{name}\njob: true\n")
-    return name
-
-
-def _write_asset_agent(tmp_agents, name="auto-asset"):
-    _write(tmp_agents, f"{name}.yaml",
-           f"name: {name}\nenabled: true\nharness: api\nmodel: cheap\n"
-           f"prompt_file: hello-example.md\noutput_dir: /data/outputs/{name}\n"
-           f"produces:\n  asset: repo-review/{name}\n  partition: daily\n")
-    return name
-
-
-def test_automation_page_renders(client):
-    html = client.get("/automation").text
-    assert "Automation" in html and 'id="ax-automation-rows"' in html
-
-
-def test_api_automation_lists_agents_with_per_kind_rows(client, tmp_agents):
-    job = _write_job_agent(tmp_agents)
-    asset = _write_asset_agent(tmp_agents)
-    data = client.get("/api/automation").json()
-    rows = {r["name"]: r for r in data["agents"]}
-    assert rows[job]["kinds"] == ["job"]
-    assert [s["kind"] for s in rows[job]["schedules"]] == ["job"]
-    assert rows[job]["schedules"][0]["cron"] is None  # on-demand by default
-    assert rows[asset]["kinds"] == ["asset"]
-    assert rows[asset]["schedules"][0]["fallback"] is False
-
-
-def test_api_put_automation_writes_onto_agent_file_and_reloads(client, dagster_stub, tmp_agents):
-    name = _write_job_agent(tmp_agents)
-    resp = client.put("/api/automation", json={"triggers": {name: {"job_schedule": "30 2 * * *"}}})
-    assert resp.status_code == 200 and resp.json()["ok"] is True
-    # the cron is written onto the agent's own triggers block, not a separate store
-    text = (tmp_agents / f"{name}.yaml").read_text()
-    assert "triggers:" in text and "job_schedule: 30 2 * * *" in text
-
-
-def test_api_put_automation_rejects_unknown_agent(client, dagster_stub, tmp_agents):
-    resp = client.put("/api/automation", json={"triggers": {"ghost-agent": {"job_schedule": "30 2 * * *"}}})
-    assert resp.status_code == 400 and resp.json()["error"] == "validation"
-    assert "ghost-agent" in resp.json()["fields"]
-
-
-def test_api_put_automation_rejects_invalid_cron(client, dagster_stub, tmp_agents):
-    name = _write_job_agent(tmp_agents)
-    resp = client.put("/api/automation", json={"triggers": {name: {"job_schedule": "@daily"}}})
-    assert resp.status_code == 400 and name in resp.json()["fields"]
-
-
-def test_api_put_automation_rejects_off_kind_schedule(client, dagster_stub, tmp_agents):
-    name = _write_job_agent(tmp_agents)  # a job, not an asset
-    resp = client.put("/api/automation", json={"triggers": {name: {"asset_schedule": "30 2 * * *"}}})
-    assert resp.status_code == 400 and name in resp.json()["fields"]
-
-
 def test_agent_form_has_no_schedule_card(client):
     # spec 005 FR-017: the Schedule card is gone; Enabled + Limits remain under Runs.
     schema_payload = client.get("/api/schema").json()

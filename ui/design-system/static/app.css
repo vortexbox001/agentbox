@@ -460,7 +460,7 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 
 /* KIND column badges. */
 .ax-badge--asset { background: var(--color-core-indigo900); color: var(--color-core-indigo300); }
-.ax-badge--job { background: none; color: var(--color-core-indigo300); box-shadow: inset 0 0 0 1px var(--color-translucent-indigo30); }
+.ax-badge--job { background: none; color: var(--color-core-indigo300); box-shadow: inset 0 0 0 var(--border-width) var(--color-translucent-indigo30); }
 
 /* LATEST RUN cell: status dot + relative time. */
 .ax-latest-run { display: inline-flex; align-items: center; gap: var(--space-3); font: var(--type-body-sm); color: var(--color-text-light); }
@@ -561,9 +561,9 @@ html[data-sidebar="collapsed"] .ax-collapse-icon { transform: rotate(180deg); }
 }
 /* Header + actions carry full-bleed double-thick keylines; body padding lives on
    the content between them so the rules run edge to edge. */
-.ax-modal h2 { margin: 0; padding: var(--space-6) var(--space-8); font: var(--type-display-sm); color: var(--color-text-default); border-bottom: 2px solid var(--color-keyline-default); }
+.ax-modal h2 { margin: 0; padding: var(--space-6) var(--space-8); font: var(--type-display-sm); color: var(--color-text-default); border-bottom: var(--border-width-thick) solid var(--color-keyline-default); }
 .ax-modal p { margin: 0; padding: var(--space-8); font: var(--type-body-sm); color: var(--color-text-light); }
-.ax-modal-actions { display: flex; justify-content: flex-end; gap: var(--space-5); padding: var(--space-6) var(--space-8); border-top: 2px solid var(--color-keyline-default); }
+.ax-modal-actions { display: flex; justify-content: flex-end; gap: var(--space-5); padding: var(--space-6) var(--space-8); border-top: var(--border-width-thick) solid var(--color-keyline-default); }
 
 /* ── Utility ──────────────────────────────────────────── */
 .ax-muted { color: var(--color-text-light); }   /* AA (T008): the "lighter" tier fails 4.5:1 in dark */

@@ -95,14 +95,11 @@ def test_model_control_never_uses_a_native_datalist():
 
 
 def test_no_bespoke_save_banner_remains():
-    # The Automation page's #ax-automation-banner / .ax-banner save notice is retired.
+    # The retired Automation page's #ax-automation-banner / .ax-banner save notice must not
+    # reappear anywhere in the served tree.
     for path in list(_walk(_TEMPLATES, ".html")) + list(_walk(_STATIC, ".js")):
         text = open(path, encoding="utf-8").read()
         assert "ax-automation-banner" not in text, f"stale save banner in {os.path.basename(path)}"
-    # automation.js uses the shared notice, not a bespoke banner.
-    auto = open(os.path.join(_STATIC, "automation.js"), encoding="utf-8").read()
-    assert "ax-banner" not in auto
-    assert "showStatus" in auto
 
 
 def test_theme_control_is_accessible_icon_buttons():
@@ -124,12 +121,6 @@ def test_theme_control_is_accessible_icon_buttons():
         assert "aria-label=" in tag, f"theme option missing aria-label: {tag}"
         assert "title=" in tag, f"theme option missing hover title: {tag}"
         assert "ax-btn" in tag, f"theme option missing design-system button class: {tag}"
-
-
-def test_automation_uses_shared_dropdown_and_notice():
-    auto = open(os.path.join(_STATIC, "automation.js"), encoding="utf-8").read()
-    assert "enhanceSelects" in auto and "/static/dropdown.js" in auto
-    assert "/static/shell.js" in auto
 
 
 # ── US5: checks require an asset — the Checks card lives inside the Asset card ──

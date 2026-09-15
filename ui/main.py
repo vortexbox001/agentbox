@@ -20,14 +20,12 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import agents_store
-import automation_store
 import config
 import dagster
 import prompts_store
 import schema
 import secret_scan
 from agents_store import StorageError
-from automation_store import AutomationError
 from prompts_store import PromptValidationError
 
 _UI_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +34,14 @@ _STATIC_DIR = os.path.join(_UI_DIR, "static")
 
 app = FastAPI(title="Agentbox")
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+
+# Inline the icon sprite once per page (research R3, FR-023): base.html renders {{ icon_sprite }}
+# so every <use href="#id"> resolves document-relative with no separate sprite fetch (works with
+# egress blocked, SC-007). Read once at import; ui/static/icons.svg stays the single source the
+# design-system sync test pins.
+with open(os.path.join(_STATIC_DIR, "icons.svg"), encoding="utf-8") as _sprite_fh:
+    _ICON_SPRITE = _sprite_fh.read()
+templates.env.globals["icon_sprite"] = _ICON_SPRITE
 
 # Operational logging (T050): one INFO line per mutating action so an operator can
 # trace what the UI wrote. Env values are never logged — only stems and outcomes.
@@ -555,51 +561,6 @@ async def _api_create_prompt(request: Request):
         return JSONResponse({"error": "validation", "message": str(e)}, status_code=400)
     logger.info("event=prompt_created file=%s", created)
     return JSONResponse({"filename": created}, status_code=201)
-
-
-@app.get("/automation")
-async def _automation_page(request: Request):
-    # The Automation view (spec 006): every non-template agent with its per-kind schedule
-    # rows (asset / job / both, grouped), editable. Rows are fetched client-side from
-    # GET /api/automation so a reload reflects the agent files.
-    return templates.TemplateResponse(
-        request,
-        "automation/list.html",
-        _shell_context(request, title="Automation"),
-    )
-
-
-@app.get("/api/automation")
-async def _api_automation():
-    try:
-        return JSONResponse({"agents": automation_store.per_agent_view()})
-    except AutomationError as e:
-        # A malformed automation file on disk: surface it so the operator can fix it.
-        return JSONResponse({"error": "automation", "message": e.message}, status_code=422)
-
-
-@app.put("/api/automation")
-async def _api_put_automation(request: Request):
-    # Body: {"triggers": {"<name>": {"asset_schedule"?, "job_schedule"?}}}. Each edit is written
-    # onto the agent's own `triggers:` block via agents_store (spec 006), then Dagster reloads.
-    body = await request.json()
-    triggers = (body or {}).get("triggers", {})
-    if not isinstance(triggers, dict):
-        return JSONResponse(
-            {"error": "validation", "fields": {"triggers": "must be a map of agent name -> trigger"}},
-            status_code=400,
-        )
-    try:
-        automation_store.validate(triggers)
-    except AutomationError as e:
-        return JSONResponse(
-            {"error": "validation", "fields": {e.field or "triggers": e.message}}, status_code=400,
-        )
-    automation_store.write(triggers)
-    logger.info("event=automation_written agents=%d", len(triggers))
-    outcome = await dagster.reload()
-    logger.info("event=dagster_reloaded ok=%s", outcome.get("ok"))
-    return JSONResponse({"ok": outcome.get("ok", False), "message": outcome.get("message", ""), "reload": outcome})
 
 
 @app.get("/api/schema")

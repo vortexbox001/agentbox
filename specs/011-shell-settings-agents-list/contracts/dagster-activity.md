@@ -26,11 +26,25 @@ surface derives from it. Confirmed against `orchestrator/factory.py`:
   macro is given the store `type` directly and maps it to the icon; no third vocabulary exists.
 
 **Selector identity (all reads and mutations).** Every `*Selector` uses
-`repositoryLocationName: config.DAGSTER_LOCATION` (default `"definitions.py"`) and the repository
-name resolved once in T002 (the `Definitions`-default `"__repository__"` on the pinned 1.13.21
-line — **verify with the T002 `curl` and pin the confirmed value here** before coding). Cron
-labels render in the box timezone `os.environ.get("TZ") or "UTC"` — the same source as the
-factory's `cron_timezone()` — never the browser's zone (FR-016).
+`repositoryLocationName: config.DAGSTER_LOCATION` (default `"definitions.py"`) and
+`repositoryName: "__repository__"`. Cron labels render in the box timezone
+`os.environ.get("TZ") or "UTC"` — the same source as the factory's `cron_timezone()` — never the
+browser's zone (FR-016).
+
+**T002 verified vocabulary (Dagster 1.13.21 on the box, `curl {DAGSTER_URL}/graphql`, 2026-09-15).**
+
+| Item | Confirmed value |
+|------|-----------------|
+| Repository name | `__repository__` (via `repositoriesOrError { nodes { name location { name } } }`) |
+| Location name | `definitions.py` (= `config.DAGSTER_LOCATION`) |
+| Runs union | `pipelineRunsOrError` → `... on Runs { results { runId status startTime endTime } }` |
+| Instigation read | `instigationStateOrError(instigationSelector: {repositoryName, repositoryLocationName, name})`; arms: `InstigationState { id selectorId status hasStartPermission hasStopPermission }`, `InstigationStateNotFoundError`, `PythonError` — the last two → `null` |
+| Asset checks | **NOT top-level.** `assetNodeOrError(assetKey: {path: […]}) { ... on AssetNode { assetChecksOrError { ... on AssetChecks { checks { name blocking executionForLatestMaterialization { status evaluation { severity } } } } } }`; union `AssetChecksOrError` also has `AssetCheckNeedsMigrationError` / `AssetCheckNeedsUserCodeUpgrade` / `AssetCheckNeedsAgentUpgradeError` → treat as `null` |
+| Start mutations | `startSchedule(scheduleSelector: ScheduleSelector!)`, `startSensor(sensorSelector: SensorSelector!)` — **selector-keyed** |
+| **Stop mutations** | `stopRunningSchedule(id: String)` and `stopSensor(id: String)` — **NOT selector-keyed**; pass the `InstigationState.id` (or `scheduleSelectorId`/`jobSelectorId` = `InstigationState.selectorId`). Because stop needs the id, `activity`'s instigation sub-read MUST also return `id` per cron so `set_instigation` can stop without a second lookup. |
+
+This resolves finding U1. The stop-mutation shape differs from the original §A/§B draft (which
+assumed `stopRunningSchedule(scheduleSelector)`); §B below is corrected to the verified id-keyed form.
 
 ## A. `activity(agents) -> dict` — one bounded aliased read (FR-019, SC-005)
 
@@ -53,41 +67,56 @@ the `agents-list-view.md §C` payload. On timeout/HTTP/parse error return
 2. **Instigation state** — per configured cron's `dagster_name`:
    ```graphql
    instigationStateOrError(instigationSelector: {
-     repositoryName: <repo>, repositoryLocationName: "<DAGSTER_LOCATION>", name: "<dagster_name>"
-   }) { ... on InstigationState { status } }
+     repositoryName: "__repository__", repositoryLocationName: "<DAGSTER_LOCATION>", name: "<dagster_name>"
+   }) { ... on InstigationState { id selectorId status } }
    ```
-   `RUNNING` → `{"running": true}`, `STOPPED` → `{"running": false}`, any error arm → `null`.
-3. **Latest-materialization asset checks** — asset agents with declared checks only, by asset key:
+   `RUNNING` → `{"running": true, "id": <id>}`, `STOPPED` → `{"running": false, "id": <id>}`, any
+   error arm (incl. `InstigationStateNotFoundError`) → `null`. The `id` is carried so
+   `set_instigation` can address the id-keyed stop mutation (§B) without a second read.
+3. **Latest-materialization asset checks** — asset agents with declared checks only, by asset key,
+   **through `assetNodeOrError`** (there is no top-level `assetChecksOrError` on this version):
    ```graphql
-   assetChecksOrError(assetKey: {path: [<segments>]}) {
-     ... on AssetChecks { checks { name executionForLatestMaterialization { status evaluation { severity } } } }
+   assetNodeOrError(assetKey: {path: [<segments>]}) {
+     ... on AssetNode {
+       assetChecksOrError {
+         ... on AssetChecks {
+           checks { name blocking executionForLatestMaterialization { status evaluation { severity } } }
+         }
+       }
+     }
    }
    ```
    Map to `{name, status}`: `pass` (succeeded); `warn` (failed, `severity: WARN` → non-blocking);
    `fail-blocking` (failed, `severity: ERROR`, or `error`/`timeout`); `not-run` (no execution).
+   Non-`AssetChecks` arms (`AssetCheckNeedsMigrationError`, etc.) → `null`.
 
 **Null semantics.** Any sub-read arm that is missing or an error type yields `null` for that
 field (unknown), never `0` or a fabricated value (shared contract; edge case: partial Dagster
 ships columns 1–5 live and 6–8 as em-dashes).
 
-**VERSION NOTE (verify once before coding — this is task T002, research R1).** The union type
-names (`Runs`/`PipelineRuns`), the asset-check query field/evaluation shape, the
-`instigationSelector`/`scheduleSelector`/`sensorSelector` argument names, **and the
-`repositoryName` value** (§0) vary by Dagster version. Confirm against the deployed webserver with
-one throwaway `curl` to `/graphql` and pin the resolved names + repository name in §0 above. The
-shapes above target the 1.13.x line the box runs.
+**VERSION NOTE — RESOLVED by T002 (2026-09-15, Dagster 1.13.21 on the box).** The union type
+names, asset-check query path, selector argument names, stop-mutation shape, and `repositoryName`
+value are all confirmed and pinned in §0's verified-vocabulary table above. No further
+verification is needed before coding `activity`/`set_instigation`.
 
 ## B. `set_instigation(kind, name, running) -> dict` — start/stop (FR-021, US4)
 
 **Input.** `kind` ∈ {`schedule`, `sensor`} (from §0's toggle-kind column), the Dagster instigator
-`name` (`sched_<stem>` or `autocond_<stem>`), and desired `running`.
+`name` (`sched_<stem>` or `autocond_<stem>`), and desired `running`. For a **stop**, the
+instigation `id` from `activity`'s sub-read 2 (the stop mutations are id-keyed, not
+selector-keyed — see §0 T002 note).
 
-**Behaviour.** POST the matching mutation with the selector (per §0):
-- `schedule` (job_schedule): `startSchedule(scheduleSelector: {...})` / `stopRunningSchedule(scheduleSelector: {...})`
-- `sensor` (asset_schedule): `startSensor(sensorSelector: {...})` / `stopSensor(sensorSelector: {...})`
+**Behaviour.** POST the matching mutation (per §0):
+- **start** is selector-keyed:
+  - `schedule` (job_schedule): `startSchedule(scheduleSelector: {repositoryName: "__repository__", repositoryLocationName: config.DAGSTER_LOCATION, scheduleName: name})`
+  - `sensor` (asset_schedule): `startSensor(sensorSelector: {repositoryName: "__repository__", repositoryLocationName: config.DAGSTER_LOCATION, sensorName: name})`
+- **stop** is **id-keyed** (verified T002 — no selector arg):
+  - `schedule`: `stopRunningSchedule(id: <instigation id>)`
+  - `sensor`: `stopSensor(id: <instigation id>)`
 
-Selector = `{repositoryName, repositoryLocationName: config.DAGSTER_LOCATION, <scheduleName|sensorName>}`
-(§0 selector identity).
+  When the id is unknown (state never resolved), stop is not attempted — the toggle stays
+  disabled per §C. (`scheduleSelectorId` / `jobSelectorId` = `InstigationState.selectorId` are the
+  documented fallbacks if an id is unavailable.)
 Return `{"ok": bool, "running": bool|None, "message": str}`. Treat `... on PythonError`,
 `UnauthorizedError`, and GraphQL `errors` as `ok: false`.
 

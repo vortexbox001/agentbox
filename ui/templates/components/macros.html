@@ -48,12 +48,17 @@
 
 {# ── Select (Select.d.ts) — spec-002 dropdown, behaviour frozen ──
    Emits <select class="ax-select">; the page/module still calls dropdown.enhanceSelect()
-   (FR-025, guarded by test_ui_consistency.py). options: str or {value,label}. #}
-{% macro select(name=none, value=none, options=[], disabled=false, id=none, attrs={}) -%}
-<select class="ax-select"{{ {'id': id, 'name': name}|xmlattr }}{% if disabled %} disabled{% endif %}{{ attrs|xmlattr }}>
+   (FR-025, guarded by test_ui_consistency.py). options: str or {value,label}. A mapping option
+   may also carry `icon` (a sprite #id lead glyph) and `note` (a right-pinned secondary value),
+   which dropdown.js renders as data-icon / data-note. `filter` adds a sticky filter row at the
+   top of the panel: pass true (placeholder "Filter…") or a string placeholder (FR-025, R5). #}
+{% macro select(name=none, value=none, options=[], disabled=false, id=none, filter=false, attrs={}) -%}
+<select class="ax-select"{{ {'id': id, 'name': name}|xmlattr }}{% if disabled %} disabled{% endif %}
+        {%- if filter %} data-filter{% if filter is string %}="{{ filter }}"{% endif %}{% endif %}{{ attrs|xmlattr }}>
 {%- for o in options %}
   {%- if o is mapping %}
-  <option value="{{ o.value }}"{% if value is not none and o.value|string == value|string %} selected{% endif %}>{{ o.label }}</option>
+  <option value="{{ o.value }}"{% if value is not none and o.value|string == value|string %} selected{% endif %}
+    {%- if o.icon %} data-icon="{{ o.icon }}"{% endif %}{% if o.note %} data-note="{{ o.note }}"{% endif %}>{{ o.label }}</option>
   {%- else %}
   <option value="{{ o }}"{% if value is not none and o|string == value|string %} selected{% endif %}>{{ o }}</option>
   {%- endif %}
@@ -162,10 +167,14 @@
 
 {# ── SchedulePill (SchedulePill.d.ts) ────────────────────
    Schedule / sensor chip: icon + human-readable frequency + an inline on/off toggle.
-   `on` sets the toggle; the toggle behaviour is wired by existing JS (no event props). #}
+   `on` sets the toggle; the toggle behaviour is wired by existing JS (no event props).
+   The lead icon is type-driven off the store's canonical cron `type` (dagster-activity §0):
+   `clock` for a job_schedule, `sensor` for an asset_schedule (FR-025). Resolved by #id
+   against the inline sprite. #}
 {% macro schedule_pill(type="schedule", label="", on=false, name=none, id=none, attrs={}) -%}
+{%- set _pill_icon = {"job_schedule": "clock", "asset_schedule": "sensor", "schedule": "clock", "asset": "sensor"}.get(type, "clock") -%}
 <span class="ax-schedule-pill" data-type="{{ type }}"{{ attrs|xmlattr }}>
-  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#automation"></use></svg>
+  <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#{{ _pill_icon }}"></use></svg>
   <span class="ax-schedule-pill-label">{{ label }}</span>
   <label class="ax-toggle">
     <input type="checkbox"{{ {'id': id, 'name': name}|xmlattr }}{% if on %} checked{% endif %}>

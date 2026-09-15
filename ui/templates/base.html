@@ -32,6 +32,9 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+  {# Inline icon sprite (research R3, FR-023): a hidden <svg> of <symbol>s so every
+     <use href="#id"> below resolves document-relative with no /static/icons.svg fetch. #}
+  {{ icon_sprite|safe }}
   <div class="ax-app">
     <aside class="ax-sidebar">
       <div class="ax-brand">
@@ -45,12 +48,8 @@
       </div>
       <nav class="ax-nav" aria-label="Primary">
         <a class="ax-nav-item" href="/agents" data-nav="/agents">
-          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#agents"></use></svg>
+          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#agents"></use></svg>
           <span class="ax-nav-label">Agents</span>
-        </a>
-        <a class="ax-nav-item" href="/automation" data-nav="/automation">
-          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#automation"></use></svg>
-          <span class="ax-nav-label">Automation</span>
         </a>
       </nav>
       <div class="ax-sidebar-foot">
@@ -60,21 +59,21 @@
             <span class="ax-dagster-label">Dagster</span>
             <span class="ax-dagster-status" id="ax-dagster-status">checking…</span>
           </span>
-          <svg class="ax-icon ax-dagster-open" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#external"></use></svg>
+          <svg class="ax-icon ax-dagster-open" width="16" height="16" aria-hidden="true"><use href="#external"></use></svg>
         </a>
         <div class="ax-theme-control" role="radiogroup" aria-label="Theme">
           <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="system" title="System" aria-label="System theme">
-            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#theme-system"></use></svg>
+            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#theme-system"></use></svg>
           </button>
           <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="light" title="Light" aria-label="Light theme">
-            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#theme-light"></use></svg>
+            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#theme-light"></use></svg>
           </button>
           <button class="ax-btn ax-theme-option" type="button" role="radio" aria-checked="false" data-theme-choice="dark" title="Dark" aria-label="Dark theme">
-            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#theme-dark"></use></svg>
+            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#theme-dark"></use></svg>
           </button>
         </div>
         <button class="ax-btn ax-collapse-toggle" id="ax-collapse-toggle" type="button" aria-label="Collapse sidebar">
-          <svg class="ax-icon ax-collapse-icon" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#collapse"></use></svg>
+          <svg class="ax-icon ax-collapse-icon" width="16" height="16" aria-hidden="true"><use href="#collapse"></use></svg>
           <span class="ax-collapse-label">Collapse</span>
         </button>
       </div>
