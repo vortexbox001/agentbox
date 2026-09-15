@@ -1,0 +1,77 @@
+# Contract: Dagster activity read + schedule toggle
+
+Covers FR-019, FR-021, US4. Two additions to `ui/dagster.py`, both following the module's
+existing rule: **map every transport and Dagster-side failure onto plain data**, never raise to
+the caller, short timeout, one client.
+
+## A. `activity(agents) -> dict` — one bounded aliased read (FR-019, SC-005)
+
+**Input.** The store rows (names, job names `agent_<stem>`, asset keys, per-cron `dagster_name`).
+
+**Behaviour.** Build **one** GraphQL document that aliases, per agent, the three sub-reads below,
+POST it once to `{config.DAGSTER_URL}/graphql` with a short timeout, and shape the response into
+the `agents-list-view.md §C` payload. On timeout/HTTP/parse error return
+`{"reachable": False, "agents": {}}`. Never issue one request per agent.
+
+**Sub-reads (per agent, aliased).**
+
+1. **Latest run + last ten** — filter runs by the agent's job name:
+   ```graphql
+   pipelineRunsOrError(filter: {pipelineName: "agent_<stem>"}, limit: 10) {
+     ... on Runs { results { runId status startTime endTime } }
+   }
+   ```
+   `results[0]` → `latest_run`; the ten `status` values → `history` (newest-first).
+2. **Instigation state** — per configured cron's `dagster_name`:
+   ```graphql
+   instigationStateOrError(instigationSelector: {
+     repositoryName: <repo>, repositoryLocationName: "<DAGSTER_LOCATION>", name: "<dagster_name>"
+   }) { ... on InstigationState { status } }
+   ```
+   `RUNNING` → `{"running": true}`, `STOPPED` → `{"running": false}`, any error arm → `null`.
+3. **Latest-materialization asset checks** — asset agents with declared checks only, by asset key:
+   ```graphql
+   assetChecksOrError(assetKey: {path: [<segments>]}) {
+     ... on AssetChecks { checks { name executionForLatestMaterialization { status evaluation { severity } } } }
+   }
+   ```
+   Map to `{name, status}`: `pass` (succeeded); `warn` (failed, `severity: WARN` → non-blocking);
+   `fail-blocking` (failed, `severity: ERROR`, or `error`/`timeout`); `not-run` (no execution).
+
+**Null semantics.** Any sub-read arm that is missing or an error type yields `null` for that
+field (unknown), never `0` or a fabricated value (shared contract; edge case: partial Dagster
+ships columns 1–5 live and 6–8 as em-dashes).
+
+**VERSION NOTE (verify once before coding, research R1).** The union type names
+(`Runs`/`PipelineRuns`), the asset-check query field/evaluation shape, and the
+`instigationSelector`/`scheduleSelector` argument names vary by Dagster version. Confirm against
+the deployed webserver with one throwaway `curl` to `/graphql` and pin the resolved names here.
+The shapes above target the 1.13.x line the box runs.
+
+## B. `set_instigation(kind, name, running) -> dict` — start/stop (FR-021, US4)
+
+**Input.** `kind` ∈ {`schedule`, `sensor`}, the Dagster instigator `name`, and desired `running`.
+
+**Behaviour.** POST the matching mutation with the selector:
+- schedule: `startSchedule(scheduleSelector: {...})` / `stopRunningSchedule(scheduleSelector: {...})`
+- sensor: `startSensor(sensorSelector: {...})` / `stopSensor(sensorSelector: {...})`
+
+Selector = `{repositoryName, repositoryLocationName: "<DAGSTER_LOCATION>", <scheduleName|sensorName>}`.
+Return `{"ok": bool, "running": bool|None, "message": str}`. Treat `... on PythonError`,
+`UnauthorizedError`, and GraphQL `errors` as `ok: false`.
+
+**Exposed endpoint** (`main.py`): a POST (e.g. `POST /api/schedules/toggle`, body
+`{name, kind, running}`) returning `set_instigation(...)`, always **200** (outcome is data).
+
+## C. Degradation (FR-016, FR-021, edge cases)
+
+The pill toggle MUST render **disabled** with an explanatory title, and MUST NOT attempt a state
+change, when **any** of:
+- the agent is disabled,
+- Dagster is unreachable (`activity` returned `reachable: false`),
+- the instigation state is unknown (`running: null`),
+- the mutation is unauthorised/unavailable → title **"Turn on from Dagster"** (matching the
+  existing "starts paused, turn on from Dagster" wording).
+
+Otherwise the toggle reflects `running` and, on flip, calls `B` and updates to the returned
+state (FR-021, US4 scenario 1).
