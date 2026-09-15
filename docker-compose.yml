@@ -8,12 +8,12 @@ services:
     env_file: .env
     environment:
       # Config root inside the container; the generator writes litellm.rendered.yaml here.
-      AGENTBOX_CONFIG: /opt/agentbox/config
+      AGENTBOX_CONFIG: ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}
     volumes:
       # Product tree read-only (the template lives at litellm/config.template.yaml).
       - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}:/opt/agentbox:ro
       # Config root writable — the overlay is read here and the rendered config is written here.
-      - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config:/opt/agentbox/config
+      - ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}:${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}
     command: ["python3", "/opt/agentbox/litellm/generate.py"]
     restart: "no"
     networks: [agentnet]
@@ -29,7 +29,7 @@ services:
     volumes:
       # Only the GENERATED rendered config (config root), read-only. Produced by
       # litellm/generate.py from the product template + instance overlay (US6).
-      - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config/litellm.rendered.yaml:/app/config.yaml:ro
+      - ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}/litellm.rendered.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     networks: [agentnet, agentnet-isolated]
 
@@ -39,7 +39,7 @@ services:
     env_file: .env
     environment:
       # The three roots (contracts/path-resolution.md §1), passed through explicitly.
-      AGENTBOX_CONFIG: /opt/agentbox/config
+      AGENTBOX_CONFIG: ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}
       AGENTBOX_DATA: ${AGENTBOX_DATA:-/data/agentbox}
       DAGSTER_HOME: ${DAGSTER_HOME:-/data/dagster}
       # Host path of the product checkout, for Docker-outside-of-Docker `-v` sources.
@@ -48,7 +48,7 @@ services:
       # Product tree — read-only everywhere a service consumes it (Constitution I / FR-013/FR-023).
       - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}:/opt/agentbox:ro
       # Config root — the agents/prompts the orchestrator discovers (read-only here; the UI writes it).
-      - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config:/opt/agentbox/config:ro
+      - ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}:${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}:ro
       # State root — the orchestrator writes run transcripts (runs/), wipes workspaces/, reads outputs/.
       - ${AGENTBOX_DATA:-/data/agentbox}:${AGENTBOX_DATA:-/data/agentbox}
       # Dagster home — Dagster's own storage + the transient pipes dir (orchestrator/daemon only).
@@ -64,13 +64,13 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      AGENTBOX_CONFIG: /opt/agentbox/config
+      AGENTBOX_CONFIG: ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}
       AGENTBOX_DATA: ${AGENTBOX_DATA:-/data/agentbox}
       DAGSTER_HOME: ${DAGSTER_HOME:-/data/dagster}
       AGENTBOX_HOST_REPO: ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}
     volumes:
       - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}:/opt/agentbox:ro
-      - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config:/opt/agentbox/config:ro
+      - ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}:${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}:ro
       - ${AGENTBOX_DATA:-/data/agentbox}:${AGENTBOX_DATA:-/data/agentbox}
       - ${DAGSTER_HOME:-/data/dagster}:${DAGSTER_HOME:-/data/dagster}
       - /var/run/docker.sock:/var/run/docker.sock
@@ -86,14 +86,14 @@ services:
       DAGSTER_URL: http://dagster-webserver:3000
       # The three roots. The UI reads agents/prompts under the config root and writes them there
       # (FR-007); DATA_ROOT is used only as a string for schema path validation (no data mount).
-      AGENTBOX_CONFIG: /opt/agentbox/config
+      AGENTBOX_CONFIG: ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}
       AGENTBOX_DATA: ${AGENTBOX_DATA:-/data/agentbox}
       DAGSTER_HOME: ${DAGSTER_HOME:-/data/dagster}
     volumes:
       # Product tree read-only (the UI reads examples/ templates and the LiteLLM config from here).
       - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}:/opt/agentbox:ro
       # Config root — writable: the UI edits agents/ and creates prompt files here.
-      - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config:/opt/agentbox/config
+      - ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}:${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}
     ports:
       - "8080:8080"
     networks: [agentnet]
