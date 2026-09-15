@@ -89,7 +89,7 @@ def test_api_schema_shape(client):
     assert {"sections", "fields", "harnesses", "litellm_aliases", "prompts"} <= set(data)
     assert len(data["harnesses"]) == 4
     assert isinstance(data["prompts"], list)
-    assert "repo-librarian.md" in data["prompts"]
+    assert "hello-example.md" in data["prompts"]
     assert "cheap" in data["litellm_aliases"]
 
 
@@ -191,7 +191,7 @@ def test_api_agents_lists_non_template_files(client):
     assert set(data) == {"agents", "templates"}
 
     names = {a["name"] for a in data["agents"]}
-    assert "repo-librarian-agentbox" in names
+    assert "hello-example" in names
     # Templates (leading underscore) never appear as agents.
     assert not any(a["file"].startswith("_") for a in data["agents"])
 
@@ -200,20 +200,20 @@ def test_api_agents_lists_non_template_files(client):
     for a in data["agents"]:
         assert required <= set(a)
 
-    # repo-librarian-agentbox declares `produces` (asset repo-review/agentbox), so its
+    # hello-asset-example declares `produces` (asset reports/hello), so its
     # Dagster link is the asset page, not a job page.
-    row = next(a for a in data["agents"] if a["name"] == "repo-librarian-agentbox")
-    assert row["harness"] == "claude-code"
-    assert row["dagster_job"] == "agent_repo_librarian_agentbox"
-    assert row["dagster_path"] == "/assets/repo-review/agentbox"
-    assert row["dagster_url"].endswith("/assets/repo-review/agentbox")
+    row = next(a for a in data["agents"] if a["name"] == "hello-asset-example")
+    assert row["harness"] == "api"
+    assert row["dagster_job"] == "agent_hello_asset_example"
+    assert row["dagster_path"] == "/assets/reports/hello"
+    assert row["dagster_url"].endswith("/assets/reports/hello")
     assert row["parse_error"] is None
     assert row["name_mismatch"] is False
 
-    # categorize-commits is job-only (`job: true`, no produces): job link as before.
-    row = next(a for a in data["agents"] if a["name"] == "categorize-commits")
-    assert row["dagster_path"] == "/locations/definitions.py/jobs/agent_categorize_commits"
-    assert row["dagster_url"].endswith("/locations/definitions.py/jobs/agent_categorize_commits")
+    # hello-example is job-only (`job: true`, no produces): job link as before.
+    row = next(a for a in data["agents"] if a["name"] == "hello-example")
+    assert row["dagster_path"] == "/locations/definitions.py/jobs/agent_hello_example"
+    assert row["dagster_url"].endswith("/locations/definitions.py/jobs/agent_hello_example")
 
 
 def test_api_agents_lists_templates_separately(client):
@@ -269,7 +269,7 @@ def test_api_agents_under_one_second_with_50_files(client, tmp_agents):
 
 def test_agents_page_links_each_agent_and_new(client):
     html = client.get("/agents").text
-    assert 'href="/agents/repo-librarian-agentbox"' in html
+    assert 'href="/agents/hello-example"' in html
     assert 'href="/agents/new"' in html          # "New agent" link
     # Template files are not rendered as rows.
     assert "_template-pi" not in html
@@ -279,9 +279,9 @@ def test_agents_page_dagster_links_use_code_location_path(client):
     html = client.get("/agents").text
     # Dagster job URLs are <base>/locations/<location>/jobs/<job>; the bare
     # /jobs/<job> form 404s in the Dagster webserver.
-    assert "/locations/definitions.py/jobs/agent_categorize_commits" in html
-    assert "/jobs/agent_categorize_commits" not in html.replace(
-        "/locations/definitions.py/jobs/agent_categorize_commits", ""
+    assert "/locations/definitions.py/jobs/agent_hello_example" in html
+    assert "/jobs/agent_hello_example" not in html.replace(
+        "/locations/definitions.py/jobs/agent_hello_example", ""
     )
 
 
@@ -289,10 +289,9 @@ def test_agents_page_asset_agent_links_to_asset_page(client):
     html = client.get("/agents").text
     # An asset agent's row links to its Dagster asset page, not a (nonexistent
     # for asset-only agents) job page.
-    assert "/assets/repo-review/agentbox" in html
-    # The closing quote pins the full href: agent_repo_librarian_agentbox_fable
-    # (job-only) legitimately keeps its job link.
-    assert '/jobs/agent_repo_librarian_agentbox"' not in html
+    assert "/assets/reports/hello" in html
+    # hello-asset-example is an asset agent, so it must not also carry a bare job link.
+    assert '/jobs/agent_hello_asset_example"' not in html
 
 
 def test_agents_page_empty_state(client, tmp_agents):
@@ -311,7 +310,7 @@ def _valid_pi(**over):
         "enabled": True,
         "harness": "pi",
         "model": "cheap",
-        "prompt_file": "repo-librarian.md",
+        "prompt_file": "hello-example.md",
         "output_dir": "/data/outputs/new-pi-agent",
         "network": "agentnet",
         "job": True,  # spec 006: an agent must be an asset, a job, or both
@@ -366,7 +365,7 @@ def test_create_agent_400_for_bad_fields(client, dagster_stub):
 
 
 def test_create_agent_409_when_name_exists(client, dagster_stub):
-    resp = client.post("/api/agents", json={"agent": _valid_pi(name="repo-librarian-agentbox")})
+    resp = client.post("/api/agents", json={"agent": _valid_pi(name="hello-example")})
     assert resp.status_code == 409
     assert resp.json()["error"] == "exists"
 
@@ -468,7 +467,7 @@ name: edit-me
 enabled: true
 harness: pi
 model: cheap
-prompt_file: repo-librarian.md
+prompt_file: hello-example.md
 output_dir: /data/outputs/edit-me
 network: agentnet
 custom_unmanaged_key: keep-this-value
@@ -488,7 +487,7 @@ def test_update_agent_rewrites_file_and_preserves_others(client, dagster_stub, t
     written = (tmp_agents / "edit-me.yaml").read_text()
     assert "model: smart" in written                          # changed value applied
     assert "harness: pi" in written                           # other values retained
-    assert "prompt_file: repo-librarian.md" in written
+    assert "prompt_file: hello-example.md" in written
     assert "hand-written note" not in written                 # hand comments replaced
     assert "# Generated by the agentbox UI" in written        # standard comments present
     assert "custom_unmanaged_key: keep-this-value" in written  # unmanaged key survives
@@ -549,7 +548,7 @@ name: asset-me
 enabled: true
 harness: pi
 model: cheap
-prompt_file: repo-librarian.md
+prompt_file: hello-example.md
 produces:
   asset: repo-review/asset-me
 """
@@ -610,7 +609,7 @@ def test_api_prompts_lists_files_with_size_and_modified(client):
     data = client.get("/api/prompts").json()
     assert set(data) == {"prompts"}
     names = [p["filename"] for p in data["prompts"]]
-    assert "repo-librarian.md" in names
+    assert "hello-example.md" in names
     assert names == sorted(names)               # deterministic ordering
     for p in data["prompts"]:
         assert set(p) == {"filename", "size", "modified"}
@@ -619,8 +618,8 @@ def test_api_prompts_lists_files_with_size_and_modified(client):
 
 
 def test_api_prompt_content_returned(client):
-    data = client.get("/api/prompts/repo-librarian.md").json()
-    assert data["filename"] == "repo-librarian.md"
+    data = client.get("/api/prompts/hello-example.md").json()
+    assert data["filename"] == "hello-example.md"
     assert isinstance(data["content"], str) and data["content"]
 
 
@@ -735,7 +734,7 @@ def test_create_agent_new_prompt_remains_when_agent_write_fails(
 ):
     # Duplicate stem: the prompt is created first, then the agent write is refused.
     body = {
-        "agent": _valid_pi(name="repo-librarian-agentbox"),
+        "agent": _valid_pi(name="hello-example"),
         "new_prompt": {"filename": "orphan.md", "content": "kept even on failure"},
     }
     resp = client.post("/api/agents", json=body)
@@ -772,7 +771,7 @@ def _agent_for(harness, **over):
         "enabled": True,
         "harness": harness,
         "model": _US5_MODEL[harness],
-        "prompt_file": "repo-librarian.md",
+        "prompt_file": "hello-example.md",
         "output_dir": f"/data/outputs/us5-{harness}",
         "network": _US5_NETWORK[harness],
         "job": True,  # spec 006: an agent must be an asset, a job, or both
@@ -865,7 +864,7 @@ def test_delete_agent_leaves_workspace_and_outputs_untouched(client, dagster_stu
         "enabled: true\n"
         "harness: pi\n"
         "model: cheap\n"
-        "prompt_file: repo-librarian.md\n"
+        "prompt_file: hello-example.md\n"
         f"output_dir: {output}\n"
         f"workspace: {workspace}\n"
         "network: agentnet\n"
@@ -1034,14 +1033,14 @@ def test_edit_agent_page_has_lead_strip_and_group_grid(client, tmp_agents):
 def _write_job_agent(tmp_agents, name="auto-agent"):
     _write(tmp_agents, f"{name}.yaml",
            f"name: {name}\nenabled: true\nharness: api\nmodel: cheap\n"
-           f"prompt_file: repo-librarian.md\noutput_dir: /data/outputs/{name}\njob: true\n")
+           f"prompt_file: hello-example.md\noutput_dir: /data/outputs/{name}\njob: true\n")
     return name
 
 
 def _write_asset_agent(tmp_agents, name="auto-asset"):
     _write(tmp_agents, f"{name}.yaml",
            f"name: {name}\nenabled: true\nharness: api\nmodel: cheap\n"
-           f"prompt_file: repo-librarian.md\noutput_dir: /data/outputs/{name}\n"
+           f"prompt_file: hello-example.md\noutput_dir: /data/outputs/{name}\n"
            f"produces:\n  asset: repo-review/{name}\n  partition: daily\n")
     return name
 

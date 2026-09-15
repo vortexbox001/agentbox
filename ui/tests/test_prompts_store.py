@@ -16,7 +16,7 @@ def test_list_ordering_and_fields(settings):
 
 
 def test_read_prompt(settings):
-    content = ps.read_prompt("repo-librarian.md")
+    content = ps.read_prompt("hello-example.md")
     assert isinstance(content, str) and content
 
 

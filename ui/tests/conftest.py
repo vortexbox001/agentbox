@@ -1,10 +1,10 @@
 """Shared pytest fixtures for the agentbox UI test suite.
 
-Every fixture points the app's file stores at temporary copies of the real
-``agents/``, ``prompts/``, and a rendered LiteLLM config so tests never touch the
-repository. Imports of app modules (``config``, ``main``, ``dagster``) are done
-lazily inside fixtures: those modules are built across later phases, so the suite
-stays collectable before they exist.
+Every fixture points the app's file stores at temporary copies of the product-owned
+sample config (``examples/config/agents``, ``examples/config/prompts``, and a rendered
+LiteLLM config seeded from the example overlay) so tests never touch the repository — and
+never the live, gitignored config root. Imports of app modules (``config``, ``main``,
+``dagster``) are done lazily inside fixtures so the suite stays collectable before they exist.
 """
 import shutil
 from pathlib import Path
@@ -15,24 +15,36 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+# Product-owned sample config the fixtures copy from. Instance agents/prompts live under the
+# config root at runtime (gitignored, absent in CI), so tests must never read them; the shipped
+# examples tree is the only tracked, deterministic sample source (spec 010, R7/FR-015).
+EXAMPLES_CONFIG = REPO_ROOT / "examples" / "config"
+
+
 @pytest.fixture
 def tmp_agents(tmp_path):
-    """A writable copy of every repo agents/*.yaml in a temp directory."""
+    """A writable copy of the example *instance* agents (examples/config/agents/*.yaml).
+
+    Stands in for the instance agents dir, so it carries only the non-template sample agents;
+    the ``_``-prefixed starters are templates (see ``tmp_templates``), not instance agents.
+    """
     dest = tmp_path / "agents"
     dest.mkdir()
-    src = REPO_ROOT / "agents"
+    src = EXAMPLES_CONFIG / "agents"
     if src.is_dir():
         for f in src.glob("*.yaml"):
+            if f.name.startswith("_"):
+                continue  # templates belong in tmp_templates, not the instance agents dir
             shutil.copy(f, dest / f.name)
     return dest
 
 
 @pytest.fixture
 def tmp_prompts(tmp_path):
-    """A writable copy of every repo prompts/*.md in a temp directory."""
+    """A writable copy of the example prompts (examples/config/prompts/*.md)."""
     dest = tmp_path / "prompts"
     dest.mkdir()
-    src = REPO_ROOT / "prompts"
+    src = EXAMPLES_CONFIG / "prompts"
     if src.is_dir():
         for f in src.glob("*.md"):
             shutil.copy(f, dest / f.name)
@@ -48,7 +60,7 @@ def tmp_templates(tmp_path):
     """
     dest = tmp_path / "templates"
     dest.mkdir()
-    src = REPO_ROOT / "examples" / "config" / "agents"
+    src = EXAMPLES_CONFIG / "agents"
     if src.is_dir():
         for f in src.glob("*.yaml"):
             shutil.copy(f, dest / f.name)

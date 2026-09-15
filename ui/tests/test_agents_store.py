@@ -9,30 +9,32 @@ import agents_store as st
 import schema
 
 
-# The definitions the checked-in golden files were generated from (one per harness).
+# The definitions the checked-in golden files were generated from (one per harness). These are
+# generic, self-contained sample agents — not real instance agents — so the emitter regression
+# suite never leans on product-instance data (spec 010).
 GOLDEN = {
-    "claude-code": {"name": "repo-librarian-agentbox", "enabled": True, "harness": "claude-code",
+    "claude-code": {"name": "sample-claude-code", "enabled": True, "harness": "claude-code",
         "model": "claude-opus-4-8[1m]", "effort": "high", "fallback_model": "claude-opus-4-8[1m]",
-        "prompt_file": "repo-librarian2.md", "output_dir": "/data/outputs/repo-librarian/agentbox",
-        "workspace": "/data/workspaces/repo-librarian/agentbox", "wipe_workspace": True,
+        "prompt_file": "hello-example.md", "output_dir": "/data/outputs/sample-claude-code",
+        "workspace": "/data/workspaces/sample-claude-code", "wipe_workspace": True,
         "max_turns": 50, "permission_mode": "default", "allowed_tools": ["Read", "Write", "Bash"],
         "timeout_seconds": 1800, "network": "bridge", "memory": "1g", "cpus": 1.5, "job": True,
-        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "leeclemmer", "GITHUB_REPONAME": "agentbox"}},
-    "pi": {"name": "repo-librarian-pi-kimi", "enabled": True, "harness": "pi", "model": "kimi", "effort": "max",
-        "prompt_file": "repo-librarian.md", "output_dir": "/data/outputs/repo-librarian/pi-kimi",
-        "workspace": "/data/workspaces/repo-librarian/pi-kimi", "wipe_workspace": True,
+        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "example-user", "GITHUB_REPONAME": "example-repo"}},
+    "pi": {"name": "sample-pi", "enabled": True, "harness": "pi", "model": "kimi", "effort": "max",
+        "prompt_file": "hello-example.md", "output_dir": "/data/outputs/sample-pi",
+        "workspace": "/data/workspaces/sample-pi", "wipe_workspace": True,
         "timeout_seconds": 1800, "allowed_tools": ["read", "write", "bash"],
         "network": "agentnet", "memory": "1g", "cpus": 1.5, "job": True,
-        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "leeclemmer"}},
-    "api": {"name": "nightly-digest", "enabled": True, "harness": "api", "model": "cheap", "max_tokens": 1024,
-        "prompt_file": "repo-librarian.md", "output_dir": "/data/outputs/nightly-digest",
+        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "example-user"}},
+    "api": {"name": "sample-api", "enabled": True, "harness": "api", "model": "cheap", "max_tokens": 1024,
+        "prompt_file": "hello-example.md", "output_dir": "/data/outputs/sample-api",
         "timeout_seconds": 600, "network": "agentnet-isolated", "memory": "1g", "cpus": 1.5, "job": True,
-        "env_file": "/data/credentials/agent-secrets.env", "env": {"GITHUB_USER": "leeclemmer"}},
-    "codex": {"name": "repo-librarian-codex", "enabled": True, "harness": "codex", "model": "gpt-6-astra", "effort": "high",
-        "prompt_file": "repo-librarian2.md", "output_dir": "/data/outputs/repo-librarian-codex",
-        "workspace": "/data/workspaces/repo-librarian-codex", "wipe_workspace": True,
+        "env_file": "/data/credentials/agent-secrets.env", "env": {"GITHUB_USER": "example-user"}},
+    "codex": {"name": "sample-codex", "enabled": True, "harness": "codex", "model": "gpt-6-astra", "effort": "high",
+        "prompt_file": "hello-example.md", "output_dir": "/data/outputs/sample-codex",
+        "workspace": "/data/workspaces/sample-codex", "wipe_workspace": True,
         "timeout_seconds": 1800, "network": "bridge", "memory": "1g", "cpus": 1.5, "job": True,
-        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "leeclemmer", "GITHUB_REPONAME": "agentbox"}},
+        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "example-user", "GITHUB_REPONAME": "example-repo"}},
 }
 
 _GOLDEN_DIR = os.path.join(os.path.dirname(__file__), "golden")
@@ -88,12 +90,12 @@ def test_produces_block_sits_in_the_runs_section(settings):
 
 
 def test_produces_block_round_trips_byte_stable(settings):
-    cfg = dict(GOLDEN["api"], asset="repo-review/agentbox", partition="daily")
+    cfg = dict(GOLDEN["api"], asset="reports/sample", partition="daily")
     once = st.emit_yaml(cfg)
-    st.write_agent("nightly-digest", cfg)
-    info = st.read_agent("nightly-digest")
+    st.write_agent("sample-api", cfg)
+    info = st.read_agent("sample-api")
     agent = info["agent"]
-    assert agent["asset"] == "repo-review/agentbox"
+    assert agent["asset"] == "reports/sample"
     assert agent["partition"] == "daily"
     # asset/partition are managed, never routed to unmanaged
     assert "produces" not in (agent.get("unmanaged") or {})
@@ -364,7 +366,7 @@ def test_list_agents_splits_templates(settings):
     listed = st.list_agents()
     files = {a["file"] for a in listed["agents"]}
     template_files = {t["file"] for t in listed["templates"]}
-    assert "repo-librarian-agentbox.yaml" in files
+    assert "hello-example.yaml" in files
     assert all(not f.startswith("_") for f in files)
     assert any(f.startswith("_") for f in template_files)
 
@@ -461,7 +463,7 @@ def test_unsafe_stem_is_never_addressable(settings, bad):
 # ── A migration that raises surfaces as a parse error (R12, CHK024) ──
 def test_migration_failure_is_parse_error_and_leaves_file(settings, monkeypatch):
     path = os.path.join(settings.AGENTS_DIR, "needs-migration.yaml")
-    open(path, "w").write("name: needs-migration\nharness: pi\nprompt_file: repo-librarian.md\n")
+    open(path, "w").write("name: needs-migration\nharness: pi\nprompt_file: hello-example.md\n")
     before = open(path).read()
 
     def boom(data, from_version):
