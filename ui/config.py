@@ -46,10 +46,16 @@ LITELLM_RENDERED = os.environ.get("LITELLM_RENDERED") or os.path.join(CONFIG_ROO
 DAGSTER_URL = os.environ.get("DAGSTER_URL", "http://dagster-webserver:3000")
 
 # Browser-facing Dagster base URL for links the user clicks (sidebar, job deep links).
-# Leave empty to derive it from the incoming request's host with the Dagster port, so
+# Leave empty to derive it from the incoming request's host with DAGSTER_HOST_PORT, so
 # it works whether the UI is reached via the host IP, localhost, or a hostname. Set it
-# explicitly when Dagster is served behind a different host/proxy than this UI.
+# to the host base (with or without a port) when Dagster is served behind a different
+# host/proxy than this UI; a value without a port gets DAGSTER_HOST_PORT appended.
 DAGSTER_PUBLIC_URL = os.environ.get("DAGSTER_PUBLIC_URL", "")
+
+# Host-published port for the Dagster UI (the browser-facing port). Distinct from the
+# internal 3000 in DAGSTER_URL: docker-compose maps ${DAGSTER_HOST_PORT}:3000, so the
+# port a browser reaches is this one, and it is what the UI's Dagster links must use.
+DAGSTER_HOST_PORT = os.environ.get("DAGSTER_HOST_PORT", "3000")
 
 # Dagster code-location name, which is part of every job URL:
 # <base>/locations/<location>/jobs/<job>. With no explicit location_name in
