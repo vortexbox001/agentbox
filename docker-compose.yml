@@ -90,6 +90,9 @@ services:
       # so the config-editing UI never receives the API-key secrets that live in .env. Empty
       # DAGSTER_PUBLIC_URL = derive from the request host + Dagster port. TZ affects rendered times.
       DAGSTER_PUBLIC_URL: ${DAGSTER_PUBLIC_URL:-}
+      # Host-published Dagster port (the same one mapped above as ${DAGSTER_HOST_PORT}:3000),
+      # so the UI's browser-facing links carry the port a browser actually reaches.
+      DAGSTER_HOST_PORT: ${DAGSTER_HOST_PORT:-3000}
       DAGSTER_LOCATION: ${DAGSTER_LOCATION:-definitions.py}
       TZ: ${TZ:-UTC}
       # The three roots. The UI reads agents/prompts under the config root and writes them there

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 import os
-from urllib.parse import urlparse
+import re
+from urllib.parse import urlparse, urlunparse
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -64,15 +65,38 @@ def public_dagster_url(request: Request) -> str:
     """A Dagster base URL the user's browser can reach.
 
     The internal DAGSTER_URL points at the in-network hostname (dagster-webserver),
-    which does not resolve from a browser. Prefer an explicit DAGSTER_PUBLIC_URL; else
-    derive one from the request host, keeping the Dagster port from DAGSTER_URL.
+    which does not resolve from a browser, and its 3000 is the *container* port. The
+    browser reaches the host-published port, DAGSTER_HOST_PORT.
+
+    Prefer an explicit DAGSTER_PUBLIC_URL (composed as ``{host base}:{DAGSTER_HOST_PORT}``
+    when it carries no port of its own); else derive one from the request host with
+    DAGSTER_HOST_PORT.
     """
     if config.DAGSTER_PUBLIC_URL:
-        return config.DAGSTER_PUBLIC_URL.rstrip("/")
-    port = urlparse(config.DAGSTER_URL).port or 3000
+        return _compose_public_base(config.DAGSTER_PUBLIC_URL, config.DAGSTER_HOST_PORT)
     host = request.url.hostname or "localhost"
     scheme = request.url.scheme or "http"
-    return f"{scheme}://{host}:{port}"
+    return f"{scheme}://{host}:{config.DAGSTER_HOST_PORT}"
+
+
+def _compose_public_base(value: str, default_port: str) -> str:
+    """Normalize a configured DAGSTER_PUBLIC_URL into a browser-usable base.
+
+    Tolerates a bare host base (no scheme, no port) and an accidental doubled scheme
+    (``http://http://host``). Appends ``:default_port`` only when no port is present,
+    so an explicit port in DAGSTER_PUBLIC_URL (e.g. behind a 443 proxy) is preserved.
+    """
+    value = value.strip().rstrip("/")
+    # Collapse a doubled scheme like "http://http://10.0.0.100".
+    while (m := re.match(r"(?i)^(https?://)(?=https?://)", value)):
+        value = value[len(m.group(1)):]
+    if not re.match(r"(?i)^https?://", value):
+        value = "http://" + value
+    parsed = urlparse(value)
+    if parsed.port is None and parsed.hostname:
+        parsed = parsed._replace(netloc=f"{parsed.hostname}:{default_port}")
+        value = urlunparse(parsed).rstrip("/")
+    return value
 
 
 def _shell_context(request: Request, **extra) -> dict:
