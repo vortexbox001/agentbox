@@ -16,8 +16,16 @@ from dagster_pipes import (
     DAGSTER_PIPES_CONTEXT_ENV_VAR, DAGSTER_PIPES_MESSAGES_ENV_VAR,
 )
 
-HOST_REPO = os.environ.get("AGENTBOX_HOST_REPO", "/home/vortex/GitHub/agentbox")
-CONTAINER_REPO = "/opt/agentbox"
+import paths
+
+# Every state/config path derives from the single resolution point (orchestrator/paths.py,
+# FR-002/SC-009): no literal /data or /opt/agentbox appears in this module.
+
+
+def _output_dir(cfg: dict) -> str:
+    """An agent's ``output_dir`` (mounted at ``/output``), or its documented default
+    ``$AGENTBOX_DATA/outputs/<name>`` when omitted (FR-026)."""
+    return cfg.get("output_dir") or paths.default_output_dir(cfg["name"])
 
 # One or more kebab segments joined by "/" — the asset key an agent may declare in its
 # `produces` block. Deliberately duplicated in ui/schema.py (research R6): the two run in
@@ -118,14 +126,15 @@ def validate_checks(cfg: dict, file: str) -> None:
                 f'duplicate check name "{name}" — check names must be unique within the agent',
             )
         seen.add(name)
-# full per-run transcripts: <root>/<agent>/<YYYY-MM-DD>/<run-id>.jsonl
-AGENT_LOG_ROOT = "/data/dagster/agent-logs"
+# full per-run transcripts: <root>/<agent>/<YYYY-MM-DD>/<run-id>.jsonl. Now under
+# $AGENTBOX_DATA/runs (moved out of the Dagster home — FR-010/R3).
+RUNS_ROOT = paths.RUNS_ROOT
 # per-run Dagster Pipes messages dirs. MUST live under a path bind-mounted identically
 # on the host and inside the orchestrator container: agent containers are launched
 # Docker-outside-of-Docker, so the host daemon resolves the `-v <pipes_dir>:/pipes`
 # source against the HOST filesystem. /tmp is container-private and does not cross that
-# boundary; /data/dagster is mounted host==container (like AGENT_LOG_ROOT).
-PIPES_ROOT = "/data/dagster/pipes"
+# boundary; the Dagster home is mounted host==container, so PIPES stays there (FR-010/FR-012).
+PIPES_ROOT = paths.PIPES_ROOT
 # harnesses that mount /workspace; `workspace` and `wipe_workspace` are ignored for the rest
 WORKSPACE_HARNESSES = {"claude-code", "pi", "codex"}
 # harnesses whose runner reads /config/prompt.md; the others get the prompt on the command line
@@ -303,10 +312,12 @@ def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
         "--memory", str(cfg.get("memory", "1g")),
         "--cpus", str(cfg.get("cpus", "1.5")),
         "--network", cfg.get("network", "agentnet"),
-        "-v", f"{cfg['output_dir']}:/output",
+        "-v", f"{_output_dir(cfg)}:/output",
     ]
     if cfg["harness"] in PROMPT_MOUNT_HARNESSES:
-        cmd += ["-v", f"{HOST_REPO}/prompts/{cfg['prompt_file']}:/config/prompt.md:ro"]
+        # the prompt lives under the config root; the `-v` source is its HOST path (the host
+        # daemon resolves bind sources — Docker-outside-of-Docker).
+        cmd += ["-v", f"{paths.PROMPTS_DIR_HOST}/{cfg['prompt_file']}:/config/prompt.md:ro"]
     if cfg.get("env_file"):
         cmd += ["--env-file", cfg["env_file"]]
     for k, v in cfg.get("env", {}).items():
@@ -330,7 +341,7 @@ def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
             "agentbox/agent-python:latest",
         ]
     elif cfg["harness"] == "claude-code":
-        with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
+        with open(os.path.join(paths.PROMPTS_DIR, cfg['prompt_file'])) as f:
             prompt = f.read()
         # writable, node-owned config dir; anything from the host is mounted read-only
         cmd += ["--tmpfs", "/creds:uid=1000,gid=1000,mode=700", "-e", "CLAUDE_CONFIG_DIR=/creds"]
@@ -340,10 +351,10 @@ def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
             cmd += ["-e", "CLAUDE_CODE_OAUTH_TOKEN"]
         else:
             # fallback: a copied interactive login, which expires when the host login refreshes
-            cmd += ["-v", "/data/credentials/claude/.credentials.json:/creds/.credentials.json:ro"]
-        if os.path.exists("/data/credentials/claude/.claude.json"):
+            cmd += ["-v", f"{paths.CREDENTIALS_ROOT}/claude/.credentials.json:/creds/.credentials.json:ro"]
+        if os.path.exists(f"{paths.CREDENTIALS_ROOT}/claude/.claude.json"):
             # CLI settings/onboarding state; harmless without it but avoids first-run prompts
-            cmd += ["-v", "/data/credentials/claude/.claude.json:/creds/.claude.json:ro"]
+            cmd += ["-v", f"{paths.CREDENTIALS_ROOT}/claude/.claude.json:/creds/.claude.json:ro"]
         cmd += [
             "-v", f"{ws}:/workspace",
             "-w", "/workspace",
@@ -375,7 +386,7 @@ def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
         if cfg.get("allowed_tools"):
             cmd += ["--allowedTools"] + cfg["allowed_tools"]
     elif cfg["harness"] == "codex":
-        with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
+        with open(os.path.join(paths.PROMPTS_DIR, cfg['prompt_file'])) as f:
             prompt = f.read()
         # codex has no system-prompt flag; the output convention is appended to the prompt itself
         message = prompt.rstrip() + "\n\n" + output_convention(stamp, session_id)
@@ -384,7 +395,7 @@ def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
         cmd += [
             # CODEX_HOME (auth.json, config.toml, sessions) is a dedicated host dir, mounted read-write so
             # codex can persist the token refreshes it performs; see README "Codex credentials"
-            "-v", "/data/credentials/codex:/creds",
+            "-v", f"{paths.CREDENTIALS_ROOT}/codex:/creds",
             "-v", f"{ws}:/workspace",
             "-w", "/workspace",
             "agentbox/agent-codex:latest",
@@ -398,7 +409,7 @@ def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
             cmd += ["-c", f'model_reasoning_effort="{cfg["effort"]}"']
         cmd += [message]
     elif cfg["harness"] == "pi":
-        with open(f"{CONTAINER_REPO}/prompts/{cfg['prompt_file']}") as f:
+        with open(os.path.join(paths.PROMPTS_DIR, cfg['prompt_file'])) as f:
             prompt = f.read()
         model = cfg.get("model", "smart")
         if "/" not in model:
@@ -470,12 +481,12 @@ def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str
     # snapshot /output before launch so we can report which files this run
     # produced (FR-005). The partition key is never used here: the launch is
     # identical regardless of partition (FR-008b) — it is a metadata label only.
-    output_before = _snapshot_dir(cfg["output_dir"])
+    output_before = _snapshot_dir(_output_dir(cfg))
 
     context.log.info(f"launching: {' '.join(cmd[:12])} ...")
     timeout_seconds = cfg.get("timeout_seconds", 900)
     container = f"agent-{name}-{context.run_id[:8]}"
-    log_dir = os.path.join(AGENT_LOG_ROOT, name, stamp[:10])
+    log_dir = os.path.join(RUNS_ROOT, name, stamp[:10])
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, f"{context.run_id}.jsonl")
 
@@ -512,7 +523,7 @@ def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str
     stderr = "".join(stderr_chunks)
     context.log.info(f"transcript: {log_path}")
 
-    output_files = _changed_files(output_before, _snapshot_dir(cfg["output_dir"]))
+    output_files = _changed_files(output_before, _snapshot_dir(_output_dir(cfg)))
     if timed_out:
         # the container was killed before it could report — the orchestrator
         # authors the report itself (FR-009/R8).
@@ -565,7 +576,7 @@ def _check_argv(cfg: dict, context: OpExecutionContext, check: dict, image: str,
     argv = [
         "docker", "run", "--rm", "--name", cname,
         "--network", network,
-        "-v", f"{cfg['output_dir']}:/output:ro",
+        "-v", f"{_output_dir(cfg)}:/output:ro",
     ]
     if cfg["harness"] in WORKSPACE_HARNESSES:
         argv += ["-v", f"{ws}:/workspace:ro"]
@@ -683,7 +694,7 @@ def make_run_op(cfg: dict):
         stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
         session_id = str(uuid.uuid4())
         context.log.info(f"session_id={session_id} stamp={stamp}")
-        ws = cfg.get("workspace", "/data/workspaces/" + name)
+        ws = cfg.get("workspace") or paths.default_workspace(name)
         if cfg.get("wipe_workspace") and cfg["harness"] in WORKSPACE_HARNESSES:
             # empty the workspace but keep the directory itself so its ownership
             # (uid 1000, which the agent image's user needs) is preserved.
@@ -847,7 +858,7 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
         stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
         session_id = str(uuid.uuid4())
         context.log.info(f"session_id={session_id} stamp={stamp}")
-        ws = cfg.get("workspace", "/data/workspaces/" + name)
+        ws = cfg.get("workspace") or paths.default_workspace(name)
         if cfg.get("wipe_workspace") and cfg["harness"] in WORKSPACE_HARNESSES:
             os.makedirs(ws, exist_ok=True)
             for entry in os.scandir(ws):

@@ -8,7 +8,7 @@ import ...``), so the code-location directory — ``orchestrator/`` — is put o
 The ``stub_launch`` fixture monkeypatches the single container-launch call in
 ``factory.py`` (``subprocess.run``) so ``make_run_op`` / ``build_asset`` and, via
 them, ``definitions`` can be materialized in-process without ``docker run``. It
-also redirects the transcript root at ``factory.AGENT_LOG_ROOT`` into a temp dir
+also redirects the transcript root at ``factory.RUNS_ROOT`` into a temp dir
 so an op body can run end-to-end without writing to ``/data``.
 
 Since spec 007 the op reports itself over Dagster Pipes: after the (stubbed) launch
@@ -155,7 +155,7 @@ def stub_launch(monkeypatch, tmp_path):
     """Replace ``factory.subprocess.Popen`` (and ``.run``, for the timeout kill) so ops
     run without launching a container.
 
-    Yields a :class:`LaunchStub`; also points ``factory.AGENT_LOG_ROOT`` at a temp
+    Yields a :class:`LaunchStub`; also points ``factory.RUNS_ROOT`` at a temp
     directory so the op's transcript write succeeds under test.
     """
     import factory
@@ -164,7 +164,7 @@ def stub_launch(monkeypatch, tmp_path):
     monkeypatch.setattr(factory.subprocess, "Popen", stub.popen)
     monkeypatch.setattr(factory.subprocess, "run", stub)  # only the timeout docker kill
     monkeypatch.setattr(factory, "_extract_report", stub.extract_report)
-    monkeypatch.setattr(factory, "AGENT_LOG_ROOT", str(tmp_path / "agent-logs"))
+    monkeypatch.setattr(factory, "RUNS_ROOT", str(tmp_path / "runs"))
     # PIPES_ROOT points at /data/dagster in production; redirect it into the temp dir so the
     # op's mkdtemp succeeds under test without writing to /data.
     monkeypatch.setattr(factory, "PIPES_ROOT", str(tmp_path / "pipes"))

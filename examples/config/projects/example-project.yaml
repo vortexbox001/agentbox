@@ -1,0 +1,9 @@
+# Sample project definition (examples/config/projects/).
+#
+# `projects/` is a reserved config subpath: its concrete schema is owned by a later
+# brief, not this file-layout feature. This sample only demonstrates where project
+# definitions live under the config root and gets copied by the fresh-install seed.
+# Replace it with real project definitions once the owning brief lands.
+
+name: example-project
+description: Placeholder project. The projects/ schema is defined by a future brief.

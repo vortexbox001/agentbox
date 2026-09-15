@@ -35,6 +35,7 @@ skipped; every other agent still loads (FR-010).
 
 import glob, os, logging, yaml
 from dagster import Definitions
+import paths
 from factory import (
     build_job, build_schedule, build_asset, build_materializing_job,
     build_asset_automation_sensor, validate_asset_key, validate_checks,
@@ -43,7 +44,8 @@ from factory import (
 
 log = logging.getLogger("agentbox.definitions")
 
-AGENTS_GLOB = "/opt/agentbox/agents/*.yaml"
+# Agent YAMLs live under the config root (FR-002); derived from the single resolution point.
+AGENTS_GLOB = paths.AGENTS_GLOB
 
 
 def _triggers(cfg: dict) -> tuple[str | None, str | None]:
@@ -174,7 +176,7 @@ sensors = _discovered["sensors"]
 #     """Remove agent output files older than 30 days."""
 #     import subprocess
 #     subprocess.run(
-#         ["find", "/data/outputs", "-type", "f", "-mtime", "+30", "-delete"],
+#         ["find", paths.OUTPUTS_ROOT, "-type", "f", "-mtime", "+30", "-delete"],
 #         check=True,
 #     )
 #     context.log.info("Cleaned up old output files")

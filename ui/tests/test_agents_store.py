@@ -9,30 +9,32 @@ import agents_store as st
 import schema
 
 
-# The definitions the checked-in golden files were generated from (one per harness).
+# The definitions the checked-in golden files were generated from (one per harness). These are
+# generic, self-contained sample agents — not real instance agents — so the emitter regression
+# suite never leans on product-instance data (spec 010).
 GOLDEN = {
-    "claude-code": {"name": "repo-librarian-agentbox", "enabled": True, "harness": "claude-code",
+    "claude-code": {"name": "sample-claude-code", "enabled": True, "harness": "claude-code",
         "model": "claude-opus-4-8[1m]", "effort": "high", "fallback_model": "claude-opus-4-8[1m]",
-        "prompt_file": "repo-librarian2.md", "output_dir": "/data/outputs/repo-librarian/agentbox",
-        "workspace": "/data/workspaces/repo-librarian/agentbox", "wipe_workspace": True,
+        "prompt_file": "hello-example.md", "output_dir": "/data/outputs/sample-claude-code",
+        "workspace": "/data/workspaces/sample-claude-code", "wipe_workspace": True,
         "max_turns": 50, "permission_mode": "default", "allowed_tools": ["Read", "Write", "Bash"],
         "timeout_seconds": 1800, "network": "bridge", "memory": "1g", "cpus": 1.5, "job": True,
-        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "leeclemmer", "GITHUB_REPONAME": "agentbox"}},
-    "pi": {"name": "repo-librarian-pi-kimi", "enabled": True, "harness": "pi", "model": "kimi", "effort": "max",
-        "prompt_file": "repo-librarian.md", "output_dir": "/data/outputs/repo-librarian/pi-kimi",
-        "workspace": "/data/workspaces/repo-librarian/pi-kimi", "wipe_workspace": True,
+        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "example-user", "GITHUB_REPONAME": "example-repo"}},
+    "pi": {"name": "sample-pi", "enabled": True, "harness": "pi", "model": "kimi", "effort": "max",
+        "prompt_file": "hello-example.md", "output_dir": "/data/outputs/sample-pi",
+        "workspace": "/data/workspaces/sample-pi", "wipe_workspace": True,
         "timeout_seconds": 1800, "allowed_tools": ["read", "write", "bash"],
         "network": "agentnet", "memory": "1g", "cpus": 1.5, "job": True,
-        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "leeclemmer"}},
-    "api": {"name": "nightly-digest", "enabled": True, "harness": "api", "model": "cheap", "max_tokens": 1024,
-        "prompt_file": "repo-librarian.md", "output_dir": "/data/outputs/nightly-digest",
+        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "example-user"}},
+    "api": {"name": "sample-api", "enabled": True, "harness": "api", "model": "cheap", "max_tokens": 1024,
+        "prompt_file": "hello-example.md", "output_dir": "/data/outputs/sample-api",
         "timeout_seconds": 600, "network": "agentnet-isolated", "memory": "1g", "cpus": 1.5, "job": True,
-        "env_file": "/data/credentials/agent-secrets.env", "env": {"GITHUB_USER": "leeclemmer"}},
-    "codex": {"name": "repo-librarian-codex", "enabled": True, "harness": "codex", "model": "gpt-6-astra", "effort": "high",
-        "prompt_file": "repo-librarian2.md", "output_dir": "/data/outputs/repo-librarian-codex",
-        "workspace": "/data/workspaces/repo-librarian-codex", "wipe_workspace": True,
+        "env_file": "/data/credentials/agent-secrets.env", "env": {"GITHUB_USER": "example-user"}},
+    "codex": {"name": "sample-codex", "enabled": True, "harness": "codex", "model": "gpt-6-astra", "effort": "high",
+        "prompt_file": "hello-example.md", "output_dir": "/data/outputs/sample-codex",
+        "workspace": "/data/workspaces/sample-codex", "wipe_workspace": True,
         "timeout_seconds": 1800, "network": "bridge", "memory": "1g", "cpus": 1.5, "job": True,
-        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "leeclemmer", "GITHUB_REPONAME": "agentbox"}},
+        "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "example-user", "GITHUB_REPONAME": "example-repo"}},
 }
 
 _GOLDEN_DIR = os.path.join(os.path.dirname(__file__), "golden")
@@ -88,12 +90,12 @@ def test_produces_block_sits_in_the_runs_section(settings):
 
 
 def test_produces_block_round_trips_byte_stable(settings):
-    cfg = dict(GOLDEN["api"], asset="repo-review/agentbox", partition="daily")
+    cfg = dict(GOLDEN["api"], asset="reports/sample", partition="daily")
     once = st.emit_yaml(cfg)
-    st.write_agent("nightly-digest", cfg)
-    info = st.read_agent("nightly-digest")
+    st.write_agent("sample-api", cfg)
+    info = st.read_agent("sample-api")
     agent = info["agent"]
-    assert agent["asset"] == "repo-review/agentbox"
+    assert agent["asset"] == "reports/sample"
     assert agent["partition"] == "daily"
     # asset/partition are managed, never routed to unmanaged
     assert "produces" not in (agent.get("unmanaged") or {})
@@ -249,8 +251,12 @@ def test_emitted_section_headers_follow_schema_order(settings, harness):
 
 
 def test_repo_agents_round_trip(settings):
-    """Every real agents/*.yaml (templates included) survives emit + reload."""
+    """Every real agents/*.yaml and every examples-tree template survives emit + reload.
+
+    Templates moved to the examples tree (R7), so they are globbed from TEMPLATES_DIR now.
+    """
     paths = sorted(glob.glob(os.path.join(settings.AGENTS_DIR, "*.yaml")))
+    paths += sorted(glob.glob(os.path.join(settings.TEMPLATES_DIR, "*.yaml")))
     assert paths, "no agent files copied into the temp dir"
     for path in paths:
         with open(path, encoding="utf-8") as f:
@@ -360,9 +366,51 @@ def test_list_agents_splits_templates(settings):
     listed = st.list_agents()
     files = {a["file"] for a in listed["agents"]}
     template_files = {t["file"] for t in listed["templates"]}
-    assert "repo-librarian-agentbox.yaml" in files
+    assert "hello-example.yaml" in files
     assert all(not f.startswith("_") for f in files)
     assert any(f.startswith("_") for f in template_files)
+
+
+def test_templates_listed_from_examples_tree(settings, tmp_agents, tmp_templates):
+    """Picker templates come from the examples tree; instance agents are never templates (R7, FR-008).
+
+    An instance agent (no ``_``) is listed as an agent, never as a template. A stray
+    ``_``-prefixed file in the instance dir (e.g. one a fresh install copied in) is kept out
+    of the agent list and is not offered as a template — the examples tree is the only
+    template source. The examples tree's own non-template sample agents (``hello-example.yaml``)
+    are not offered as templates either.
+    """
+    (tmp_agents / "my-real-agent.yaml").write_text(
+        "name: my-real-agent\nharness: pi\nprompt_file: p.md\noutput_dir: /data/outputs/x\n",
+        encoding="utf-8",
+    )
+    (tmp_agents / "_stray.yaml").write_text(
+        "name: stray\nharness: pi\nprompt_file: p.md\noutput_dir: /data/outputs/y\n",
+        encoding="utf-8",
+    )
+    listed = st.list_agents()
+    agent_files = {a["file"] for a in listed["agents"]}
+    template_files = {t["file"] for t in listed["templates"]}
+
+    # Templates are the examples-tree ``_``-prefixed starters only.
+    assert "_template-pi.yaml" in template_files
+    assert template_files and all(f.startswith("_") for f in template_files)
+    assert "hello-example.yaml" not in template_files  # a sample agent, not a picker template
+
+    # Instance agents: a real one is listed; a stray ``_`` file is neither an agent nor a template.
+    assert "my-real-agent.yaml" in agent_files
+    assert "_stray.yaml" not in agent_files
+    assert "_stray.yaml" not in template_files
+
+
+def test_read_template_reads_from_examples_tree(settings):
+    """read_template resolves against the examples tree, not the instance agents dir (R7)."""
+    info = st.read_template("_template-pi")
+    assert info["file"] == "_template-pi.yaml"
+    assert info["agent"]["harness"] == "pi"
+    # The same stem is not an instance agent.
+    with pytest.raises(FileNotFoundError):
+        st.read_agent("_template-pi")
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")
@@ -377,6 +425,25 @@ def test_read_only_dir_raises_storage_error(settings, tmp_path, monkeypatch):
         assert ei.value.operation == "write"
     finally:
         os.chmod(ro, 0o700)
+
+
+# ── Config edits stay under the config root, never the product tree (US4, SC-007) ──
+def test_write_lands_under_config_root_not_product_tree(settings, tmp_path, monkeypatch):
+    # SC-007: with the config root on its own path (as when a separate git repo is checked
+    # out there), a create/edit writes under config.AGENTS_DIR — derived from CONFIG_ROOT —
+    # and no write path can reach the product tree.
+    cfg_root = tmp_path / "config-repo"
+    agents_dir = cfg_root / "agents"
+    agents_dir.mkdir(parents=True)
+    monkeypatch.setattr(settings, "CONFIG_ROOT", str(cfg_root))
+    monkeypatch.setattr(settings, "AGENTS_DIR", str(agents_dir))
+
+    path = st.write_agent("in-config-repo", GOLDEN["api"])
+    assert path.startswith(str(cfg_root) + os.sep)
+    assert (agents_dir / "in-config-repo.yaml").is_file()
+    # nothing was written under the product tree
+    assert not path.startswith(settings.PRODUCT_ROOT + os.sep)
+    assert not os.path.exists(os.path.join(settings.PRODUCT_ROOT, "agents", "in-config-repo.yaml"))
 
 
 # ── Path safety on the filename stem (FR-010a, CHK041) ──
@@ -396,7 +463,7 @@ def test_unsafe_stem_is_never_addressable(settings, bad):
 # ── A migration that raises surfaces as a parse error (R12, CHK024) ──
 def test_migration_failure_is_parse_error_and_leaves_file(settings, monkeypatch):
     path = os.path.join(settings.AGENTS_DIR, "needs-migration.yaml")
-    open(path, "w").write("name: needs-migration\nharness: pi\nprompt_file: repo-librarian.md\n")
+    open(path, "w").write("name: needs-migration\nharness: pi\nprompt_file: hello-example.md\n")
     before = open(path).read()
 
     def boom(data, from_version):

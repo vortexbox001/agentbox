@@ -1,3 +1,6 @@
+# The single code location. It resolves every agentbox config/state path through
+# orchestrator/paths.py (the single resolution point, FR-002) — the agent glob from the config
+# root, transcripts/outputs/workspaces under the data root — so no path is configured here.
 load_from:
   - python_file:
       relative_path: definitions.py

@@ -1,0 +1,47 @@
+# LiteLLM OVERLAY (instance-owned) — sample. Copy this into your config root as
+# `litellm.overlay.yaml`; `litellm/generate.py` deep-merges it over the product template
+# (`litellm/config.template.yaml`) to produce the rendered config the proxy loads.
+#
+# The overlay supplies, per tier: the concrete provider `model`, optional `api_base` (for
+# custom OpenAI-compatible endpoints), the `api_key` as an `os.environ/<NAME>` reference
+# (the NAME of an env var — NEVER the secret value; Constitution III), and any per-token
+# pricing. Overlay values win on conflict; the tier `model_name` keys match the template.
+#
+# Every `api_key: os.environ/<NAME>` here must have <NAME> set in the environment (from
+# `.env`) at render time, or `generate.py` exits non-zero naming the missing key and writes
+# nothing (FR-017).
+model_list:
+  - model_name: cheap
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: smart
+    litellm_params:
+      model: anthropic/claude-sonnet-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: opus
+    litellm_params:
+      model: anthropic/claude-opus-4-8
+      api_key: os.environ/ANTHROPIC_API_KEY
+  # Moonshot is OpenAI-compatible, so no special provider is needed. Aliases are mirrored in
+  # images/agent-pi/entrypoint.sh (models.json) — keep the two lists in sync.
+  # LiteLLM has no built-in pricing for these custom endpoints, so cost must be declared here
+  # or runs report cost_usd=None (bug kimi-missing-litellm-pricing). Per-token = USD per 1M ÷ 1e6.
+  # Rates from https://platform.kimi.ai/docs/pricing/chat#model-pricing (fetched 2026-09-12);
+  # input_cost_per_token is the cache-miss rate, cache_read_input_token_cost the cache-hit rate.
+  - model_name: kimi         # Kimi K2.7 Code, built for coding agents; 256k context
+    litellm_params:
+      model: openai/kimi-k2.7-code
+      api_base: https://api.moonshot.ai/v1
+      api_key: os.environ/KIMI_API_KEY
+      input_cost_per_token: 0.00000095          # $0.95 / 1M (cache miss)
+      output_cost_per_token: 0.000004           # $4.00 / 1M
+      cache_read_input_token_cost: 0.00000019   # $0.19 / 1M (cache hit)
+  - model_name: kimi-k3      # Kimi K3 flagship; thinking-only, 1M context
+    litellm_params:
+      model: openai/kimi-k3
+      api_base: https://api.moonshot.ai/v1
+      api_key: os.environ/KIMI_API_KEY
+      input_cost_per_token: 0.000003            # $3.00 / 1M (cache miss)
+      output_cost_per_token: 0.000015           # $15.00 / 1M
+      cache_read_input_token_cost: 0.0000003    # $0.30 / 1M (cache hit)

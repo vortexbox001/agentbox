@@ -1,0 +1,29 @@
+# agentbox-schema: 6
+# Sample instance agent (asset flavour) — copied to config/agents/ by the fresh-install.
+# Demonstrates the asset nature: it declares `produces`, so it materializes as a tracked
+# Dagster asset. Edit or delete it once you have your own.
+
+name: hello-asset-example       # unique kebab-case identifier; job "agent_hello_asset_example"
+enabled: true                   # true | false — disabled agents are skipped at startup
+harness: api                    # api — calls LiteLLM via agentbox/agent-python image
+
+# --- LiteLLM / model ---
+model: cheap                    # LiteLLM alias tier (see litellm/config.template.yaml + your overlay)
+max_tokens: 1024                # max response tokens (default: 1024)
+
+# --- Prompt & output ---
+prompt_file: hello-example.md   # file in prompts/ mounted read-only into the container
+output_dir: /data/agentbox/outputs/hello-asset-example  # under the data root ($AGENTBOX_DATA default)
+
+# --- Produces (asset nature) ---
+produces:                       # declaring an asset makes this a tracked Dagster asset
+  asset: reports/hello          # asset key: kebab segments joined by / for grouping
+  partition: none               # none | daily
+
+# --- Container resources ---
+network: agentnet-isolated      # LiteLLM only, no internet (recommended)
+memory: 1g                      # container memory limit (default: 1g)
+cpus: 1.5                       # CPU limit (default: 1.5)
+
+# --- Execution ---
+timeout_seconds: 600            # kill container after this many seconds

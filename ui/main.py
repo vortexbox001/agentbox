@@ -462,6 +462,33 @@ async def _api_read_agent(name: str):
     })
 
 
+@app.get("/api/templates/{name}")
+async def _api_read_template(name: str):
+    # Full definition of a product-owned starter, read from the examples tree, for the
+    # create form's ?from= pre-fill (FR-008). Templates no longer live in the instance
+    # agents dir, so the picker reads them here rather than from GET /api/agents/{name}.
+    if _unsafe_name(name):
+        return JSONResponse(
+            {"error": "not_found", "message": f"template {name} does not exist"},
+            status_code=404,
+        )
+    try:
+        info = agents_store.read_template(name)
+    except FileNotFoundError:
+        return JSONResponse(
+            {"error": "not_found", "message": f"template {name} does not exist"},
+            status_code=404,
+        )
+    return JSONResponse({
+        "agent": info["agent"],
+        "file": info["file"],
+        "parse_error": info["parse_error"],
+        "raw": info["raw"],
+        "name_mismatch": info["name_mismatch"],
+        "editable": info["editable"],
+    })
+
+
 @app.get("/api/prompts")
 async def _api_prompts():
     # Every prompt file with size + modified; the selector's source (SC-005).

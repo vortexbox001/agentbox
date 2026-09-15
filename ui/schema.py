@@ -11,6 +11,7 @@ up to the current version in memory on read; unknown keys are preserved untouche
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field as dc_field
 from typing import Callable
@@ -21,7 +22,7 @@ import config
 
 # Current schema version, stamped into every emitted file. Bump when a migration
 # is added below. Files without the stamp are read as version 0.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def migrate_1_to_2(data: dict) -> dict:
@@ -61,11 +62,22 @@ def migrate_4_to_5(data: dict) -> dict:
     return data
 
 
+def migrate_5_to_6(data: dict) -> dict:
+    """Schema 5 -> 6: the layout overhaul (spec 010, FR-026). `output_dir` became optional
+    with the documented default ``$AGENTBOX_DATA/outputs/<name>``, and the config/state roots
+    are now resolved from the three root env vars (contracts/path-resolution.md §1) rather than
+    the hard-coded ``/data`` and ``<repo>`` locations. No field is renamed or moved, so on read
+    this is the identity function: a schema-5 file's explicit ``output_dir`` (and every other
+    field) is preserved untouched and re-stamps to 6 only when next saved from the UI."""
+    return data
+
+
 # Ordered, forward-only migrations. Each pair is (target_version, fn) where fn
 # transforms a definition dict from target_version - 1 to target_version. Pure
 # dict -> dict, applied on read (never mutating the file until the user saves).
 MIGRATIONS: list[tuple[int, Callable[[dict], dict]]] = [
     (2, migrate_1_to_2), (3, migrate_2_to_3), (4, migrate_3_to_4), (5, migrate_4_to_5),
+    (6, migrate_5_to_6),
 ]
 
 
@@ -243,7 +255,7 @@ FIELDS: list[SchemaField] = [
     # Directories (Job)
     SchemaField(
         "workspace", "directories", "Workspace", "path",
-        "Host directory mounted at /workspace; scratch space for the run. Default /data/workspaces/<name>.",
+        "Host directory mounted at /workspace; scratch space for the run. Default $AGENTBOX_DATA/workspaces/<name>.",
         ["claude-code", "pi", "codex"],
     ),
     SchemaField(
@@ -253,8 +265,9 @@ FIELDS: list[SchemaField] = [
     ),
     SchemaField(
         "output_dir", "directories", "Output directory", "path",
-        "Host directory mounted at /output; every run writes its result files here.",
-        _ALL, required=True,
+        "Host directory mounted at /output; every run writes its result files here. Must fall "
+        "under the data root ($AGENTBOX_DATA). Default $AGENTBOX_DATA/outputs/<name>.",
+        _ALL,
     ),
     # Environment (Job)
     SchemaField(
@@ -412,13 +425,14 @@ def is_valid_cron(value) -> bool:
 
 
 def litellm_aliases() -> list[str]:
-    """Model aliases pi/api agents may use, read from litellm/config.yaml.
+    """Model aliases pi/api agents may use, read from the rendered LiteLLM config.
 
-    Falls back to the hardcoded default set when the file is missing or unreadable
-    so the form still works without the config mounted.
+    Reads ``config.LITELLM_RENDERED`` (produced by ``litellm/generate.py`` from the product
+    template + instance overlay, US6). Falls back to the hardcoded default set when the file
+    is missing or unreadable so the form still works before the config is generated.
     """
     try:
-        with open(config.LITELLM_CONFIG) as f:
+        with open(config.LITELLM_RENDERED) as f:
             data = yaml.safe_load(f) or {}
         names = [m["model_name"] for m in data.get("model_list", []) if m.get("model_name")]
         return names or list(_LITELLM_FALLBACK)
@@ -573,6 +587,66 @@ def _validate_checks(agent: dict, is_asset: bool, errors: dict) -> None:
             return
 
 
+# Config-path fields whose value must resolve under the data root, never the product tree
+# (FR-025, contract path-validation §1). mcp_config is a container-internal path and is not
+# checked here.
+_PATH_ROOTED_FIELDS = ("output_dir", "workspace", "env_file")
+
+
+def _is_under(path: str, root: str) -> bool:
+    """Whether ``path`` is ``root`` itself or lives beneath it."""
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def _documented_default_paths(name: str, data_root: str) -> set[str]:
+    """The documented default ``output_dir``/``workspace`` for ``name`` (contract §1).
+
+    Both fall under the data root, so they already satisfy the data-root rule; listing them
+    keeps the acceptance explicit and independent of any future default-path placement.
+    """
+    return {
+        os.path.join(data_root, "outputs", name),
+        os.path.join(data_root, "workspaces", name),
+    }
+
+
+def _validate_paths(agent: dict, applicable: set[str], errors: dict) -> None:
+    """Reject config paths that point into the product tree or outside the data root (FR-025).
+
+    For each of ``output_dir``/``workspace``/``env_file`` that is present, applicable, and not
+    already flagged: a value under the product tree, or an absolute path outside the data root
+    that is not a documented default, is rejected with a message naming the field (via the error
+    key) and stating the data-root rule (contract path-validation §1). Omitted values and the
+    documented defaults are accepted. Roots come from the UI's single resolution point
+    (``config.PRODUCT_ROOT``/``config.DATA_ROOT``), read at call time so tests can monkeypatch
+    them — the same "read from config" style as ``prompt_exists`` injection.
+    """
+    product_root = config.PRODUCT_ROOT
+    data_root = config.DATA_ROOT
+    name = str(agent.get("name") or "")
+    defaults = _documented_default_paths(name, data_root)
+    for fid in _PATH_ROOTED_FIELDS:
+        if fid not in applicable or fid in errors:
+            continue
+        f = FIELDS_BY_ID[fid]
+        if fid not in agent or _is_unset(f, agent.get(fid)):
+            continue  # omitted → the documented default applies (accept)
+        val = agent[fid]
+        if not isinstance(val, str):
+            errors[fid] = "must be a filesystem path"
+            continue
+        if val in defaults:
+            continue  # the documented default is always accepted
+        if _is_under(val, product_root):
+            errors[fid] = (
+                f'must fall under the data root ($AGENTBOX_DATA); "{val}" is under the product tree'
+            )
+        elif not _is_under(val, data_root):
+            errors[fid] = (
+                f'must fall under the data root ($AGENTBOX_DATA); "{val}" is outside the data root'
+            )
+
+
 def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, str]:
     """Validate an agent definition; return a map of field id -> error message.
 
@@ -654,6 +728,9 @@ def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, 
 
     if harness:
         _validate_model(agent, harness, errors)
+
+    # Config paths must resolve under the data root, never the product tree (FR-025, US5).
+    _validate_paths(agent, applicable, errors)
 
     pf = agent.get("prompt_file")
     if pf and "prompt_file" not in errors and not prompt_exists(str(pf)):
