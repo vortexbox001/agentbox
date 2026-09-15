@@ -83,7 +83,15 @@ services:
     # run as the host user so files the UI writes into config/agents and config/prompts stay owned by you
     user: "${AGENTBOX_UID:-1000}:${AGENTBOX_GID:-1000}"
     environment:
+      # Internal, container-to-container URL for the UI's own server-side calls (reload/status).
       DAGSTER_URL: http://dagster-webserver:3000
+      # Browser-facing Dagster base URL for the links the UI renders, and the code-location name
+      # in those links. Threaded from the host env (settable in .env) — NOT via env_file: .env,
+      # so the config-editing UI never receives the API-key secrets that live in .env. Empty
+      # DAGSTER_PUBLIC_URL = derive from the request host + Dagster port. TZ affects rendered times.
+      DAGSTER_PUBLIC_URL: ${DAGSTER_PUBLIC_URL:-}
+      DAGSTER_LOCATION: ${DAGSTER_LOCATION:-definitions.py}
+      TZ: ${TZ:-UTC}
       # The three roots. The UI reads agents/prompts under the config root and writes them there
       # (FR-007); DATA_ROOT is used only as a string for schema path validation (no data mount).
       AGENTBOX_CONFIG: ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}
