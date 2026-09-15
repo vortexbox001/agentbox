@@ -138,6 +138,38 @@ def test_dagster_status_uses_stub(client, dagster_stub):
     assert set(data) == {"url", "reachable"}
 
 
+# ── Agents activity endpoint (spec 011 US1, contract §C) ──
+def test_agents_activity_reachable_returns_payload(client, dagster_stub):
+    # A reachable read returns the contract payload verbatim, always HTTP 200.
+    dagster_stub.activity_result = {
+        "reachable": True,
+        "agents": {
+            "hello-example": {
+                "latest_run": {"run_id": "r1", "status": "SUCCESS", "start_time": 1.0, "end_time": 2.0},
+                "history": ["SUCCESS", "FAILURE"],
+                "checks": None,
+                "schedules": {"sched_hello_example": {"running": True, "id": "i1"}},
+            }
+        },
+    }
+    resp = client.get("/api/agents/activity")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reachable"] is True
+    agent = body["agents"]["hello-example"]
+    assert agent["latest_run"]["status"] == "SUCCESS"
+    assert agent["history"] == ["SUCCESS", "FAILURE"]
+    assert agent["schedules"]["sched_hello_example"]["running"] is True
+
+
+def test_agents_activity_degrades_to_unreachable(client, dagster_stub):
+    # The degradation path is data, not an error: still 200, with the reachable:false signal.
+    dagster_stub.activity_result = {"reachable": False, "agents": {}}
+    resp = client.get("/api/agents/activity")
+    assert resp.status_code == 200
+    assert resp.json() == {"reachable": False, "agents": {}}
+
+
 # ── No navigation link to the design system (R13) ───────
 def test_base_page_has_no_design_system_nav_link(client):
     html = client.get("/agents").text
@@ -275,23 +307,15 @@ def test_agents_page_links_each_agent_and_new(client):
     assert "_template-pi" not in html
 
 
-def test_agents_page_dagster_links_use_code_location_path(client):
+def test_agents_page_carries_dagster_runs_base(client):
     html = client.get("/agents").text
-    # Dagster job URLs are <base>/locations/<location>/jobs/<job>; the bare
-    # /jobs/<job> form 404s in the Dagster webserver.
-    assert "/locations/definitions.py/jobs/agent_hello_example" in html
-    assert "/jobs/agent_hello_example" not in html.replace(
-        "/locations/definitions.py/jobs/agent_hello_example", ""
-    )
-
-
-def test_agents_page_asset_agent_links_to_asset_page(client):
-    html = client.get("/agents").text
-    # An asset agent's row links to its Dagster asset page, not a (nonexistent
-    # for asset-only agents) job page.
-    assert "/assets/reports/hello" in html
-    # hello-asset-example is an asset agent, so it must not also carry a bare job link.
-    assert '/jobs/agent_hello_asset_example"' not in html
+    # Spec 011 removed the per-row "runs" button / job link column (contract §B, FR-018):
+    # the Latest-run + Run-history Dagster deep links are built client-side from the
+    # browser-facing base URL, exposed once as data-runs-base on the list view.
+    assert 'data-runs-base="' in html
+    # The old server-rendered job/asset deep-link column is gone from the list markup.
+    assert "/locations/definitions.py/jobs/agent_hello_example" not in html
+    assert "/assets/reports/hello" not in html
 
 
 def test_agents_page_empty_state(client, tmp_agents):

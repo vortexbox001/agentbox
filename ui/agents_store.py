@@ -262,6 +262,38 @@ def list_templates() -> list[dict]:
     return templates
 
 
+def _list_view_fields(stem: str, agent: dict) -> dict:
+    """Derive the tabbed-list row's kind/crons/checks from a parsed definition.
+
+    The canonical cron ``type`` (``job_schedule`` / ``asset_schedule``) drives the pill icon
+    and, via the factory's registration naming, the ``dagster_name`` the activity read and the
+    toggle address (contract dagster-activity §0): ``sched_<stem>`` for a job schedule,
+    ``autocond_<stem>`` for an asset schedule, with ``-`` → ``_`` so it matches
+    ``orchestrator/factory.py``. Missing data is unknown, not zero: no schedule → empty list.
+    """
+    dagster_stem = str(stem).replace("-", "_")
+    asset_val = agent.get("asset")
+    is_asset = isinstance(asset_val, str) and asset_val.strip() != ""
+    is_job = agent.get("job") is True
+
+    crons: list[dict] = []
+    asset_sched = agent.get("asset_schedule")
+    if isinstance(asset_sched, str) and asset_sched.strip():
+        crons.append({"type": "asset_schedule", "expr": asset_sched.strip(),
+                      "dagster_name": f"autocond_{dagster_stem}"})
+    job_sched = agent.get("job_schedule")
+    if isinstance(job_sched, str) and job_sched.strip():
+        crons.append({"type": "job_schedule", "expr": job_sched.strip(),
+                      "dagster_name": f"sched_{dagster_stem}"})
+
+    declared = agent.get("checks")
+    checks = (
+        [{"name": c["name"]} for c in declared if isinstance(c, dict) and c.get("name")]
+        if isinstance(declared, list) else []
+    )
+    return {"is_asset": is_asset, "is_job": is_job, "crons": crons, "checks": checks}
+
+
 def list_agents() -> dict:
     """List agent files, split into ``agents`` and picker ``templates``.
 
@@ -298,6 +330,10 @@ def list_agents() -> dict:
             "name_mismatch": info["name_mismatch"],
             "editable": info["editable"],
         }
+        # Kind / crons / checks for the tabbed list (contract agents-list-view §A). All
+        # derive from the parsed definition, so a parse-error row (agent == {}) is neither
+        # asset nor job, with no crons or checks — it still renders, just without a Kind.
+        row.update(_list_view_fields(stem, agent if info["agent"] else {}))
         agents.append(row)
     return {"agents": agents, "templates": list_templates()}
 

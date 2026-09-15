@@ -21,6 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import agents_store
 import config
+import cron_text
 import dagster
 import prompts_store
 import schema
@@ -42,6 +43,10 @@ templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 with open(os.path.join(_STATIC_DIR, "icons.svg"), encoding="utf-8") as _sprite_fh:
     _ICON_SPRITE = _sprite_fh.read()
 templates.env.globals["icon_sprite"] = _ICON_SPRITE
+
+# One shared cron-to-text helper (research R6, FR-016): the schedules/sensors column renders
+# each cron's human label server-side, in the box timezone, so it ships with first paint.
+templates.env.globals["cron_text"] = cron_text.cron_text
 
 # Operational logging (T050): one INFO line per mutating action so an operator can
 # trace what the UI wrote. Env values are never logged — only stems and outcomes.
@@ -162,17 +167,44 @@ async def _root_redirect():
     return RedirectResponse("/agents", status_code=302)
 
 
+# The tabbed list's five tabs, in render order (contract agents-list-view §B). Ids are the
+# lowercase URL `?tab=` values; counts are computed server-side and correct with Dagster down.
+_TAB_IDS = ("all", "assets", "jobs", "scheduled", "disabled")
+
+
+def _tab_counts(rows: list[dict]) -> dict:
+    """Server-side tab counts (FR-013). Both-kind agents count in both Assets and Jobs."""
+    return {
+        "all": len(rows),
+        "assets": sum(1 for r in rows if r.get("is_asset")),
+        "jobs": sum(1 for r in rows if r.get("is_job")),
+        "scheduled": sum(1 for r in rows if r.get("crons")),
+        "disabled": sum(1 for r in rows if r.get("enabled") is False),
+    }
+
+
 @app.get("/agents")
 async def _agents_page(request: Request):
     # The list reflects the filesystem exactly: every non-template agent, templates
-    # excluded. Row Dagster links are built in the template from the browser-facing
-    # base URL (dagster_url in the shell context) plus each row's dagster_path
-    # (asset page for an asset agent, job page otherwise).
+    # excluded. Columns 1–5 render from the store row (Schedules/Sensors renders the pills,
+    # icon, and cron-to-text label live; only the toggle state and columns 6–8 fill after
+    # first paint via GET /api/agents/activity). Row Dagster links are built in the template
+    # from the browser-facing base URL (dagster_url) plus each row's dagster_path.
     listing = agents_store.list_agents()
+    rows = listing["agents"]
+    active_tab = (request.query_params.get("tab") or "all").lower()
+    if active_tab not in _TAB_IDS:
+        active_tab = "all"
     return templates.TemplateResponse(
         request,
         "agents/list.html",
-        _shell_context(request, title="Agents", agents=listing["agents"]),
+        _shell_context(
+            request,
+            title="Agents",
+            agents=rows,
+            tab_counts=_tab_counts(rows),
+            active_tab=active_tab,
+        ),
     )
 
 
@@ -249,6 +281,15 @@ async def _api_agents():
     # Broken files carry parse_error with other fields null; a file written by a
     # newer schema is reported editable: false (agents_store.list_agents).
     return JSONResponse(agents_store.list_agents())
+
+
+@app.get("/api/agents/activity")
+async def _api_agents_activity():
+    # Dagster-derived columns 6–8 + pill toggle state, filled after first paint. Always 200:
+    # the outcome is data (mirroring /api/dagster/status). One bounded aliased read; a
+    # reachable:false payload leaves the client's columns 6–8 as em-dashes (contract §C).
+    listing = agents_store.list_agents()
+    return JSONResponse(await dagster.activity(listing["agents"]))
 
 
 def _normalise_prompt_filename(new_prompt: dict | None) -> str | None:

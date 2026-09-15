@@ -1,65 +1,109 @@
 {% extends "base.html" %}
 {% import "components/macros.html" as ui %}
 
-{% block actions %}
-  {{ ui.button(label="New agent", intent="primary", icon="plus", href="/agents/new") }}
-{% endblock %}
+{# No page header: the list view is full-bleed, its title lives only in <title> (contract
+   agents-list-view §B, FR-012). The tab bar + toolbar stand in for the header. #}
+{% block page_header %}{% endblock %}
+
+{% set tab_defs = [
+  {"id": "all", "label": "All", "count": tab_counts.all},
+  {"id": "assets", "label": "Assets", "count": tab_counts.assets},
+  {"id": "jobs", "label": "Jobs", "count": tab_counts.jobs},
+  {"id": "scheduled", "label": "Scheduled", "count": tab_counts.scheduled},
+  {"id": "disabled", "label": "Disabled", "count": tab_counts.disabled},
+] %}
 
 {% block content %}
-{% if agents %}
-  {% call ui.card() %}
-    {% call ui.table() %}
-      <thead>
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Harness</th>
-          <th scope="col">Model</th>
-          <th scope="col">Status</th>
-          <th scope="col">Dagster</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for a in agents %}
-        {% set stem = a.file[:-5] %}
-        <tr {% if a.enabled is false %}class="ax-row--disabled"{% endif %}>
-          <td>
-            <a href="/agents/{{ stem }}">{{ a.name or stem }}</a>
-            {% if a.name_mismatch %}
-              {{ ui.badge("name mismatch", intent="scheduled", attrs={"title": "The name inside the file differs from the filename; it is normalised to \"" ~ stem ~ "\" on save."}) }}
-            {% endif %}
-          </td>
-          {% if a.parse_error %}
-          <td colspan="2">
-            {{ ui.badge("error", intent="error") }}
-            <span class="ax-muted">{{ a.parse_error }}</span>
-          </td>
-          {% else %}
-          <td>{% if a.harness %}{{ ui.badge(a.harness, intent="harness") }}{% else %}<span class="ax-muted">—</span>{% endif %}</td>
-          <td>{% if a.model %}<span class="ax-mono">{{ a.model }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+<div class="ax-list-view" id="ax-agents-list" data-runs-base="{{ dagster_url }}">
+  <div class="ax-list-tabs">
+    {{ ui.tabs(items=tab_defs, active=active_tab, attrs={"aria-label": "Object filters"}) }}
+  </div>
+  <div class="ax-list-toolbar">
+    <div class="ax-list-toolbar-group">
+      {{ ui.button(label="Filter", intent="ghost", outlined=true, icon="filter",
+                   attrs={"id": "ax-filter-toggle", "aria-expanded": "false", "aria-controls": "ax-filter-input"}) }}
+      {{ ui.text_input(id="ax-filter-input", placeholder="Filter agents…",
+                       attrs={"hidden": "hidden", "aria-label": "Filter agents"}) }}
+      {{ ui.checkbox(label="Show disabled agents", id="ax-show-disabled") }}
+    </div>
+    <div class="ax-list-toolbar-group">
+      {{ ui.button(label="New agent", intent="primary", icon="plus", href="/agents/new") }}
+    </div>
+  </div>
+
+  {% if agents %}
+  {% call ui.table(full_bleed=true) %}
+    <thead>
+      <tr>
+        <th scope="col">Name</th>
+        <th scope="col">Harness</th>
+        <th scope="col">Model</th>
+        <th scope="col">Kind</th>
+        <th scope="col">Schedules/Sensors</th>
+        <th scope="col">Latest run</th>
+        <th scope="col">Checks</th>
+        <th scope="col">Run history</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in agents %}
+      {% set stem = a.file[:-5] %}
+      {% set kinds = [] %}
+      {% if a.is_asset %}{% set _ = kinds.append("asset") %}{% endif %}
+      {% if a.is_job %}{% set _ = kinds.append("job") %}{% endif %}
+      <tr {% if a.enabled is false %}class="ax-row--disabled"{% endif %}
+          data-name="{{ a.name or stem }}"
+          data-harness="{{ a.harness or '' }}"
+          data-model="{{ a.model or '' }}"
+          data-kind="{{ kinds|join(' ') }}"
+          data-scheduled="{{ 'true' if a.crons else 'false' }}"
+          data-enabled="{{ 'false' if a.enabled is false else ('unknown' if a.enabled is none else 'true') }}">
+        <td>
+          <a class="ax-mono" href="/agents/{{ stem }}">{{ a.name or stem }}</a>
+          {% if a.name_mismatch %}
+            {{ ui.badge("name mismatch", intent="scheduled", attrs={"title": "The name inside the file differs from the filename; it is normalised to \"" ~ stem ~ "\" on save."}) }}
           {% endif %}
-          <td>
-            {% if a.parse_error %}
-              <span class="ax-muted">—</span>
-            {% elif a.enabled is false %}
-              {{ ui.badge("disabled", intent="disabled") }}
-            {% else %}
-              {{ ui.badge("enabled", intent="enabled") }}
-            {% endif %}
-          </td>
-          <td>
-            {{ ui.button(label="runs", intent="ghost", right_icon="external", href="" ~ dagster_url ~ a.dagster_path, attrs={"target": "_blank", "rel": "noopener", "title": "Open this agent's runs in Dagster"}) }}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    {% endcall %}
+        </td>
+        {% if a.parse_error %}
+        <td colspan="7">
+          {{ ui.badge("error", intent="error") }}
+          <span class="ax-muted">{{ a.parse_error }}</span>
+        </td>
+        {% else %}
+        <td>{% if a.harness %}<span class="ax-mono">{{ a.harness }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+        <td>{% if a.model %}<span class="ax-mono" title="{{ a.model }}">{{ a.model }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+        <td>
+          {% if kinds %}
+            {% for k in kinds %}{{ ui.badge(k, intent=k) }}{% endfor %}
+          {% else %}<span class="ax-muted">—</span>{% endif %}
+        </td>
+        <td class="ax-col-schedules">
+          {% if a.crons %}
+            {% for c in a.crons %}
+              {{ ui.schedule_pill(type=c.type, label=cron_text(c.expr), name=c.dagster_name,
+                                  attrs={"data-agent": a.name or stem, "data-dagster-name": c.dagster_name}) }}
+            {% endfor %}
+          {% else %}<span class="ax-muted">—</span>{% endif %}
+        </td>
+        <td class="ax-col-latest"><span class="ax-muted">—</span></td>
+        <td class="ax-col-checks"><span class="ax-muted">—</span></td>
+        <td class="ax-col-history"><span class="ax-muted">—</span></td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
   {% endcall %}
-{% else %}
+  {% else %}
   {% call ui.card(class="ax-empty") %}
     <p>No agents yet. An agent is a YAML definition in <span class="ax-mono">agents/</span> that the orchestrator runs.</p>
     <p>
       {{ ui.button(label="Create your first agent", intent="primary", icon="plus", href="/agents/new") }}
     </p>
   {% endcall %}
-{% endif %}
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/agents-list.js"></script>
 {% endblock %}

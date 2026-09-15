@@ -150,3 +150,38 @@ def test_collect_drops_checks_when_asset_gate_off():
     assert "delete agent.checks" in body
     # the drop sits in the gate-off branch, after the drops of the other produces children.
     assert body.index("delete agent.checks") > body.index("delete agent.asset")
+
+
+# ── spec 011 US1 / SC-006: the rebuilt tabbed agents list carries its design-system classes ──
+_SCHED_AGENT = (
+    "name: sched-agent\nharness: api\nmodel: cheap\nprompt_file: hello-example.md\n"
+    "output_dir: /data/outputs/sched-agent\njob: true\ntriggers:\n  job_schedule: \"0 7 * * *\"\n"
+)
+
+
+def test_agents_list_uses_design_system_classes(client, tmp_agents):
+    # A scheduled agent so the schedule pill actually renders in the served markup.
+    (tmp_agents / "sched-agent.yaml").write_text(_SCHED_AGENT, encoding="utf-8")
+    html = client.get("/agents").text
+
+    # Full-bleed list view with no page header (contract §B).
+    assert "ax-list-view" in html
+    assert "ax-page-header" not in html
+    # Tabs with counts, toolbar, show-disabled checkbox, full-bleed table.
+    assert "ax-tabs" in html and "ax-tab-count" in html
+    assert "ax-list-toolbar" in html and "ax-list-toolbar-group" in html
+    assert "ax-checkbox" in html          # show-disabled control
+    assert "ax-table--full-bleed" in html
+    # Pills for the scheduled agent, kind badge, and the New-agent primary button.
+    assert "ax-schedule-pill" in html
+    assert "ax-badge--job" in html
+    assert "ax-btn--primary" in html
+
+
+def test_agents_list_after_paint_columns_are_placeholders(client, tmp_agents):
+    # Columns 6–8 ship as em-dash placeholders the activity JS fills after first paint.
+    (tmp_agents / "sched-agent.yaml").write_text(_SCHED_AGENT, encoding="utf-8")
+    html = client.get("/agents").text
+    for cls in ("ax-col-latest", "ax-col-checks", "ax-col-history"):
+        assert cls in html
+    assert "/static/agents-list.js" in html

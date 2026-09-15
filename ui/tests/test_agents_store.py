@@ -475,3 +475,53 @@ def test_migration_failure_is_parse_error_and_leaves_file(settings, monkeypatch)
     assert "schema migration failed" in info["parse_error"]
     assert info["raw"] is not None
     assert open(path).read() == before          # read never rewrote the file
+
+
+# ── Tabbed-list row fields: is_asset / is_job / crons / checks (spec 011 US1, contract §A) ──
+def _write_both_kind(settings):
+    """A both-kind agent with an asset+job schedule and one declared check (via the emitter)."""
+    cfg = dict(GOLDEN["api"], name="both-kind", asset="reports/bk", job=True,
+               asset_schedule="0 17 * * *", job_schedule="30 2 * * *",
+               checks=[{"name": "has-output"}])
+    st.write_agent("both-kind", cfg)
+
+
+def test_list_rows_carry_kind_flags(settings):
+    rows = {r["name"]: r for r in st.list_agents()["agents"]}
+    # The example instance corpus: one asset agent and one job agent, neither scheduled.
+    asset_row = rows["hello-asset-example"]
+    assert asset_row["is_asset"] is True and asset_row["is_job"] is False
+    assert asset_row["crons"] == [] and asset_row["checks"] == []
+    job_row = rows["hello-example"]
+    assert job_row["is_job"] is True and job_row["is_asset"] is False
+
+
+def test_list_rows_carry_crons_with_canonical_names(settings):
+    _write_both_kind(settings)
+    bk = {r["name"]: r for r in st.list_agents()["agents"]}["both-kind"]
+    assert bk["is_asset"] is True and bk["is_job"] is True
+    by_type = {c["type"]: c for c in bk["crons"]}
+    assert set(by_type) == {"asset_schedule", "job_schedule"}
+    # dagster_name matches the factory's registration (dagster-activity §0), '-' → '_'.
+    assert by_type["asset_schedule"]["dagster_name"] == "autocond_both_kind"
+    assert by_type["job_schedule"]["dagster_name"] == "sched_both_kind"
+    assert by_type["asset_schedule"]["expr"] == "0 17 * * *"
+    assert [c["name"] for c in bk["checks"]] == ["has-output"]
+
+
+def test_parse_error_row_has_no_kind_or_crons(settings):
+    open(os.path.join(settings.AGENTS_DIR, "broken.yaml"), "w").write("name: broken\n: : :\n")
+    broken = {r["name"]: r for r in st.list_agents()["agents"]}["broken"]
+    assert broken["parse_error"]
+    assert broken["is_asset"] is False and broken["is_job"] is False
+    assert broken["crons"] == [] and broken["checks"] == []
+
+
+def test_tab_counts_derivation(settings):
+    _write_both_kind(settings)
+    rows = st.list_agents()["agents"]
+    # Both-kind counts in both Assets and Jobs; on-demand agents are excluded from Scheduled.
+    assert sum(1 for r in rows if r["is_asset"]) == 2   # hello-asset-example + both-kind
+    assert sum(1 for r in rows if r["is_job"]) == 2     # hello-example + both-kind
+    assert sum(1 for r in rows if r["crons"]) == 1      # only both-kind is scheduled
+    assert sum(1 for r in rows if r["enabled"] is False) == 0
