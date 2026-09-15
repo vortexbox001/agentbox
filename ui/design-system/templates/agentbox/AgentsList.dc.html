@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Agents List" description="AgentBox agents overview — app shell with the Name·Harness·Model·Status·Dagster table" -->
+<helmet>
+<script src="./ds-base.js"></script>
+<style>html,body{margin:0;padding:0;height:100%}</style>
+</helmet>
+<div class="ax-app">
+  <dc-import name="Sidebar" active="agents" hint-size="240px,100%"></dc-import>
+  <div class="ax-main">
+    <main class="ax-content">
+      <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+        <symbol id="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="3" x2="8" y2="13"></line><line x1="3" y1="8" x2="13" y2="8"></line></symbol>
+        <symbol id="external" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3"></path><line x1="9" y1="7" x2="13" y2="3"></line><path d="M9.5 3H13v3.5"></path></symbol>
+      </svg>
+      <header class="ax-page-header">
+        <div class="ax-page-header-heading">
+          <nav class="ax-breadcrumb" aria-label="Breadcrumb"></nav>
+          <h1 class="ax-page-title">Agents</h1>
+        </div>
+        <div class="ax-page-actions">
+          <a class="ax-btn ax-btn--primary" href="#"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#plus"></use></svg><span>New agent</span></a>
+        </div>
+      </header>
+      <div class="ax-card">
+        <table class="ax-table">
+          <thead><tr><th scope="col">Name</th><th scope="col">Harness</th><th scope="col">Model</th><th scope="col">Status</th><th scope="col">Dagster</th></tr></thead>
+          <tbody>
+            <sc-for list="{{ agents }}" as="a" hint-placeholder-count="5">
+              <tr class="{{ a.rowClass }}">
+                <td><a href="#">{{ a.name }}</a></td>
+                <td><span class="ax-badge ax-badge--harness">{{ a.harness }}</span></td>
+                <td><span class="ax-mono">{{ a.model }}</span></td>
+                <td><span class="{{ a.statusClass }}">{{ a.status }}</span></td>
+                <td><a class="ax-btn ax-btn--ghost" href="#" title="Open this agent's runs in Dagster"><span>runs</span><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#external"></use></svg></a></td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:720}}">
+class Component extends DCLogic {
+  componentDidMount() { document.documentElement.setAttribute('data-theme', 'dark'); }
+  renderVals() {
+    const rows = this.props.agents || [
+      { name: 'summarizer', harness: 'api', model: 'gpt-4o', status: 'enabled' },
+      { name: 'code-reviewer', harness: 'claude-code', model: 'claude-sonnet-5', status: 'enabled' },
+      { name: 'report-writer', harness: 'api', model: 'claude-haiku-4-5', status: 'enabled' },
+      { name: 'doc-indexer', harness: 'api', model: 'gpt-4o-mini', status: 'disabled' },
+      { name: 'ticket-triage', harness: 'codex', model: 'gpt-4o-mini', status: 'enabled' },
+    ];
+    return {
+      agents: rows.map(a => ({
+        ...a,
+        rowClass: a.status === 'disabled' ? 'ax-row--disabled' : '',
+        statusClass: 'ax-badge ax-badge--' + (a.status === 'disabled' ? 'disabled' : 'enabled'),
+      })),
+    };
+  }
+}
+</script>
+</body>
+</html>
