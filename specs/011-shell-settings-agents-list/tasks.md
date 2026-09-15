@@ -34,7 +34,7 @@ Single-project server-rendered UI under `ui/`. Tests live in `ui/tests/`, run wi
 **Purpose**: Confirm the working baseline before any change.
 
 - [ ] T001 Confirm the existing suite is green as a baseline: run `cd ui && ../.venv/bin/python -m pytest -q` and note the current pass count (do not change any file). If `.venv/` is missing, recreate per `CLAUDE.local.md` (`uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r ui/requirements.txt`).
-- [ ] T002 Verify the Dagster GraphQL field/union names before coding the activity read: one throwaway `curl` to `{DAGSTER_URL}/graphql` to confirm `pipelineRunsOrError`/`Runs`, `instigationStateOrError`/`instigationSelector`, `assetChecksOrError` evaluation shape, and `scheduleSelector`/`sensorSelector` arg names (research R1/R2). Record the resolved names as a comment block in `specs/011-shell-settings-agents-list/contracts/dagster-activity.md`.
+- [ ] T002 Verify the Dagster GraphQL field/union names **and the `repositoryName` value** before coding the activity read: one throwaway `curl` to `{DAGSTER_URL}/graphql` to confirm `pipelineRunsOrError`/`Runs`, `instigationStateOrError`/`instigationSelector`, `assetChecksOrError` evaluation shape, `scheduleSelector`/`sensorSelector` arg names, and the repository name (expected `__repository__` on 1.13.21) — research R1/R2, resolving finding U1. Pin every resolved value into `contracts/dagster-activity.md §0` (the canonical vocabulary/selector table).
 
 ---
 
@@ -77,9 +77,9 @@ render server-side; columns 6–8 fill after first paint; tab/filter/show-disabl
 
 ### Implementation for User Story 1
 
-- [ ] T012 [P] [US1] Extend `ui/agents_store.py` `list_agents()` rows with `is_asset`, `is_job`, `crons` (list of `{type, expr, dagster_name}`), and `checks` (list of `{name}`), reusing the existing `dagster_job`/`dagster_asset` naming helpers so `dagster_name` matches the factory registration (contract agents-list-view §A, data-model §1).
-- [ ] T013 [P] [US1] Create `ui/cron_text.py` — one shared cron-to-text helper (e.g. "Every day at 7:00 AM") in the box's timezone, and expose it to Jinja (research R6, FR-016).
-- [ ] T014 [US1] Add `activity(agents) -> dict` to `ui/dagster.py`: one aliased GraphQL POST (short timeout, one client) returning per-agent `latest_run`, `history` (≤10, newest-first), `checks` (`{name, status}`), and `schedules` (`{dagster_name: {running}}`); map every transport/Dagster error to `{"reachable": False, "agents": {}}` and null unknown fields — never one request per agent, never a disk scan (contract dagster-activity §A, FR-019, SC-005) — depends on T002, T012.
+- [ ] T012 [P] [US1] Extend `ui/agents_store.py` `list_agents()` rows with `is_asset`, `is_job`, `crons` (list of `{type, expr, dagster_name}`), and `checks` (list of `{name}`). `type` is the canonical `{job_schedule, asset_schedule}` vocabulary and `dagster_name` MUST be the registered instigator name — `sched_<stem>` for `job_schedule`, `autocond_<stem>` for `asset_schedule`, with `-`→`_` — matching `orchestrator/factory.py` (contract agents-list-view §A, dagster-activity §0, data-model §1).
+- [ ] T013 [P] [US1] Create `ui/cron_text.py` — one shared cron-to-text helper (e.g. "Every day at 7:00 AM") in the box timezone `os.environ.get("TZ") or "UTC"` (the same source as the factory's `cron_timezone()`, never the browser zone), and expose it to Jinja (research R6, FR-016, dagster-activity §0).
+- [ ] T014 [US1] Add `activity(agents) -> dict` to `ui/dagster.py`: one aliased GraphQL POST (short timeout, one client) returning per-agent `latest_run`, `history` (≤10, newest-first), `checks` (`{name, status}`), and `schedules` (`{dagster_name: {running}}`); map every transport/Dagster error to `{"reachable": False, "agents": {}}` and null unknown fields — never one request per agent, never a disk scan; use the selector identity pinned in dagster-activity §0 (`repositoryLocationName: config.DAGSTER_LOCATION`, verified `repositoryName`) (contract dagster-activity §A/§0, FR-019, SC-005) — depends on T002, T012.
 - [ ] T015 [US1] Rebuild `ui/templates/agents/list.html`: no page header, full-bleed table sorted by name, `tabs` macro (All/Assets/Jobs/Scheduled/Disabled with server counts), toolbar (Filter + Show-disabled checkbox left, New-agent primary button right), 8 columns (Name mono link, Harness, Model truncated w/ title, Kind badges, Schedules/Sensors pills+icon+cron label, Latest run, Checks, Run history), "No agents yet" card below the toolbar, and preserved parse-error / name-mismatch row treatment (contract §B, FR-012/013/014/015/018/020) — depends on T009, T011, T012, T013.
 - [ ] T016 [US1] Add the list context to `GET /agents` in `ui/main.py` (rows + server-computed tab counts) and add `GET /api/agents/activity` returning the contract §C payload from `dagster.activity(...)`, always HTTP 200 (contract §C, FR-013/019) — depends on T012, T014.
 - [ ] T017 [US1] Create `ui/static/agents-list.js`: after first paint fetch `/api/agents/activity` once and fill columns 6–8 + each pill's toggle state (Latest-run status dot + relative time + Dagster link; Checks icons wrapping four per row, titled; Run-history ≤10 bars newest-at-right); client-side tab/filter/show-disabled narrowing; `?tab=` URL sync (default All, survives reload); show-disabled `localStorage` flag; "Run data unavailable" warning on `reachable:false` (contract §D, FR-013/014/017/020) — depends on T016.
@@ -107,6 +107,7 @@ overflow; collapsed foot link's accessible name reads "Show navigation".
 
 - [ ] T021 [US2] Update `ui/templates/base.html`: primary nav = Agents only, below the retained `.ax-nav-divider` keyline; foot = Dagster status block + keyline + "Hide navigation" (collapse icon) + "Settings" (gear icon); remove the `.ax-theme-control` three-button radiogroup; keep `#ax-modal-root` and the pre-paint theme/sidebar head script (contract shell-and-modal §A/§B/§F, FR-001/002/003) — depends on T008.
 - [ ] T022 [US2] Update `ui/static/shell.js`: foot "Hide navigation"/"Show navigation" accessible-name toggle on collapse (persistence `agentbox.sidebar` unchanged), remove the radiogroup theme handler, keep the Dagster status poll (contract §B, FR-004) — depends on T021.
+- [ ] T022a [US2] Remove the now-stale radiogroup half of the FR-003 accessibility "move": delete the `.ax-theme-control` radiogroup assertions inside `test_theme_control_is_accessible_icon_buttons` in `ui/tests/test_ui_consistency.py` so US2 ships green (the modal-dropdown assertion is added in T028; the two halves of the move are split across the stories that own each end — resolves finding I2) — depends on T021.
 - [ ] T023 [US2] Apply the indigo accent classes to the Dagster connection points — the foot Dagster status block, and (in `ui/templates/agents/list.html` / `ui/static/app.css`) the Latest-run + Run-history links and the schedule/sensor toggle checked track — non-Dagster elements keep the theme accent (contract §C, FR-010) — depends on T009, T021.
 
 ### Tests for User Story 2
@@ -135,7 +136,8 @@ the dirty-form confirm modal shows the new square keylined chrome.
 
 ### Tests for User Story 3
 
-- [ ] T028 [US3] Repoint `test_theme_control_is_accessible_icon_buttons` in `ui/tests/test_ui_consistency.py` from the removed foot radiogroup to the modal theme dropdown (`role="listbox"`/`role="option"`, labelled, iconed options) (FR-003, SC-006).
+- [ ] T028 [US3] Complete the FR-003 accessibility "move": add the modal-dropdown assertion to `test_theme_control_is_accessible_icon_buttons` in `ui/tests/test_ui_consistency.py`, targeting the modal theme dropdown (`role="listbox"`/`role="option"`, labelled, iconed options) — the modal exists only after T025, so this is the US3 half of the move begun in T022a (FR-003, SC-006) — depends on T025.
+- [ ] T028a [US3] Add lightweight static coverage for SC-003 (resolves finding G1): assert `ui/static/settings.js` reads/writes `localStorage["agentbox.theme"]` and stamps/clears `data-theme` on `<html>` (e.g. in `ui/tests/test_ui_consistency.py` or a small `test_api.py` string check). The full apply-without-reload / survives-reload / OS-flip behaviour remains the manual US3 quickstart check (documented, browser-only) — depends on T026.
 
 **Checkpoint**: The settings modal replaces the inline theme control at parity (SC-003).
 
@@ -151,9 +153,9 @@ Dagster and reload — pills disabled with an explanatory title while columns 1�
 
 ### Implementation for User Story 4
 
-- [ ] T029 [US4] Add `set_instigation(kind, name, running) -> {"ok", "running", "message"}` to `ui/dagster.py`: POST `startSchedule`/`stopRunningSchedule` or `startSensor`/`stopSensor` with the selector; treat `PythonError`/`UnauthorizedError`/GraphQL `errors` as `ok: false` (contract dagster-activity §B, FR-021) — depends on T002.
+- [ ] T029 [US4] Add `set_instigation(kind, name, running) -> {"ok", "running", "message"}` to `ui/dagster.py`, keyed on the §0 mapping: `kind="schedule"` (job_schedule, name `sched_<stem>`) POSTs `startSchedule`/`stopRunningSchedule` with `scheduleSelector`; `kind="sensor"` (asset_schedule, name `autocond_<stem>`) POSTs `startSensor`/`stopSensor` with `sensorSelector`. Treat `PythonError`/`UnauthorizedError`/GraphQL `errors` as `ok: false` (contract dagster-activity §B/§0, FR-021) — depends on T002.
 - [ ] T030 [US4] Add the `POST /api/schedules/toggle` endpoint (body `{name, kind, running}`) in `ui/main.py`, returning `set_instigation(...)`, always HTTP 200 (contract §B) — depends on T029.
-- [ ] T031 [US4] Extend `ui/static/agents-list.js`: pill toggle POSTs to the endpoint and updates to the returned state; render the toggle disabled with an explanatory title ("Turn on from Dagster" when the mutation is unavailable) when the agent is disabled, Dagster is unreachable, or state is unknown — no state change attempted (contract §C, FR-016/021) — depends on T017, T030.
+- [ ] T031 [US4] Extend `ui/static/agents-list.js`: pill toggle derives its POST `kind` from the row's cron `type` per §0 (`job_schedule`→`schedule`, `asset_schedule`→`sensor`), POSTs `{name, kind, running}` to the endpoint, and updates to the returned state; render the toggle disabled with an explanatory title ("Turn on from Dagster" when the mutation is unavailable) when the agent is disabled, Dagster is unreachable, or state is unknown — no state change attempted (contract §C/§0, FR-016/021) — depends on T017, T030.
 
 ### Tests for User Story 4
 
@@ -201,6 +203,13 @@ no-inline-styles test fails.
   - US1 (P1) is the MVP and is fully independent.
   - US2 (P2) and US3 (P2) are independent of US1; US3's modal open-target lives in the shell
     `base.html` that US2 edits, so US3 tasks that touch `base.html` (T025) follow T021.
+    - **US2/US3 coupling (finding I2):** US2 removes the foot theme radiogroup, so the FR-003
+      accessibility assertion is *moved* across the two stories: T022a (US2) deletes the stale
+      radiogroup half so US2 ships green; T028 (US3) adds the modal-dropdown half once the modal
+      (T025) exists. Neither story leaves the suite red.
+    - **US2 Settings link is inert until US3 (finding U2):** the "Settings" foot link renders in
+      US2, but the modal it opens does not exist until T025 (US3). US2's independent test covers
+      only that the link renders; full open/close behaviour is a US3 acceptance test.
   - US4 (P3) depends on US1's `agents-list.js` (T017) and list rendering.
   - US5 (P3) depends on the Foundational bring-level work (T008/T009/T010).
 - **Polish (Phase 8)**: Depends on all desired stories.
@@ -224,7 +233,7 @@ no-inline-styles test fails.
 - `ui/static/app.css`: T009 → T023 → T027 → T034.
 - `ui/main.py`: T004 → T016 → T030.
 - `ui/static/agents-list.js`: T017 → T031.
-- `ui/tests/test_ui_consistency.py`: T005 → T020 → T024 → T028.
+- `ui/tests/test_ui_consistency.py`: T005 → T020 → T024 → T022a → T028 → T028a.
 - `ui/tests/test_api.py`: T018 → T032.
 
 ---

@@ -204,6 +204,7 @@ The brief's five open questions were resolved in the Clarifications section; the
 - **A5 (Indigo, Q5 — resolved)**: Indigo is not a selectable theme; it is an accent ramp added to the Light and Dark themes and applied to Dagster connection points (see Clarifications and FR-010).
 - **A6**: The `system` theme keeps today's behaviour (follow `prefers-color-scheme`, live update on OS change); the mock's "default to dark unless the OS says light" is treated as practically equivalent and not a required change.
 - **A7**: The schedule/sensor toggle's checked-track uses the indigo Dagster accent by design (it toggles Dagster functionality, so it is a Dagster connection point), which is consistent across both themes.
+- **A8 (Instigator kind)**: A `job_schedule` is registered as a Dagster **schedule** (`sched_<stem>`) and an `asset_schedule` as a Dagster **sensor** (`autocond_<stem>`, an `AutomationConditionSensorDefinition`), per `orchestrator/factory.py`. The list's pill toggle therefore start/stops a schedule for job crons and a sensor for asset crons; both are cron-driven for the human-readable label. The single mapping (store `type` → icon, `dagster_name`, and toggle `kind`) is pinned in `contracts/dagster-activity.md §0`.
 
 ## Dependencies
 

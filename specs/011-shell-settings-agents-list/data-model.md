@@ -19,7 +19,7 @@ kind/crons/checks the tabbed list needs. Source: the agents store, at page rende
 | `enabled` | bool \| null | `enabled: false` → Disabled tab + row style; null on parse error. |
 | `is_asset` | bool | True when the agent declares `produces.asset`. Feeds the Kind "asset" badge and the Assets tab count. |
 | `is_job` | bool | True when `job: true`. Feeds the Kind "job" badge and the Jobs tab count. An agent may be **both** (two badges, counts in both tabs). |
-| `crons` | list of `{type, expr, dagster_name}` | One per configured cron. `type` ∈ {`job_schedule`, `asset_schedule`} → the pill's type-driven icon (clock vs sensor) and the schedule/sensor name to select in Dagster. Empty list → Schedules/Sensors cell shows an em-dash and the agent is excluded from the Scheduled tab count. |
+| `crons` | list of `{type, expr, dagster_name}` | One per configured cron. `type` ∈ {`job_schedule`, `asset_schedule`} is the **one canonical vocabulary** (`contracts/dagster-activity.md §0`): it drives the pill icon (clock vs sensor), the `dagster_name` to select (`sched_<stem>` vs `autocond_<stem>`, `-`→`_`), and the toggle `kind` (`schedule` vs **`sensor`** — an asset schedule is a Dagster sensor). Empty list → Schedules/Sensors cell shows an em-dash and the agent is excluded from the Scheduled tab count. |
 | `checks` | list of `{name}` | Declared checks (from `produces.checks`), used to lay out the Checks cell placeholders (results fill from activity). Empty → Checks cell shows an em-dash. |
 | `parse_error` | str \| null | When set, the row shows the existing parse-error treatment (message spans the data columns). |
 | `name_mismatch` | bool | Preserves the existing name-mismatch badge. |

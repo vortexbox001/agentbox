@@ -38,8 +38,10 @@ divergence beyond one documented substitution**:
 No new manifest component (Dropdown is a form of Select). Extend three existing macros; keep
 their current signatures back-compatible:
 
-- **`schedule_pill(type, label, on, name, id, attrs)`** — gains the **type-driven icon**: clock
-  for `type="schedule"` (job), sensor for `type="asset"`/asset schedule. Icon by `#id`.
+- **`schedule_pill(type, label, on, name, id, attrs)`** — gains the **type-driven icon**, keyed on
+  the store's canonical cron `type` (`dagster-activity.md §0`): `clock` for `type="job_schedule"`,
+  `sensor` for `type="asset_schedule"`. Icon by `#id`. (No separate `schedule`/`asset`
+  vocabulary — the macro receives the store `type` verbatim.)
 - **`select(name, value, options, disabled, id, attrs)`** — options pass through a **per-option
   icon**, a **trailing note**, and **sticky filter-row** data, so the same macro backs the
   theme dropdown's iconed options and any filter-in-panel affordance.
