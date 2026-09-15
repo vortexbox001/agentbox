@@ -27,6 +27,29 @@ def _output_dir(cfg: dict) -> str:
     ``$AGENTBOX_DATA/outputs/<name>`` when omitted (FR-026)."""
     return cfg.get("output_dir") or paths.default_output_dir(cfg["name"])
 
+
+# Agent containers run as the image's non-root user (node, uid 1000; see each image's
+# `USER` and the `--tmpfs /creds:uid=1000` mount), while the orchestrator runs as root.
+AGENT_UID = int(os.environ.get("AGENTBOX_AGENT_UID", "1000"))
+AGENT_GID = int(os.environ.get("AGENTBOX_AGENT_GID", "1000"))
+
+
+def _ensure_agent_dir(path: str) -> None:
+    """Create a ``-v`` bind-mount source dir owned by the agent container's user.
+
+    The orchestrator runs as root; agent containers run as node (uid 1000). If a mount
+    source dir is missing, the Docker daemon creates it as **root**, and the non-root
+    container user then can't write it — the agent silently falls back to an in-container
+    path and the run produces no host-visible output (files_written=0). Creating the dir
+    here and chowning it to the agent user before launch prevents that.
+    """
+    os.makedirs(path, exist_ok=True)
+    try:
+        os.chown(path, AGENT_UID, AGENT_GID)
+    except (PermissionError, OSError):
+        # not root (e.g. under tests) — leave ownership as-is
+        pass
+
 # One or more kebab segments joined by "/" — the asset key an agent may declare in its
 # `produces` block. Deliberately duplicated in ui/schema.py (research R6): the two run in
 # separate containers with no shared import, and a shared-fixture test pins them in agreement.
@@ -695,11 +718,15 @@ def make_run_op(cfg: dict):
         session_id = str(uuid.uuid4())
         context.log.info(f"session_id={session_id} stamp={stamp}")
         ws = cfg.get("workspace") or paths.default_workspace(name)
+        # Create the mount sources ourselves, owned by the agent user, so Docker doesn't
+        # auto-create them as root (which the non-root container can't write into).
+        _ensure_agent_dir(_output_dir(cfg))
+        if cfg["harness"] in WORKSPACE_HARNESSES:
+            _ensure_agent_dir(ws)
         if cfg.get("wipe_workspace") and cfg["harness"] in WORKSPACE_HARNESSES:
             # empty the workspace but keep the directory itself so its ownership
             # (uid 1000, which the agent image's user needs) is preserved.
             # Done before launch so runs killed by timeout still start clean.
-            os.makedirs(ws, exist_ok=True)
             for entry in os.scandir(ws):
                 if entry.is_dir(follow_symlinks=False):
                     shutil.rmtree(entry.path)
@@ -859,8 +886,12 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
         session_id = str(uuid.uuid4())
         context.log.info(f"session_id={session_id} stamp={stamp}")
         ws = cfg.get("workspace") or paths.default_workspace(name)
+        # Create the mount sources ourselves, owned by the agent user, so Docker doesn't
+        # auto-create them as root (which the non-root container can't write into).
+        _ensure_agent_dir(_output_dir(cfg))
+        if cfg["harness"] in WORKSPACE_HARNESSES:
+            _ensure_agent_dir(ws)
         if cfg.get("wipe_workspace") and cfg["harness"] in WORKSPACE_HARNESSES:
-            os.makedirs(ws, exist_ok=True)
             for entry in os.scandir(ws):
                 if entry.is_dir(follow_symlinks=False):
                     shutil.rmtree(entry.path)
