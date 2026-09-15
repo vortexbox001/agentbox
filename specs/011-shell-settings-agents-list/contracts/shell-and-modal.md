@@ -34,9 +34,10 @@ survives reload (pre-paint script stamps `data-sidebar`).
 
 - Add an **indigo accent colour ramp** as design-system tokens under **both** the Light and Dark
   theme scopes (`ui/design-system/tokens/`), then reference it via classes in `app.css`.
-- Apply it to the **Dagster connection points**: the foot Dagster block, the per-agent
-  Latest-run and Run-history links, and the schedule/sensor toggles' checked track. Non-Dagster
-  elements keep the theme's own accent.
+- Apply it to the primary **Dagster connection points**: the foot Dagster block and the
+  schedule/sensor toggles' checked track. Other elements keep the theme's own accent — in
+  particular the per-agent Latest-run link uses the theme link accent (teal) even though it
+  deep-links to Dagster, and the Run-history bars keep their run-status colours.
 - **No `indigo` theme value** exists and none is added to `config/settings.yaml`. The mock's
   fourth "Dagster Indigo" dropdown option is dropped.
 

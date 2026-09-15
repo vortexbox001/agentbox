@@ -18,7 +18,7 @@ kind/crons/checks the tabbed list needs. Source: the agents store, at page rende
 | `model` | str \| null | Model (Model cell, mono, truncated with full value in `title`). Null on parse error. |
 | `enabled` | bool \| null | `enabled: false` → Disabled tab + row style; null on parse error. |
 | `is_asset` | bool | True when the agent declares `produces.asset`. Feeds the Kind "asset" badge and the Assets tab count. |
-| `is_job` | bool | True when `job: true`. Feeds the Kind "job" badge and the Jobs tab count. An agent may be **both** (two badges, counts in both tabs). |
+| `is_job` | bool | True when `job: true`. Feeds the Kind "job" badge and the Jobs tab count. An agent may be **both** (a badge per grouped sub-row, counts in both tabs). |
 | `crons` | list of `{type, expr, dagster_name}` | One per configured cron. `type` ∈ {`job_schedule`, `asset_schedule`} is the **one canonical vocabulary** (`contracts/dagster-activity.md §0`): it drives the pill icon (clock vs sensor), the `dagster_name` to select (`sched_<stem>` vs `autocond_<stem>`, `-`→`_`), and the toggle `kind` (`schedule` vs **`sensor`** — an asset schedule is a Dagster sensor). Empty list → Schedules/Sensors cell shows an em-dash and the agent is excluded from the Scheduled tab count. |
 | `checks` | list of `{name}` | Declared checks (from `produces.checks`), used to lay out the Checks cell placeholders (results fill from activity). Empty → Checks cell shows an em-dash. |
 | `parse_error` | str \| null | When set, the row shows the existing parse-error treatment (message spans the data columns). |
@@ -71,10 +71,12 @@ None of these are persisted server-side (spec Out of Scope).
 
 - A row's **store view (1)** always renders; its **activity (2)** overlays after paint and only
   ever fills columns 6–8 and the col-5 toggle state. The page never blocks on (2).
-- An agent that is **both** asset and job appears once, with two Kind badges and (if it has both
-  a `job_schedule` and an `asset_schedule`) two pills; it counts in both the Assets and Jobs
-  tabs (FR-013).
+- An agent that is **both** asset and job renders as a grouped pair of sub-rows: Name/Harness/Model
+  span both (rowspan), then one sub-row per nature — the asset sub-row carries the asset Kind badge
+  and its asset-schedule pills, the job sub-row carries the job Kind badge and its job-schedule
+  pills; both sub-rows share the same run data and it counts in both the Assets and Jobs tabs (FR-013).
 - Tab counts (1) come from the store and are correct even when Dagster is unreachable (SC-002).
-- The Dagster-linked elements (foot Dagster block, Latest-run + Run-history links, schedule
-  toggles) are the "Dagster connection points" that carry the **indigo accent** in both themes
-  (FR-010); non-Dagster elements keep the theme's own accent.
+- The primary "Dagster connection points" — the foot Dagster block and the schedule/sensor toggle
+  checked track — carry the **indigo accent** in both themes (FR-010). Other elements keep the
+  theme's own accent, including the Latest-run link (theme link accent / teal) and the Run-history
+  bars (run-status colours), even though both deep-link to Dagster.
