@@ -255,6 +255,34 @@ def test_trigger_flags_must_be_bool():
     assert "on_upstream" in errors
 
 
+# ── author-time depends_on cross-check (spec 013 §3, US4) ──
+def test_check_graph_accepts_acyclic_known_refs():
+    others = {"notes/daily": [], "extras/daily": []}
+    assert schema.check_depends_on_graph("refined/daily", ["notes/daily", "extras/daily"], others) is None
+
+
+def test_check_graph_blocks_unknown_asset_key():
+    others = {"notes/daily": []}
+    msg = schema.check_depends_on_graph("refined/daily", ["ghost/daily"], others)
+    assert msg and "ghost/daily" in msg
+
+
+def test_check_graph_blocks_direct_cycle():
+    # saving b/x depends_on c/y while c/y already depends_on b/x forms a cycle.
+    others = {"c/y": ["b/x"]}
+    msg = schema.check_depends_on_graph("b/x", ["c/y"], others)
+    assert msg and "cycle" in msg
+
+
+def test_check_graph_blocks_self_cycle():
+    msg = schema.check_depends_on_graph("a/b", ["a/b"], {})
+    assert msg and "cycle" in msg
+
+
+def test_check_graph_none_when_no_depends_on():
+    assert schema.check_depends_on_graph("a/b", [], {"x/y": []}) is None
+
+
 def test_validate_rejects_bad_partition():
     a = _base("api", asset="repo-review/agentbox", partition="hourly")
     errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)

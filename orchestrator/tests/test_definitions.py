@@ -438,3 +438,70 @@ def test_bad_checks_file_does_not_take_down_valid_checks_agent(agents_dir, caplo
     # only the bad file is skipped; the valid checks agent still loads
     assert [tuple(k.path) for a in out["assets"] for k in a.keys] == [("verify", "good")]
     assert "agents/checks-dup.yaml" in caplog.text
+
+
+# --- US4: dependency graph — cycle + dangling rejection at load (spec 013 §4) ------
+
+def _asset(name, key, depends_on=None, partition="daily"):
+    dep_lines = ""
+    if depends_on:
+        dep_lines = "\n  depends_on:\n" + "\n".join(f"    - {d}" for d in depends_on)
+    return (
+        f"name: {name}\n"
+        "harness: api\nmodel: cheap\nprompt_file: x.md\n"
+        f"output_dir: /data/outputs/{name}\n"
+        "produces:\n"
+        f"  asset: {key}\n"
+        f"  partition: {partition}{dep_lines}\n"
+    )
+
+
+def _asset_keys(out):
+    return {k.to_user_string() for ad in out["assets"] for k in ad.keys}
+
+
+def test_acyclic_graph_loads_unchanged(agents_dir):
+    _write(agents_dir, "notes", _asset("notes", "notes/daily"))
+    _write(agents_dir, "refined", _asset("refined", "refined/daily", depends_on=["notes/daily"]))
+    out = _discover(agents_dir)
+    assert _asset_keys(out) == {"notes/daily", "refined/daily"}
+
+
+def test_dangling_ref_rejects_that_agent_naming_the_key(agents_dir, caplog):
+    _write(agents_dir, "notes", _asset("notes", "notes/daily"))
+    _write(agents_dir, "refined", _asset("refined", "refined/daily", depends_on=["ghost/daily"]))
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    # the dangling asset is skipped; the unrelated asset still loads
+    assert _asset_keys(out) == {"notes/daily"}
+    assert "agents/refined.yaml" in caplog.text and "ghost/daily" in caplog.text
+
+
+def test_cycle_rejects_both_naming_them(agents_dir, caplog):
+    _write(agents_dir, "bx", _asset("bx", "b/x", depends_on=["c/y"]))
+    _write(agents_dir, "cy", _asset("cy", "c/y", depends_on=["b/x"]))
+    _write(agents_dir, "plain-job", JOB_AGENT)
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    assert _asset_keys(out) == set()          # both cycle members rejected
+    assert [j.name for j in out["jobs"]] == ["agent_plain_job"]   # unrelated job still loads
+    assert "dependency cycle" in caplog.text and "b/x" in caplog.text and "c/y" in caplog.text
+
+
+def test_cascade_rejects_dependents_of_a_rejected_asset(agents_dir, caplog):
+    # d/z depends on refined/daily which dangles → refined AND d/z are both rejected; notes loads.
+    _write(agents_dir, "notes", _asset("notes", "notes/daily"))
+    _write(agents_dir, "refined", _asset("refined", "refined/daily", depends_on=["ghost/daily"]))
+    _write(agents_dir, "dz", _asset("dz", "d/z", depends_on=["refined/daily"]))
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    assert _asset_keys(out) == {"notes/daily"}
+    assert "agents/dz.yaml" in caplog.text
+
+
+def test_bad_graph_produces_no_sensor(agents_dir):
+    # A rejected cyclic asset gets no automation sensor — no automation runs against a bad graph.
+    _write(agents_dir, "bx", _asset("bx", "b/x", depends_on=["c/y"]))
+    _write(agents_dir, "cy", _asset("cy", "c/y", depends_on=["b/x"]))
+    out = _discover(agents_dir)
+    assert out["sensors"] == []

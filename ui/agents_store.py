@@ -268,6 +268,36 @@ def list_templates() -> list[dict]:
     return templates
 
 
+def asset_graph(exclude: str | None = None) -> dict[str, list[str]]:
+    """The ``{asset_key: [depends_on...]}`` graph over every asset-declaring instance agent.
+
+    Source for the form's best-effort author-time cross-check (spec 013 §3): existence + cycle
+    checks against the known agent set. ``exclude`` omits one stem (the agent being saved, so its
+    stored edges do not shadow the proposed ones). A missing/unreadable file is skipped, not fatal.
+    """
+    graph: dict[str, list[str]] = {}
+    try:
+        paths = sorted(glob.glob(os.path.join(_agents_dir(), "*.yaml")))
+    except OSError:
+        return graph
+    for path in paths:
+        stem = os.path.splitext(os.path.basename(path))[0]
+        if exclude is not None and stem == exclude:
+            continue
+        try:
+            info = read_agent(stem)
+        except (FileNotFoundError, OSError):
+            continue
+        agent = info.get("agent") or {}
+        asset = agent.get("asset")
+        if isinstance(asset, str) and asset.strip():
+            deps = agent.get("depends_on")
+            graph[asset.strip()] = (
+                [d for d in deps if isinstance(d, str)] if isinstance(deps, list) else []
+            )
+    return graph
+
+
 def _list_view_fields(stem: str, agent: dict) -> dict:
     """Derive the tabbed-list row's kind/crons/checks from a parsed definition.
 

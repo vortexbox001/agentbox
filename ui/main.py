@@ -604,6 +604,17 @@ async def _write_agent(request: Request, stem_from_path: str | None) -> JSONResp
 
     # Validation (400). A prompt created in this same save counts as existing.
     errors = schema.validate(agent, prompt_exists=_prompt_exists_factory(pending_prompt))
+    # Best-effort author-time depends_on cross-check against the known agent set (spec 013 §3):
+    # block saving a dependency on an unknown asset key or one that forms a cycle. The load-time
+    # check in the orchestrator remains the authority; this tells the operator immediately.
+    if "depends_on" not in errors:
+        asset_key = agent.get("asset")
+        deps = agent.get("depends_on")
+        if isinstance(asset_key, str) and asset_key.strip() and isinstance(deps, list) and deps:
+            others = agents_store.asset_graph(exclude=str(agent.get("name")) if is_update else None)
+            msg = schema.check_depends_on_graph(asset_key.strip(), deps, others)
+            if msg:
+                errors["depends_on"] = msg
     if errors:
         return JSONResponse({"error": "validation", "fields": errors}, status_code=400)
 

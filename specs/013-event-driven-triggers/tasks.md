@@ -138,13 +138,13 @@ with both triggers on, either condition materializes it behind the one sensor.
 
 ### Tests for User Story 3 ⚠️ (write first, ensure they fail)
 
-- [ ] T024 [P] [US3] Extend `orchestrator/tests/test_factory.py` — `compose_automation_condition` for an `on_missing`-only asset yields `missing() & in_latest_time_window() & ~in_progress()`; an asset with both `on_upstream` and `on_missing` OR-composes both behind one `autocond_<name>` sensor (US3 #3) — against `DagsterInstance.ephemeral()`.
-- [ ] T025 [P] [US3] Extend `ui/tests/test_api.py` / `ui/tests/test_schema.py` — `on_missing` in `/api/schema`, the toggle renders in the asset card, validation applies-only-to-asset.
+- [X] T024 [P] [US3] Extend `orchestrator/tests/test_factory.py` — `compose_automation_condition` for an `on_missing`-only asset yields `missing() & in_latest_time_window() & ~in_progress()`; an asset with both `on_upstream` and `on_missing` OR-composes both behind one `autocond_<name>` sensor (US3 #3) — against `DagsterInstance.ephemeral()`.
+- [X] T025 [P] [US3] Extend `ui/tests/test_api.py` / `ui/tests/test_schema.py` — `on_missing` in `/api/schema`, the toggle renders in the asset card, validation applies-only-to-asset.
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Add the `on_missing` branch — `AutomationCondition.missing() & AutomationCondition.in_latest_time_window()` — to `compose_automation_condition` in `orchestrator/factory.py`, OR-composed alongside `on_cron`/`any_deps_updated` behind the one sensor (research R3; never backfills history, never re-fires once the partition exists).
-- [ ] T027 [US3] Add the `on_missing` toggle to the asset-card grid (and the removal-on-toggle-off list) in `ui/static/agent-form.js` + `ui/templates/agents/form.html`, and an `on_missing` pill in `ui/templates/agents/list.html` + `ui/static/agents-list.js` (FR-020, contracts/ui-settings-and-form.md §1/§2).
+- [X] T026 [US3] Add the `on_missing` branch — `AutomationCondition.missing() & AutomationCondition.in_latest_time_window()` — to `compose_automation_condition` in `orchestrator/factory.py`, OR-composed alongside `on_cron`/`any_deps_updated` behind the one sensor (research R3; never backfills history, never re-fires once the partition exists).
+- [X] T027 [US3] Add the `on_missing` toggle to the asset-card grid (and the removal-on-toggle-off list) in `ui/static/agent-form.js` + `ui/templates/agents/form.html`, and an `on_missing` pill in `ui/templates/agents/list.html` + `ui/static/agents-list.js` (FR-020, contracts/ui-settings-and-form.md §1/§2).
 
 **Checkpoint**: `on_missing` fills a never-produced latest partition on its own and composes with
 `on_upstream` behind the single sensor.
@@ -163,13 +163,13 @@ loads cleanly and unrelated agents are unaffected.
 
 ### Tests for User Story 4 ⚠️ (write first, ensure they fail)
 
-- [ ] T028 [P] [US4] Extend `orchestrator/tests/test_definitions.py` — a B↔C cycle rejects both, naming them; a `depends_on` naming a non-existent key rejects that agent, naming the key; the cascade rejects dependents of a rejected asset; unrelated agents still load; an acyclic all-keys-present graph loads unchanged (SC-004 / US4 #1–#3).
-- [ ] T029 [P] [US4] Extend `ui/tests/test_schema.py` — the best-effort author-time guard blocks saving a `depends_on` that names an unknown asset key or forms a cycle against the known agent set.
+- [X] T028 [P] [US4] Extend `orchestrator/tests/test_definitions.py` — a B↔C cycle rejects both, naming them; a `depends_on` naming a non-existent key rejects that agent, naming the key; the cascade rejects dependents of a rejected asset; unrelated agents still load; an acyclic all-keys-present graph loads unchanged (SC-004 / US4 #1–#3).
+- [X] T029 [P] [US4] Extend `ui/tests/test_schema.py` — the best-effort author-time guard blocks saving a `depends_on` that names an unknown asset key or forms a cycle against the known agent set.
 
 ### Implementation for User Story 4
 
-- [ ] T030 [US4] In `orchestrator/definitions.py:discover()`, after `pending_assets` is collected, build `graph = {asset_key: [depends_on keys]}` and `produced = set(asset keys)`; reject any asset with a dangling `depends_on` key (`log.warning` naming the missing key), reject every asset on a cycle (DFS, `log.warning` naming the assets joined by `" -> "`), and cascade to a fixpoint (an asset whose upstream was rejected now dangles ⇒ reject too); add all rejected assets to `rejected_files` so their asset def, sensor, and job are skipped — no automation runs against a bad graph (contracts/orchestrator-model.md §4, research R5).
-- [ ] T031 [US4] Add the best-effort author-time cross-check to `ui/schema.py:validate` (or the form save path) — using the known set of agents, block saving a `depends_on` that names a non-existent asset key or forms a cycle, with a clear message (the load-time check remains the authority) (contracts/agent-model.md §3).
+- [X] T030 [US4] In `orchestrator/definitions.py:discover()`, after `pending_assets` is collected, build `graph = {asset_key: [depends_on keys]}` and `produced = set(asset keys)`; reject any asset with a dangling `depends_on` key (`log.warning` naming the missing key), reject every asset on a cycle (DFS, `log.warning` naming the assets joined by `" -> "`), and cascade to a fixpoint (an asset whose upstream was rejected now dangles ⇒ reject too); add all rejected assets to `rejected_files` so their asset def, sensor, and job are skipped — no automation runs against a bad graph (contracts/orchestrator-model.md §4, research R5).
+- [X] T031 [US4] Add the best-effort author-time cross-check to `ui/schema.py:validate` (or the form save path) — using the known set of agents, block saving a `depends_on` that names a non-existent asset key or forms a cycle, with a clear message (the load-time check remains the authority) (contracts/agent-model.md §3).
 
 **Checkpoint**: Cycles and dangling refs are caught at load with the offending assets/keys named,
 before any automation runs, and the operator is warned at author time.

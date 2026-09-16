@@ -835,6 +835,37 @@ def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, 
     return errors
 
 
+def check_depends_on_graph(asset_key: str, depends_on: list, other_edges: dict) -> str | None:
+    """Best-effort author-time cross-check of a `depends_on` graph (spec 013 §3 / FR-002/FR-003).
+
+    Given the asset key being saved, its proposed ``depends_on``, and ``other_edges`` — the known
+    graph ``{asset_key: [upstream keys]}`` of every OTHER agent — return a clear message when an
+    entry names an asset key produced by no known agent, or when the new edges would form a cycle
+    (direct or transitive); else ``None``. The load-time check (orchestrator ``definitions.discover``)
+    remains the authority — this only lets the form tell the operator immediately.
+    """
+    if not depends_on:
+        return None
+    graph = dict(other_edges)
+    graph[asset_key] = list(depends_on)
+    produced = set(graph)
+    for dep in depends_on:
+        if dep not in produced:
+            return f"depends_on names an unknown asset key: {dep}"
+    # A new cycle must run through asset_key: can we get back to it by following its deps' edges?
+    seen: set[str] = set()
+    stack = list(depends_on)
+    while stack:
+        cur = stack.pop()
+        if cur == asset_key:
+            return f"depends_on forms a dependency cycle involving {asset_key}"
+        if cur in seen:
+            continue
+        seen.add(cur)
+        stack.extend(graph.get(cur, []))
+    return None
+
+
 def network_mismatch_warning(agent: dict) -> str | None:
     """A non-blocking FR-024 notice when harness and network disagree, else None."""
     harness = agent.get("harness")

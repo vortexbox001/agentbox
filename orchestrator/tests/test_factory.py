@@ -383,3 +383,24 @@ def test_launch_snapshot_carries_upstream_mount_and_env(tmp_path, stub_launch, m
     # the read-only handoff mount is present, and the env var was passed to the container
     assert any(str(a).endswith(":/upstreams:ro") for a in argv)
     assert any("AGENTBOX_UPSTREAM_NOTES_DAILY=" in str(a) for a in argv)
+
+
+# ── US3: on_missing composition (spec 013, R3) ──────────────────────────────
+
+def test_compose_condition_on_missing_only():
+    cond = factory.compose_automation_condition(
+        {"name": "x"}, cron=None, on_upstream=False, on_missing=True, partitioned=True)
+    text = str(cond).lower()
+    assert "missing" in text and "inlatesttimewindow" in text
+    assert "in_progress" in text
+    assert "any_deps_updated" not in text  # on_upstream is off
+
+
+def test_compose_condition_both_triggers_or_composed_behind_one_sensor():
+    cond = factory.compose_automation_condition(
+        {"name": "x"}, cron=None, on_upstream=True, on_missing=True, partitioned=False)
+    text = str(cond).lower()
+    assert "any_deps_updated" in text and "missing" in text
+    # both live behind ONE autocond sensor (asset_has_automation_condition True → one sensor)
+    assert factory.asset_has_automation_condition(
+        {"name": "x"}, cron=None, on_upstream=True, on_missing=True, partitioned=False)
