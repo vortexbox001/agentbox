@@ -133,6 +133,15 @@ _SELECTOR = (
     'repositoryLocationName: "{location}"'
 )
 
+# Asset materializations triggered by an automation condition run under Dagster's implicit
+# asset job, NOT under the agent's own `agent_<name>` pipeline, and identify their target only
+# via `assetSelection`. So an asset agent's run history is read from this shared pipeline and
+# filtered client-side by asset key (RunsFilter has no asset-key field on this Dagster). The
+# limit is shared across every asset agent, so it is generous enough that a busy asset does not
+# starve a quiet one of its last-10 history.
+_ASSET_JOB_PIPELINE = "__ASSET_JOB"
+_ASSET_RUNS_LIMIT = 250
+
 
 def _q(value: str) -> str:
     """A GraphQL string literal (only ``"`` and ``\\`` need escaping in our identifiers)."""
@@ -154,14 +163,24 @@ def _build_query(agents: list[dict]) -> tuple[str, list[tuple[str, dict]]]:
     selector = _SELECTOR.format(location=location)
     fields: list[str] = []
     index: list[tuple[str, dict]] = []
+    any_asset = False
     for i, row in enumerate(agents):
         name = row.get("name")
-        meta = {"runs": f"a{i}_runs", "inst": [], "checks": None}
-        job = row.get("dagster_job") or ("agent_" + str(name).replace("-", "_"))
-        fields.append(
-            f'{meta["runs"]}: pipelineRunsOrError(filter: {{pipelineName: {_q(job)}}}, limit: 10) '
-            f'{{ __typename ... on Runs {{ results {{ runId status startTime endTime }} }} }}'
-        )
+        asset_key = _asset_key_path(row) if row.get("is_asset") else None
+        # A plain job agent (and, defensively, a parse-error row that is neither kind) reads its
+        # own `agent_<name>` pipeline; an asset-only agent has no such job, so it reads runs only
+        # from the shared asset job (below). A both-kind agent reads both and they are merged.
+        has_job = bool(row.get("is_job")) or asset_key is None
+        meta = {"runs": None, "asset_key": asset_key, "inst": [], "checks": None}
+        if has_job:
+            meta["runs"] = f"a{i}_runs"
+            job = row.get("dagster_job") or ("agent_" + str(name).replace("-", "_"))
+            fields.append(
+                f'{meta["runs"]}: pipelineRunsOrError(filter: {{pipelineName: {_q(job)}}}, limit: 10) '
+                f'{{ __typename ... on Runs {{ results {{ runId status startTime endTime }} }} }}'
+            )
+        if asset_key is not None:
+            any_asset = True
         for j, cron in enumerate(row.get("crons") or []):
             dname = cron.get("dagster_name")
             if not dname:
@@ -173,11 +192,10 @@ def _build_query(agents: list[dict]) -> tuple[str, list[tuple[str, dict]]]:
                 f'{{{selector}, name: {_q(dname)}}}) '
                 f'{{ __typename ... on InstigationState {{ id selectorId status }} }}'
             )
-        key = _asset_key_path(row) if (row.get("is_asset") and row.get("checks")) else None
-        if key:
+        if asset_key is not None and row.get("checks"):
             alias = f"a{i}_checks"
             meta["checks"] = alias
-            path = ", ".join(_q(s) for s in key)
+            path = ", ".join(_q(s) for s in asset_key)
             fields.append(
                 f'{alias}: assetNodeOrError(assetKey: {{path: [{path}]}}) '
                 f'{{ __typename ... on AssetNode {{ assetChecksOrError {{ __typename '
@@ -186,26 +204,77 @@ def _build_query(agents: list[dict]) -> tuple[str, list[tuple[str, dict]]]:
                 f'}} }} }} }} }}'
             )
         index.append((name, meta))
+    if any_asset:
+        # One shared read of the implicit asset job's recent runs, selecting `assetSelection` so
+        # each asset agent's materializations can be bucketed by key when the response is shaped.
+        fields.append(
+            f'asset_runs: pipelineRunsOrError('
+            f'filter: {{pipelineName: {_q(_ASSET_JOB_PIPELINE)}}}, limit: {_ASSET_RUNS_LIMIT}) '
+            f'{{ __typename ... on Runs {{ results {{ runId status startTime endTime '
+            f'assetSelection {{ path }} }} }} }}'
+        )
     query = "query {\n" + "\n".join(fields) + "\n}"
     return query, index
 
 
+def _results_of(node):
+    """The ``results`` list from a pipelineRunsOrError alias, or ``[]`` on any error arm."""
+    if not isinstance(node, dict) or "results" not in node:
+        return []
+    return node.get("results") or []
+
+
+def _run_row(r: dict) -> dict:
+    """One run result shaped into the ``latest_run`` payload (agents-list-view.md §C)."""
+    return {
+        "run_id": r.get("runId"),
+        "status": r.get("status"),
+        "start_time": r.get("startTime"),
+        "end_time": r.get("endTime"),
+    }
+
+
+def _selection_has_key(run: dict, key: list[str]) -> bool:
+    """Whether a ``__ASSET_JOB`` run materialized the given asset key (its ``assetSelection``)."""
+    for sel in run.get("assetSelection") or []:
+        if isinstance(sel, dict) and sel.get("path") == key:
+            return True
+    return False
+
+
 def _parse_runs(node):
-    """(latest_run, history) from a pipelineRunsOrError alias; nulls on any error arm."""
+    """(latest_run, history) from a pipelineRunsOrError alias; nulls on any error arm.
+
+    Dagster returns results newest-first, so the first row is the latest and the statuses are the
+    history in order.
+    """
     if not isinstance(node, dict) or "results" not in node:
         return None, None
     results = node.get("results") or []
     history = [r.get("status") for r in results][:10]
-    latest = None
-    if results:
-        r0 = results[0]
-        latest = {
-            "run_id": r0.get("runId"),
-            "status": r0.get("status"),
-            "start_time": r0.get("startTime"),
-            "end_time": r0.get("endTime"),
-        }
+    latest = _run_row(results[0]) if results else None
     return latest, history
+
+
+def _agent_runs(data: dict, meta: dict, asset_runs: list) -> tuple[dict | None, list | None]:
+    """(latest_run, history) for one agent, merging its job pipeline and asset materializations.
+
+    A plain job agent reads only its ``agent_<name>`` pipeline (Dagster order preserved). An asset
+    agent's materializations run under ``__ASSET_JOB``, so they are taken from the shared read and
+    filtered by asset key; a both-kind agent merges those with any job-launched runs and sorts the
+    union newest-first (``startTime`` desc, unstarted runs last).
+    """
+    key = meta.get("asset_key")
+    if key is None:
+        return _parse_runs(data.get(meta["runs"]))
+    results = [r for r in asset_runs if _selection_has_key(r, key)]
+    if meta["runs"] is not None:
+        results = results + _results_of(data.get(meta["runs"]))
+    if not results:
+        return None, None
+    results.sort(key=lambda r: r.get("startTime") or 0, reverse=True)
+    history = [r.get("status") for r in results][:10]
+    return _run_row(results[0]), history
 
 
 def _check_status(execution) -> str:
@@ -277,9 +346,10 @@ async def activity(agents: list[dict]) -> dict:
         # Whole query failed (top-level errors, no data): degrade rather than fabricate.
         return {"reachable": False, "agents": {}}
 
+    asset_runs = _results_of(data.get("asset_runs"))
     out = {}
     for name, meta in index:
-        latest, history = _parse_runs(data.get(meta["runs"]))
+        latest, history = _agent_runs(data, meta, asset_runs)
         out[name] = {
             "latest_run": latest,
             "history": history,
