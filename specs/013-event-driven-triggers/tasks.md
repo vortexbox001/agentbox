@@ -209,10 +209,10 @@ for refusals), manual runs bypass, and both persist from the Settings page.
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T041 [P] Extend `orchestrator/tests/test_paths_parity.py` — pin `orchestrator/governors.DEFAULT_GOVERNORS == ui/settings_store.DEFAULT_GOVERNORS == {"max_runs_per_hour": 12, "max_chain_depth": 5}` and the `AGENTBOX_UPSTREAM_<KEY>` upper-snake transform to its documented form (research R10).
-- [ ] T042 [P] Document in `README.md`: `produces.depends_on`; `triggers.on_upstream` / `on_missing`; the `AGENTBOX_UPSTREAM_<KEY>` env var + read-only handoff file (with the key transform stated verbatim); the two governors and their defaults; and the partitioned-`on_upstream` unpartitioned-only fallback (FR-021, quickstart §7).
-- [ ] T043 [P] Regenerate `ui/tests/golden/*.yaml` with the `# agentbox-schema: 7` header + the new commented fields, and extend `ui/tests/test_conformance.py` for the new-field golden coverage.
-- [ ] T044 Run the design-system + docs hygiene gates (`ui/tests/test_conformance.py`, `test_ui_consistency.py`, `test_design_system_sync.py`, `test_docs_layout.py`) and fix any literal-color / inline-style / raw-`<select>` / CSS-sync / docs-layout violations across the new form (Depends-on card + toggles) and Settings (governors card) templates.
+- [X] T041 [P] Extend `orchestrator/tests/test_paths_parity.py` — pin `orchestrator/governors.DEFAULT_GOVERNORS == ui/settings_store.DEFAULT_GOVERNORS == {"max_runs_per_hour": 12, "max_chain_depth": 5}` and the `AGENTBOX_UPSTREAM_<KEY>` upper-snake transform to its documented form (research R10).
+- [X] T042 [P] Document in `README.md`: `produces.depends_on`; `triggers.on_upstream` / `on_missing`; the `AGENTBOX_UPSTREAM_<KEY>` env var + read-only handoff file (with the key transform stated verbatim); the two governors and their defaults; and the partitioned-`on_upstream` unpartitioned-only fallback (FR-021, quickstart §7).
+- [X] T043 [P] Regenerate `ui/tests/golden/*.yaml` with the `# agentbox-schema: 7` header + the new commented fields, and extend `ui/tests/test_conformance.py` for the new-field golden coverage.
+- [X] T044 Run the design-system + docs hygiene gates (`ui/tests/test_conformance.py`, `test_ui_consistency.py`, `test_design_system_sync.py`, `test_docs_layout.py`) and fix any literal-color / inline-style / raw-`<select>` / CSS-sync / docs-layout violations across the new form (Depends-on card + toggles) and Settings (governors card) templates.
 - [ ] T045 Execute the `quickstart.md` §1–§7 scenarios end-to-end against live Dagster and confirm SC-001..SC-006 (firing, handoff read-back, blocking-check gating, `on_missing`, cycle/dangling rejection, governors, and the partitioned-`on_upstream` build-time check + fallback).
 
 ---
