@@ -230,6 +230,9 @@ def test_compose_condition_on_upstream_yields_any_deps_updated():
         {"name": "x"}, cron="0 6 * * *", on_upstream=True, on_missing=False, partitioned=False)
     text = str(cond)
     assert "any_deps_updated" in text and "on_cron" in text and "in_progress" in text
+    # on_upstream is gated on the upstream's blocking checks so a failed blocking check does not
+    # trigger the downstream (SC-003 / US1 #2/#3).
+    assert "all_deps_blocking_checks_passed" in text
 
 
 def test_on_upstream_only_asset_gets_stopped_sensor(tmp_path):
@@ -270,7 +273,9 @@ def test_partitioned_on_upstream_fallback_drops_condition_and_warns(tmp_path, mo
 def test_failed_producer_records_observation_not_materialization(tmp_path, stub_launch, monkeypatch):
     # FR-006 gating mechanism: a run whose producer fails records an AssetObservation, NOT a
     # materialization — so any_deps_updated() sees no new materialization and cannot fire a
-    # downstream. (A failed blocking check likewise never greens the partition.)
+    # downstream. (A *passing* producer whose blocking check fails DOES materialize; that case is
+    # gated separately by all_deps_blocking_checks_passed() in the composed condition, asserted in
+    # test_compose_condition_on_upstream_yields_any_deps_updated.)
     monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
     stub_launch.report = {"status": "failed", "tokens_in": None, "tokens_out": None,
                           "turns": None, "cost_usd": None, "files_written": 0,

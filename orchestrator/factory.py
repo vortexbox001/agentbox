@@ -1606,7 +1606,14 @@ def compose_automation_condition(cfg: dict, *, cron: str | None, on_upstream: bo
     if cron:
         parts.append(AutomationCondition.on_cron(cron, cron_timezone=cron_timezone()))
     if on_upstream and (not partitioned or partition_upstream_supported()):
-        parts.append(AutomationCondition.any_deps_updated())
+        # Fire only when a dep newly materialized AND every dep's blocking checks pass: a failed
+        # blocking check on an upstream must not trigger the downstream, and it must fire once that
+        # materialization's blocking checks pass (SC-003 / US1 #2/#3). The producer op still emits a
+        # materialization when a blocking check fails, so any_deps_updated() alone is not enough — the
+        # check gate is required. A dep with no blocking checks trivially passes, so plain upstreams
+        # still fire.
+        parts.append(AutomationCondition.any_deps_updated()
+                     & AutomationCondition.all_deps_blocking_checks_passed())
     if on_missing:
         parts.append(AutomationCondition.missing() & AutomationCondition.in_latest_time_window())
     if not parts:
