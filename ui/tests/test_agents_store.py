@@ -225,6 +225,71 @@ def test_triggers_and_job_round_trip(settings):
     assert st.emit_yaml(agent) == once
 
 
+# ── depends_on + on_upstream/on_missing (spec 013, contract agent-model §4) ──
+def test_depends_on_emitted_as_nested_sequence_under_produces(settings):
+    cfg = dict(GOLDEN["api"], asset="refined/daily",
+               depends_on=["notes/daily", "extras/daily"])
+    text = st.emit_yaml(cfg)
+    assert "  depends_on:  #" in text
+    assert "    - notes/daily" in text
+    loaded = yaml.safe_load(text)
+    assert loaded["produces"]["depends_on"] == ["notes/daily", "extras/daily"]
+
+
+def test_depends_on_not_emitted_when_empty_or_absent(settings):
+    cfg = dict(GOLDEN["api"], asset="refined/daily")
+    text = st.emit_yaml(cfg)
+    assert "depends_on" not in text
+    assert "depends_on" not in (yaml.safe_load(text)["produces"] or {})
+
+
+def test_on_upstream_on_missing_emitted_as_bools_under_triggers(settings):
+    cfg = dict(GOLDEN["api"], asset="refined/daily", on_upstream=True, on_missing=True)
+    text = st.emit_yaml(cfg)
+    assert "  on_upstream: true  #" in text
+    assert "  on_missing: true  #" in text
+    loaded = yaml.safe_load(text)
+    assert loaded["triggers"]["on_upstream"] is True
+    assert loaded["triggers"]["on_missing"] is True
+
+
+def test_trigger_flags_omitted_when_off(settings):
+    # false is the default/off — the flags are commented, so the loaded triggers block omits them.
+    cfg = dict(GOLDEN["api"], asset="refined/daily", asset_schedule="20 17 * * *",
+               on_upstream=False, on_missing=False)
+    loaded = yaml.safe_load(st.emit_yaml(cfg))
+    assert loaded["triggers"] == {"asset_schedule": "20 17 * * *"}
+
+
+def test_trigger_flags_off_kind_omitted_for_job_only(settings):
+    # A job-only agent shows only job_schedule; the asset-kind triggers are omitted entirely.
+    text = st.emit_yaml(dict(GOLDEN["api"], job_schedule="30 2 * * *"))
+    assert "on_upstream" not in text and "on_missing" not in text and "depends_on" not in text
+
+
+def test_depends_on_and_flags_round_trip(settings):
+    cfg = dict(GOLDEN["api"], name="graph-agent", asset="refined/daily",
+               depends_on=["notes/daily", "extras/daily"], on_upstream=True, on_missing=True)
+    once = st.emit_yaml(cfg)
+    st.write_agent("graph-agent", cfg)
+    agent = st.read_agent("graph-agent")["agent"]
+    assert agent["depends_on"] == ["notes/daily", "extras/daily"]
+    assert agent["on_upstream"] is True and agent["on_missing"] is True
+    # the three fields are managed, never routed to unmanaged
+    assert "produces" not in (agent.get("unmanaged") or {})
+    assert "triggers" not in (agent.get("unmanaged") or {})
+    assert st.emit_yaml(agent) == once
+
+
+def test_unknown_keys_preserved_alongside_new_fields(settings):
+    cfg = dict(GOLDEN["api"], asset="refined/daily", depends_on=["notes/daily"],
+               on_upstream=True, unmanaged={"future_key": "kept"})
+    st.write_agent("keep-unknown", cfg)
+    agent = st.read_agent("keep-unknown")["agent"]
+    assert agent["unmanaged"]["future_key"] == "kept"
+    assert agent["depends_on"] == ["notes/daily"] and agent["on_upstream"] is True
+
+
 def test_triggers_section_after_produces_before_job(settings):
     text = st.emit_yaml(dict(GOLDEN["api"], asset="a/b", asset_schedule="20 17 * * *", job_schedule="30 2 * * *"))
     lines = text.splitlines()

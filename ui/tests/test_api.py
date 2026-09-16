@@ -106,13 +106,25 @@ def test_api_schema_shape(client):
 
 def test_api_schema_carries_produces(client):
     # FR-013: /api/schema drives the form; the Produces card is a runs-group section
-    # with the asset/partition fields, and the version is 6 (spec 010 bumped it).
+    # with the asset/partition fields, and the version is 7 (spec 013 bumped it).
     data = client.get("/api/schema").json()
-    assert data["schema_version"] == 6
+    assert data["schema_version"] == 7
     assert {"id": "produces", "label": "Produces", "group": "runs"} in data["sections"]
     by_id = {f["id"]: f for f in data["fields"]}
     assert by_id["asset"]["section"] == "produces"
     assert by_id["partition"]["choices"] == ["none", "daily"]
+
+
+def test_api_schema_carries_depends_on_and_event_triggers(client):
+    # spec 013: /api/schema exposes depends_on (produces, list) and on_upstream/on_missing
+    # (triggers, bool) so the form can author the dependency graph + event triggers (FR-019/020).
+    data = client.get("/api/schema").json()
+    by_id = {f["id"]: f for f in data["fields"]}
+    assert by_id["depends_on"]["type"] == "list" and by_id["depends_on"]["block"] == "produces"
+    assert by_id["on_upstream"]["type"] == "bool" and by_id["on_upstream"]["block"] == "triggers"
+    assert by_id["on_missing"]["type"] == "bool" and by_id["on_missing"]["block"] == "triggers"
+    for h in data["harnesses"]:
+        assert {"depends_on", "on_upstream", "on_missing"} <= set(h["fields"])
 
 
 def test_api_schema_carries_job_and_triggers(client):

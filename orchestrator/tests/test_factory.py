@@ -8,7 +8,9 @@ import os
 import re
 
 import pytest
-from dagster import DailyPartitionsDefinition, materialize
+from dagster import (
+    DailyPartitionsDefinition, TimeWindowPartitionMapping, AssetKey, DagsterInstance, materialize,
+)
 
 import factory
 
@@ -40,6 +42,32 @@ def _api_cfg(tmp_path, **over):
     }
     cfg.update(over)
     return cfg
+
+
+# --- validate_depends_on: load-time shape backstop (spec 013, contract agent-model §5) ------
+
+def test_validate_depends_on_returns_keys_when_valid(tmp_path):
+    cfg = _api_cfg(tmp_path, produces={"asset": "refined/daily", "partition": "daily",
+                                       "depends_on": ["notes/daily", "extras/daily"]})
+    assert factory.validate_depends_on(cfg, "agents/x.yaml") == ["notes/daily", "extras/daily"]
+
+
+def test_validate_depends_on_absent_is_empty(tmp_path):
+    assert factory.validate_depends_on(_api_cfg(tmp_path), "agents/x.yaml") == []
+
+
+def test_validate_depends_on_rejects_non_list_naming_file(tmp_path):
+    cfg = _api_cfg(tmp_path, produces={"asset": "refined/daily", "depends_on": "notes/daily"})
+    with pytest.raises(factory.RejectAgent) as ei:
+        factory.validate_depends_on(cfg, "agents/bad.yaml")
+    assert "agents/bad.yaml" in str(ei.value)
+
+
+def test_validate_depends_on_rejects_bad_entry_naming_file(tmp_path):
+    cfg = _api_cfg(tmp_path, produces={"asset": "refined/daily", "depends_on": ["notes/daily", "Bad Key"]})
+    with pytest.raises(factory.RejectAgent) as ei:
+        factory.validate_depends_on(cfg, "agents/bad.yaml")
+    assert "agents/bad.yaml" in str(ei.value) and "Bad Key" in str(ei.value)
 
 
 # --- build_asset: key, step name, partitions --------------------------------
@@ -167,3 +195,96 @@ def test_changed_files_empty_when_nothing_written(tmp_path):
     before = factory._snapshot_dir(str(d))
     after = factory._snapshot_dir(str(d))
     assert factory._changed_files(before, after) == []
+
+
+# ── US1: depends_on → deps, composed condition, sensor gate (spec 013) ──────
+
+def _upstream_cfg(tmp_path, **over):
+    """A daily api-harness asset with a depends_on edge onto notes/daily."""
+    return _api_cfg(tmp_path, produces={"asset": "refined/daily", "partition": "daily",
+                                        "depends_on": ["notes/daily"]}, **over)
+
+
+def test_depends_on_attaches_checkless_dep(tmp_path):
+    ad = factory.build_asset(_upstream_cfg(tmp_path), depends_on=["notes/daily"], on_upstream=True)
+    assert AssetKey(["notes", "daily"]) in ad.dependency_keys
+
+
+def test_depends_on_attaches_checked_dep_with_identity_mapping(tmp_path):
+    cfg = _upstream_cfg(tmp_path)
+    cfg["produces"]["checks"] = [{"name": "c", "command": "true"}]
+    ad = factory.build_asset(cfg, depends_on=["notes/daily"], on_upstream=True)
+    up = AssetKey(["notes", "daily"])
+    assert up in ad.dependency_keys
+    # daily → daily identity mapping on the checked path (contract §1, FR-007)
+    assert isinstance(ad.get_partition_mapping(up), TimeWindowPartitionMapping)
+
+
+def test_compose_condition_none_when_no_triggers():
+    assert factory.compose_automation_condition(
+        {"name": "x"}, cron=None, on_upstream=False, on_missing=False, partitioned=False) is None
+
+
+def test_compose_condition_on_upstream_yields_any_deps_updated():
+    cond = factory.compose_automation_condition(
+        {"name": "x"}, cron="0 6 * * *", on_upstream=True, on_missing=False, partitioned=False)
+    text = str(cond)
+    assert "any_deps_updated" in text and "on_cron" in text and "in_progress" in text
+
+
+def test_on_upstream_only_asset_gets_stopped_sensor(tmp_path):
+    # An on_upstream-only asset (no cron) still has a sensor-driven condition, so it needs the
+    # paused per-asset sensor (spec 013, R4).
+    cfg = _upstream_cfg(tmp_path)
+    assert factory.asset_has_automation_condition(
+        {"name": cfg["name"]}, cron=None, on_upstream=True, on_missing=False, partitioned=True)
+    ad = factory.build_asset(cfg, depends_on=["notes/daily"], on_upstream=True)
+    sensor = factory.build_asset_automation_sensor({"name": cfg["name"]}, ad)
+    from dagster import DefaultSensorStatus
+    assert sensor.name == f"autocond_{cfg['name'].replace('-', '_')}"
+    assert sensor.default_status == DefaultSensorStatus.STOPPED
+
+
+def test_partition_upstream_supported_default_and_forced(monkeypatch):
+    monkeypatch.delenv("AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY", raising=False)
+    assert factory.partition_upstream_supported() is True
+    monkeypatch.setenv("AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY", "1")
+    assert factory.partition_upstream_supported() is False
+
+
+def test_partitioned_on_upstream_fallback_drops_condition_and_warns(tmp_path, monkeypatch, caplog):
+    # When partitioned upstream is unsupported, a daily on_upstream asset loads WITHOUT its upstream
+    # condition and a load-warning names the asset (R2/FR-007).
+    monkeypatch.setenv("AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY", "1")
+    cfg = _upstream_cfg(tmp_path)
+    assert factory.compose_automation_condition(
+        cfg, cron=None, on_upstream=True, on_missing=False, partitioned=True) is None
+    import logging
+    with caplog.at_level(logging.WARNING):
+        factory.build_asset(cfg, "agents/refined-daily.yaml", depends_on=["notes/daily"],
+                            on_upstream=True)
+    assert any("refined/daily" in r.getMessage() and "on_upstream" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_failed_producer_records_observation_not_materialization(tmp_path, stub_launch, monkeypatch):
+    # FR-006 gating mechanism: a run whose producer fails records an AssetObservation, NOT a
+    # materialization — so any_deps_updated() sees no new materialization and cannot fire a
+    # downstream. (A failed blocking check likewise never greens the partition.)
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    stub_launch.report = {"status": "failed", "tokens_in": None, "tokens_out": None,
+                          "turns": None, "cost_usd": None, "files_written": 0,
+                          "transcript_path": None, "error": "boom", "notes": None}
+    stub_launch.returncode = 1
+    cfg = _upstream_cfg(tmp_path)
+    os.makedirs(cfg["output_dir"], exist_ok=True)
+    ad = factory.build_asset(cfg, depends_on=["notes/daily"], on_upstream=True)
+    instance = DagsterInstance.ephemeral()
+    result = materialize([ad], partition_key="2026-09-09",
+                         instance=instance, raise_on_error=False)
+    assert not result.success
+    # the observation is emitted via log_event (survives the raise) — read it off the event log.
+    types = [r.dagster_event.event_type_value for r in instance.all_logs(result.run_id)
+             if r.dagster_event]
+    assert "ASSET_MATERIALIZATION" not in types
+    assert types.count("ASSET_OBSERVATION") == 1

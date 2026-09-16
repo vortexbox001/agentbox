@@ -29,7 +29,8 @@
 <td class="ax-col-schedules">
   {% if show_crons %}
     {% for c in show_crons %}
-      {{ ui.schedule_pill(type=c.type, label=cron_text(c.expr), name=c.dagster_name,
+      {{ ui.schedule_pill(type=c.type, label=(c.label if c.label else cron_text(c.expr)),
+                          name=c.dagster_name,
                           attrs={"data-agent": a.name or stem, "data-dagster-name": c.dagster_name}) }}
     {% endfor %}
   {% else %}<span class="ax-muted">—</span>{% endif %}
@@ -81,7 +82,9 @@
          both (rowspan), then one sub-row per nature. Both sub-rows carry the same data-*
          so the list JS narrows and fills them as a single unit. #}
       {% set dual = a.is_asset and a.is_job and not a.parse_error %}
-      {% set asset_crons = a.crons | selectattr("type", "equalto", "asset_schedule") | list %}
+      {# asset-kind pills = everything that is not a job_schedule (asset_schedule + on_upstream +
+         on_missing, spec 013); the job sub-row shows only job_schedule. #}
+      {% set asset_crons = a.crons | rejectattr("type", "equalto", "job_schedule") | list %}
       {% set job_crons = a.crons | selectattr("type", "equalto", "job_schedule") | list %}
       {% set row_attrs %}data-name="{{ a.name or stem }}" data-harness="{{ a.harness or '' }}" data-model="{{ a.model or '' }}" data-kind="{{ kinds|join(' ') }}" data-scheduled="{{ 'true' if a.crons else 'false' }}" data-enabled="{{ 'false' if a.enabled is false else ('unknown' if a.enabled is none else 'true') }}"{% endset %}
       {% set row_cls = "ax-row--disabled" if a.enabled is false else "" %}

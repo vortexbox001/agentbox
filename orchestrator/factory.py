@@ -1,9 +1,10 @@
 """Turns an agent YAML dict into a Dagster job that docker-runs the agent."""
-import os, re, json, uuid, shutil, tempfile, threading, datetime, subprocess
+import os, re, json, uuid, shutil, logging, tempfile, threading, datetime, subprocess
 from collections import namedtuple
 from dagster import (
     job, op, Output, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive,
-    AssetKey, AssetMaterialization, AssetObservation, AssetsDefinition, DailyPartitionsDefinition,
+    AssetKey, AssetDep, AssetMaterialization, AssetObservation, AssetsDefinition,
+    DailyPartitionsDefinition, TimeWindowPartitionMapping,
     MetadataValue,
     AutomationCondition, AutomationConditionSensorDefinition, AssetSelection,
     DefaultSensorStatus, DefaultScheduleStatus, define_asset_job,
@@ -11,6 +12,8 @@ from dagster import (
     AssetSpec, AssetCheckSpec, AssetCheckResult, AssetCheckSeverity, MaterializeResult,
     open_pipes_session, PipesEnvContextInjector, PipesFileMessageReader,
 )
+
+log = logging.getLogger("agentbox.factory")
 from dagster_pipes import (
     encode_env_var, decode_env_var,
     DAGSTER_PIPES_CONTEXT_ENV_VAR, DAGSTER_PIPES_MESSAGES_ENV_VAR,
@@ -171,6 +174,31 @@ def validate_checks(cfg: dict, file: str) -> None:
                 f'duplicate check name "{name}" — check names must be unique within the agent',
             )
         seen.add(name)
+
+
+def validate_depends_on(cfg: dict, file: str) -> list[str]:
+    """Load-time structural backstop for ``produces.depends_on`` (contract agent-model §5, FR-001).
+
+    The UI's ``schema.validate`` is the authoring guard; this is the structural twin that keeps a
+    hand-written bad file from reaching the graph. Returns the list of upstream asset keys (``[]``
+    when absent). Raises ``RejectAgent`` (naming ``file``) when ``depends_on`` is not a list, or an
+    entry is not an asset-key string — no ``croniter``-style extras. Existence + acyclicity are
+    graph properties across all agents, enforced in ``definitions.discover`` (§4), not here.
+    """
+    produces = cfg.get("produces")
+    depends_on = produces.get("depends_on") if isinstance(produces, dict) else None
+    if depends_on is None:
+        return []
+    if not isinstance(depends_on, list):
+        raise RejectAgent(file, "produces.depends_on must be a list of asset keys")
+    keys: list[str] = []
+    for entry in depends_on:
+        if not isinstance(entry, str) or not re.match(ASSET_KEY_RE, entry):
+            raise RejectAgent(
+                file, f'invalid produces.depends_on entry {entry!r} — must match {ASSET_KEY_RE}'
+            )
+        keys.append(entry)
+    return keys
 # full per-run transcripts: <root>/<agent>/<YYYY-MM-DD>/<run-id>.jsonl. Now under
 # $AGENTBOX_DATA/runs (moved out of the Dagster home — FR-010/R3).
 RUNS_ROOT = paths.RUNS_ROOT
@@ -983,8 +1011,10 @@ def make_run_op(cfg: dict):
             shutil.rmtree(staging_dir, ignore_errors=True)  # --rm-cleaned staging (T010a)
     return run_agent
 
-def build_asset(cfg: dict, file: str | None = None, cron: str | None = None):
-    """Represent an agent that declares `produces` as a Dagster asset (contract §3).
+def build_asset(cfg: dict, file: str | None = None, cron: str | None = None,
+                depends_on: list[str] | None = None, on_upstream: bool = False,
+                on_missing: bool = False):
+    """Represent an agent that declares `produces` as a Dagster asset (contract §3, §1/§2).
 
     Wraps the SAME op ``make_run_op(cfg)`` would build for a job via
     ``AssetsDefinition.from_op`` — the container launch is not re-implemented and the
@@ -993,37 +1023,56 @@ def build_asset(cfg: dict, file: str | None = None, cron: str | None = None):
     omitted attaches none. The partition is a label only — materializing any partition
     (including a past date) launches the identical container (FR-008b).
 
-    When ``cron`` is given (the agent's ``triggers.asset_schedule``), an
-    ``AutomationCondition.on_cron`` is attached to the asset (FR-008). On a daily-partitioned
-    root asset ``on_cron`` targets the latest (current-day) partition per tick (research R5);
-    the operator-facing on/off toggle is the per-asset sensor from
-    ``build_asset_automation_sensor`` (FR-021).
+    ``depends_on`` (spec 013, FR-001) attaches one Dagster dep per upstream asset key — non-arg
+    (the op signature is unchanged; the data handoff is the ``AGENTBOX_UPSTREAM_<KEY>`` file, US2).
+    The asset's automation condition is composed from all asset-kind triggers
+    (``cron``/``on_upstream``/``on_missing``) by ``compose_automation_condition`` and driven by the
+    one paused ``autocond_<name>`` sensor (research R1/R3/R4). On a daily asset, when
+    ``partition_upstream_supported()`` is false the upstream condition is dropped and a load-warning
+    names the asset (R2/FR-007).
     """
     validate_asset_key(cfg, file or cfg.get("name", "<agent>"))
     key = AssetKey(cfg["produces"]["asset"].split("/"))
     partition = (cfg["produces"] or {}).get("partition", "none")
+    partitioned = partition == "daily"
     partitions_def = (
-        DailyPartitionsDefinition(start_date=PARTITION_START_DATE) if partition == "daily" else None
+        DailyPartitionsDefinition(start_date=PARTITION_START_DATE) if partitioned else None
+    )
+    depends_on = depends_on or []
+    if on_upstream and partitioned and not partition_upstream_supported():
+        log.warning(
+            "%s: on_upstream dropped for daily asset %s — partitioned upstream mapping is "
+            "unsupported on this Dagster (AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY); restrict "
+            "on_upstream to unpartitioned assets (R2/FR-007)",
+            file or cfg.get("name", "<agent>"), cfg["produces"]["asset"],
+        )
+    automation_condition = compose_automation_condition(
+        cfg, cron=cron, on_upstream=on_upstream, on_missing=on_missing, partitioned=partitioned
     )
     checks = (cfg["produces"] or {}).get("checks") or []
     if checks:
         # Check-bearing asset: a @multi_asset whose generator op runs the producer AND its checks
         # (from_op cannot declare check_specs — research R1). Checkless assets keep from_op (FR-013).
-        return _build_checked_asset(cfg, key, partitions_def, cron, checks)
+        return _build_checked_asset(cfg, key, partitions_def, checks,
+                                    _spec_deps(depends_on, partitioned), automation_condition)
     the_op = make_run_op(cfg)  # the same op object job-mode would use
-    automation_conditions = (
-        {"result": AutomationCondition.on_cron(cron, cron_timezone=cron_timezone())} if cron else None
+    automation_conditions = {"result": automation_condition} if automation_condition else None
+    # Non-arg deps on the checkless from_op path: internal_asset_deps declares upstream asset keys
+    # the op takes no argument for (from_op has no `deps=`), so any_deps_updated() can react to them.
+    internal_asset_deps = (
+        {"result": {AssetKey(k.split("/")) for k in depends_on}} if depends_on else None
     )
     return AssetsDefinition.from_op(
         the_op,
         keys_by_output_name={"result": key},
         partitions_def=partitions_def,
+        internal_asset_deps=internal_asset_deps,
         automation_conditions_by_output_name=automation_conditions,
     )
 
 
-def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | None,
-                         checks: list):
+def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
+                         deps: list, automation_condition):
     """A check-bearing asset whose one op runs the producer AND its checks (contract §1–§4).
 
     ``from_op`` cannot declare check specs (research R1), and ``@multi_asset`` derives each check's
@@ -1041,9 +1090,6 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
     ``finally``, after the checks have run.
     """
     name = cfg["name"]
-    automation_condition = (
-        AutomationCondition.on_cron(cron, cron_timezone=cron_timezone()) if cron else None
-    )
     # check i -> output "check_<i>" (Dagster-valid) mapped to an AssetCheckSpec keeping the kebab
     # name. `blocking` (default true when omitted) makes a failing check gate downstream automation
     # while the asset still materializes (FR-006, contract §4).
@@ -1163,7 +1209,7 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
         check_specs_by_output_name=check_specs_by_output_name,
         selected_asset_check_keys=None,
         is_subset=False,
-        specs=[AssetSpec(key=key, partitions_def=partitions_def,
+        specs=[AssetSpec(key=key, partitions_def=partitions_def, deps=deps,
                          automation_condition=automation_condition)],
         execution_type=None,
         hook_defs=None,
@@ -1171,12 +1217,15 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
 
 
 def build_asset_automation_sensor(cfg: dict, asset_def: AssetsDefinition):
-    """A per-asset automation-condition sensor for an asset-mode agent with a cron (FR-021).
+    """A per-asset automation-condition sensor for an asset with any asset-kind trigger (FR-021).
 
-    Named ``autocond_<name>`` and STOPPED by default, so an asset's cron is operator-toggleable
+    Named ``autocond_<name>`` and STOPPED by default, so the asset's composed automation condition
+    (any of ``asset_schedule`` / ``on_upstream`` / ``on_missing``, spec 013) is operator-toggleable
     and paused-by-default — the asset-mode parallel to a job schedule's per-schedule toggle
-    (research R4). One sensor per automation asset means Dagster does not also attach its global
-    default automation sensor to it.
+    (research R4). The unchanged name preserves an asset's existing operator toggle when new triggers
+    are added. The gate — *whether* an asset needs this sensor — is ``asset_has_automation_condition``
+    (owned here, one place); ``definitions.discover`` only decides whether to call this. One sensor
+    per automation asset means Dagster does not also attach its global default automation sensor.
     """
     return AutomationConditionSensorDefinition(
         name=f"autocond_{cfg['name'].replace('-', '_')}",
@@ -1228,6 +1277,78 @@ def partition_on_cron_supported() -> bool:
     Automation page's ``fallback`` marker agrees with what the orchestrator wired (research R6).
     """
     return os.environ.get("AGENTBOX_PARTITION_FALLBACK", "").lower() not in ("1", "true", "yes")
+
+
+def partition_upstream_supported() -> bool:
+    """Whether partitioned ``on_upstream`` (the identity daily→daily ``TimeWindowPartitionMapping``)
+    is reliable on the installed Dagster (research R2 / FR-007). True on the pinned 1.13.21 — the
+    primary path, where a today upstream partition drives the today downstream partition.
+
+    Set ``AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY=1`` to force the documented fallback: a daily asset
+    with ``on_upstream`` is loaded WITHOUT its upstream automation condition, the restriction is
+    logged naming the asset, and the README states it. Mirrors the ``partition_on_cron_supported``
+    build-time-check lever. Read at build time so a reload picks up a change.
+    """
+    return os.environ.get("AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY", "").lower() not in ("1", "true", "yes")
+
+
+def compose_automation_condition(cfg: dict, *, cron: str | None, on_upstream: bool,
+                                 on_missing: bool, partitioned: bool):
+    """OR-compose the asset's enabled asset-kind trigger contributions into one AutomationCondition,
+    then AND ``~in_progress()`` so a run already in flight is not re-triggered; return ``None`` when
+    nothing is enabled (contract orchestrator-model §2, research R1/R3/R4).
+
+    - ``asset_schedule`` (``cron``) → ``on_cron(cron, tz)`` (spec 006).
+    - ``on_upstream`` → ``any_deps_updated()`` — but only when the asset is unpartitioned or
+      ``partition_upstream_supported()`` (the daily→daily fallback drops it, R2/FR-007).
+    - ``on_missing`` → ``missing() & in_latest_time_window()`` (never backfills history, R3).
+
+    All three OR-compose behind the single paused ``autocond_<name>`` sensor (FR-010).
+    """
+    parts = []
+    if cron:
+        parts.append(AutomationCondition.on_cron(cron, cron_timezone=cron_timezone()))
+    if on_upstream and (not partitioned or partition_upstream_supported()):
+        parts.append(AutomationCondition.any_deps_updated())
+    if on_missing:
+        parts.append(AutomationCondition.missing() & AutomationCondition.in_latest_time_window())
+    if not parts:
+        return None
+    cond = parts[0]
+    for p in parts[1:]:
+        cond = cond | p
+    return cond & ~AutomationCondition.in_progress()
+
+
+def asset_has_automation_condition(cfg: dict, *, cron: str | None, on_upstream: bool,
+                                   on_missing: bool, partitioned: bool) -> bool:
+    """The single gate predicate — does this asset have a sensor-driven automation condition? (R4).
+
+    Owned here (beside ``build_asset_automation_sensor``) so the "any asset-kind trigger?" decision
+    lives in one place; ``definitions.discover`` only decides whether to *call*
+    ``build_asset_automation_sensor``, it does not re-implement the check. True iff
+    ``compose_automation_condition`` would build a condition (so a partition-dropped ``on_upstream``
+    that composes nothing does not spuriously create a sensor).
+    """
+    return compose_automation_condition(
+        cfg, cron=cron, on_upstream=on_upstream, on_missing=on_missing, partitioned=partitioned
+    ) is not None
+
+
+def _spec_deps(depends_on: list[str], partitioned: bool) -> list:
+    """The ``AssetSpec.deps`` (check-bearing path) for a set of upstream keys (contract §1).
+
+    Attach the identity daily→daily ``TimeWindowPartitionMapping`` only when the downstream is
+    partitioned and ``partition_upstream_supported()``; otherwise a plain ``AssetDep`` (default
+    mapping). Deps are non-arg — the op signature is unchanged; the handoff file is the data path.
+    """
+    use_mapping = partitioned and partition_upstream_supported()
+    deps = []
+    for k in depends_on:
+        ak = AssetKey(k.split("/"))
+        deps.append(AssetDep(ak, partition_mapping=TimeWindowPartitionMapping()) if use_mapping
+                    else AssetDep(ak))
+    return deps
 
 
 def build_prune_job():
