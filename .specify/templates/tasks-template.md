@@ -21,10 +21,18 @@ description: "Task list template for feature implementation"
 
 ## Path Conventions
 
-- **Single project**: `src/`, `tests/` at repository root
-- **Web app**: `backend/src/`, `frontend/src/`
-- **Mobile**: `api/src/`, `ios/src/` or `android/src/`
-- Paths shown below assume single project - adjust based on plan.md structure
+AgentBox is a multi-package product tree (see AGENTS.md, "Where each kind of file goes" and
+"Stack and tests"). Task paths are product-tree paths; tests sit beside the code they cover:
+
+- **Orchestrator** (Dagster code location): `orchestrator/*.py`, tests in `orchestrator/tests/`
+- **Management UI** (FastAPI + Jinja2): `ui/*.py`, `ui/templates/`, `ui/static/`, tests in
+  `ui/tests/` (schema golden files in `ui/tests/golden/`)
+- **Agent images**: `images/<harness>/`, shared code in `images/lib/`, tests in `images/tests/`
+- **LiteLLM template + generator**: `litellm/`, tests in `litellm/tests/`
+- **Host scripts**: `scripts/`, tests in `scripts/tests/`
+- **Seed samples** (templates, sample prompt/settings): `examples/config/`
+- Never write tasks against `config/` or `/data/…` — those are instance config and state,
+  not product files. The sample tasks below use generic `src/` paths; replace them.
 
 <!--
   ============================================================================

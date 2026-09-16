@@ -16,6 +16,11 @@
   ACTION REQUIRED: Replace the content in this section with the technical details
   for the project. The structure here is presented in advisory capacity to guide
   the iteration process.
+
+  AgentBox: the stable facts (language, dependencies, storage, test suites and commands,
+  target platform, project type) are recorded once in AGENTS.md under "Stack and tests".
+  Copy them from there instead of re-deriving them from the tree, and spend this section on
+  what THIS feature adds or changes (new dependencies, new Dagster surface, new files).
 -->
 
 **Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
