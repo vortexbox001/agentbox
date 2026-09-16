@@ -1,4 +1,4 @@
-# agentbox-schema: 4
+# agentbox-schema: 7
 # Template: pi harness
 # Runs pi (https://github.com/earendil-works/pi), a minimal coding agent with read/write/edit/bash/grep/find/ls tools and a
 # full tool loop, in print mode. Talks to the LiteLLM proxy, so it bills the API key and can use any
@@ -37,11 +37,15 @@ job: true                       # this agent has a launchable/schedulable job ag
 #triggers:                       # when this agent runs on its own (omit for manual/on-demand only)
 #  job_schedule: "0 7 * * *"     # cron (5 fields, no @-macros) — launches the job on a schedule
 #  asset_schedule: "0 7 * * *"   # cron — materializes the asset on a schedule (only when produces is set)
+#  on_upstream: true             # materialize when any declared upstream materializes and passes its blocking checks (asset only; spec 013)
+#  on_missing: true              # materialize the current/latest partition when it has never been produced — no history backfill (asset only; spec 013)
 
 # --- Produces (optional) ---
 #produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)
 #  asset: repo-review/agentbox   # asset key: kebab segments joined by / for grouping
 #  partition: none               # none | daily — daily exposes a per-day partition (a tracking label only)
+#  depends_on:                    # upstream asset keys this asset depends on; each is handed to the container as AGENTBOX_UPSTREAM_<KEY> (spec 013)
+#    - notes/daily
 #  checks:                       # optional pass/fail asset checks on this asset (asset kind only)
 #    - name: has-output          # required, kebab-case, unique; names the Dagster asset check
 #      command: test -n "$(ls /output)"   # required; run as sh -c in a read-only container — exit 0 passes (last 4 KB of output attached)

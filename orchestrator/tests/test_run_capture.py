@@ -157,3 +157,30 @@ def test_launch_context_asset_no_handoff_is_none(monkeypatch, tmp_path):
     ctx = factory._launch_context(
         cfg, build_op_context(), "2026-09-15_10-00", "sess", str(tmp_path / "ws"), {}, is_asset=True)
     assert ctx["asset"]["upstream_inputs"] is None
+
+
+# ── US2: asset.upstream_inputs sourced from the handoff data (spec 013, R6) ──
+def test_upstream_inputs_populated_from_handoff():
+    import factory
+    from dagster import build_op_context
+
+    cfg = {"name": "refined-daily", "harness": "api", "model": "cheap", "prompt_file": "p.md",
+           "produces": {"asset": "refined/daily", "partition": "daily",
+                        "depends_on": ["notes/daily"]}}
+    ctx = build_op_context(partition_key="2026-09-09")
+    handoff = {"AGENTBOX_UPSTREAM_NOTES_DAILY": "/upstreams/notes_daily.json"}
+    snapshot = factory._launch_context(cfg, ctx, "2026-09-09_00-00", "sid", "/ws", handoff, True,
+                                       handoff_dir="/tmp/up", upstream_inputs=handoff)
+    # the handoff map is the captured provenance (the file remains the launch-time transport)
+    assert snapshot["asset"]["upstream_inputs"] == handoff
+
+
+def test_upstream_inputs_none_when_no_handoff_and_no_op_config():
+    import factory
+    from dagster import build_op_context
+
+    cfg = {"name": "refined", "harness": "api", "model": "cheap", "prompt_file": "p.md",
+           "produces": {"asset": "refined/daily"}}
+    ctx = build_op_context()
+    snapshot = factory._launch_context(cfg, ctx, "2026-09-09_00-00", "sid", "/ws", {}, True)
+    assert snapshot["asset"]["upstream_inputs"] is None

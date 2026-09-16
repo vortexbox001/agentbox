@@ -29,6 +29,33 @@
       </div>
     </form>
   </div>
+
+  <div class="ax-settings-card" id="ax-governors-card">
+    <h2>Run governors</h2>
+    <p class="ax-settings-desc">
+      Bound automated trigger chains. A run that would exceed a limit is refused, logged, and
+      skipped without consuming a slot; manual runs bypass both. The orchestrator reads these on
+      its next reload.
+    </p>
+    <form id="ax-governors-form">
+      <div class="ax-settings-field">
+        <span class="ax-settings-field-label">Max runs per hour</span>
+        {{ ui.text_input(name="max_runs_per_hour", id="ax-governors-runs", type="number",
+                         value=governors.max_runs_per_hour, attrs={"min": "1"}) }}
+        <span class="ax-help">Cap on automated runs per rolling 60-minute window. Manual runs bypass. Default 12.</span>
+      </div>
+      <div class="ax-settings-field">
+        <span class="ax-settings-field-label">Max chain depth</span>
+        {{ ui.text_input(name="max_chain_depth", id="ax-governors-depth", type="number",
+                         value=governors.max_chain_depth, attrs={"min": "1"}) }}
+        <span class="ax-help">Cap on how deep an automated chain of triggers may go. Manual runs bypass. Default 5.</span>
+      </div>
+      <div class="ax-settings-actions">
+        {{ ui.button(label="Save", intent="primary", type="submit", attrs={"id": "ax-governors-save"}) }}
+        <span class="ax-settings-status" id="ax-governors-status" aria-live="polite"></span>
+      </div>
+    </form>
+  </div>
 </div>
 {% endblock %}
 {# settings.js is already loaded by base.html; it wires the retention form when present. #}

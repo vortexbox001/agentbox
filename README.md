@@ -284,6 +284,53 @@ one-off
 agent's `triggers:` block (setting `job: true` for job-mode agents) and removes the directory
 (idempotent).
 
+### Event-driven triggers — the asset dependency graph
+
+Beyond schedules, an asset can fire on **events** by declaring an explicit dependency graph. Under
+`produces:`, list the upstream asset keys this asset depends on; under `triggers:`, opt into the two
+event triggers (both default off, both asset-kind, both behind the same paused `autocond_<name>`
+sensor as `asset_schedule`):
+
+```yaml
+produces:
+  asset: refined/daily
+  partition: daily
+  depends_on:          # upstream asset keys this asset depends on (explicit graph edges)
+    - notes/daily
+    - extras/daily
+triggers:
+  on_upstream: true    # materialize when any declared upstream materializes & passes blocking checks
+  on_missing: true     # materialize the current/latest partition when it has never been produced
+```
+
+- **`depends_on`** declares real Dagster deps (visible in the asset lineage). There is no folder- or
+  change-watching — the graph is only what you declare. Cycles and references to a non-existent asset
+  key are **rejected at load**, naming the offending assets/keys; the offending assets (and anything
+  that transitively depends on them) are skipped while every unrelated agent still loads. The
+  create/edit form also blocks saving a cycle or dangling reference.
+- **`on_upstream`** fires the downstream when any declared upstream materializes and passes its
+  **blocking** checks (a failed blocking check records an observation, not a materialization, so it
+  never fires the downstream). Partitioned upstream→downstream map one-to-one by kind (daily→daily).
+  On a Dagster where that mapping is unreliable, set `AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY=1`: a
+  daily asset's `on_upstream` condition is then dropped and the restriction is logged at load.
+- **`on_missing`** fills the current/latest expected partition (today for daily; the single
+  partition when unpartitioned) when it has never been produced. It never backfills history and never
+  re-fires once the partition exists.
+
+When a downstream fires, its container is handed **what each upstream produced**. For every declared
+upstream it receives an env var `AGENTBOX_UPSTREAM_<KEY>` pointing at a **read-only** JSON file
+(mounted at `/upstreams`) listing that upstream's latest matching-partition output paths, spec-007
+report metadata, and materialization time — or a `materialized: false` file when there is none. The
+`<KEY>` is the asset key upper-snaked (`/` and `-` → `_`, uppercased): `notes/daily` →
+`AGENTBOX_UPSTREAM_NOTES_DAILY`, `repo-review/list-commits` →
+`AGENTBOX_UPSTREAM_REPO_REVIEW_LIST_COMMITS`.
+
+**Run governors.** Two instance-level limits in `settings.yaml` (edited on the Settings page) bound
+automated chaining: `max_runs_per_hour` (default 12, a rolling 60-minute window) and
+`max_chain_depth` (default 5; every automated run carries a `chain_depth` — a root is 1, each
+automated downstream is its upstream's depth + 1). A run that would breach either limit is refused,
+logged, and skipped **without** consuming a per-hour slot; **manual runs bypass both**.
+
 ## Adding an agent
 
 The quickest path is the **management UI** at `http://<host>:8080` (the `ui` service; see
@@ -412,8 +459,11 @@ This table is descriptive. The authoritative per-key wording, valid values, defa
 | `produces.asset` | none | Asset key this agent materializes, e.g. `repo-review/agentbox`. Kebab segments joined by `/` for grouping. Declaring a `produces:` block makes the agent a Dagster **asset** (with a materialization history). Combine with `job: true` to also get a materializing `agent_<name>` job. |
 | `produces.partition` | `none` | Partition set for the asset: `none` (single) or `daily`. A tracking label only — it does not change the run or output. Default `none`. |
 | `produces.checks` | none | Optional list of pass/fail **asset checks** on the produced asset (asset kind only). Each check runs after the producer in a fresh, read-only container and surfaces as a Dagster asset check. See **Asset checks** below for the per-check fields. |
+| `produces.depends_on` | none | Optional list of upstream asset keys this asset depends on (explicit graph edges). Each is handed to the container as `AGENTBOX_UPSTREAM_<KEY>` (a read-only handoff file). Cycles/dangling refs are rejected at load. See [Event-driven triggers](#event-driven-triggers--the-asset-dependency-graph). |
 | `job` | `false` | `true` makes the agent a launchable Dagster job `agent_<name>`. An agent must be an asset (`produces`), a job (`job: true`), or both. |
 | `triggers.asset_schedule` | none | Five-field cron (no `@`-macros) that materializes the asset on a schedule (an `on_cron` auto-condition). Applies only when the agent is an asset. |
+| `triggers.on_upstream` | `false` | Materialize this asset when any declared `depends_on` upstream materializes and passes its blocking checks. Asset kind only; starts paused behind `autocond_<name>`. |
+| `triggers.on_missing` | `false` | Materialize the current/latest partition when it has never been produced (no history backfill). Asset kind only; starts paused behind `autocond_<name>`. |
 | `triggers.job_schedule` | none | Five-field cron (no `@`-macros) that launches `agent_<name>` on a schedule (`sched_<name>`). Applies only when the agent has a job. |
 
 ### Output files
@@ -510,6 +560,11 @@ Given a Dagster run id:
   `transcript.jsonl` from run directories past the horizon. `report.json`, `context.json`, and the
   run's `/output` artifacts are **always kept**, so a pruned run still opens (its Conversation tab
   shows a "conversation pruned" note).
+- **Run governors.** The **Settings** page also has a Run governors section (persisted to the same
+  `settings.yaml`) that bounds automated trigger chains: `max_runs_per_hour` (default 12, a rolling
+  60-minute window) and `max_chain_depth` (default 5). A run that would breach either limit is
+  refused, logged, and skipped without consuming a slot; **manual runs bypass both**. See
+  [Event-driven triggers](#event-driven-triggers--the-asset-dependency-graph).
 
 ## Repository layout
 

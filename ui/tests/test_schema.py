@@ -168,7 +168,7 @@ def test_partition_field_shape():
 
 def test_public_payload_exposes_produces():
     pub = schema.to_public()
-    assert pub["schema_version"] == 6
+    assert pub["schema_version"] == 7
     assert {"id": "produces", "label": "Produces", "group": "runs"} in pub["sections"]
     by_id = {f["id"]: f for f in pub["fields"]}
     assert by_id["asset"]["pattern"] == schema.ASSET_KEY_RE
@@ -195,6 +195,92 @@ def test_validate_rejects_empty_declaration():
     a = _base("api", asset="")
     errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
     assert "asset" in errors
+
+
+# ── depends_on + the two asset-kind triggers (spec 013, contract agent-model §2/§3) ──
+def test_depends_on_and_triggers_present_in_fields():
+    for fid, block in (("depends_on", "produces"), ("on_upstream", "triggers"),
+                       ("on_missing", "triggers")):
+        f = schema.FIELDS_BY_ID[fid]
+        assert f.block == block and f.section == block
+        assert f.harnesses == schema._ALL
+    assert schema.FIELDS_BY_ID["depends_on"].type == "list"
+    assert schema.FIELDS_BY_ID["on_upstream"].type == "bool"
+    assert schema.FIELDS_BY_ID["on_missing"].type == "bool"
+    assert schema.FIELDS_BY_ID["on_upstream"].default is False
+    assert schema.FIELDS_BY_ID["on_missing"].default is False
+
+
+def test_public_payload_exposes_depends_on_and_triggers():
+    pub = schema.to_public()
+    by_id = {f["id"]: f for f in pub["fields"]}
+    assert by_id["depends_on"]["type"] == "list" and by_id["depends_on"]["block"] == "produces"
+    assert by_id["on_upstream"]["type"] == "bool" and by_id["on_upstream"]["block"] == "triggers"
+    assert by_id["on_missing"]["type"] == "bool" and by_id["on_missing"]["block"] == "triggers"
+    for h in pub["harnesses"]:
+        assert {"depends_on", "on_upstream", "on_missing"} <= set(h["fields"])
+
+
+def test_depends_on_accepts_asset_key_entries():
+    a = _base("api", asset="refined/daily", depends_on=["notes/daily", "extras/daily"])
+    assert schema.validate(a, prompt_exists=ALWAYS_TRUE) == {}
+
+
+def test_depends_on_rejects_bad_entry_naming_it():
+    a = _base("api", asset="refined/daily", depends_on=["notes/daily", "Bad Key"])
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert "depends_on" in errors and "Bad Key" in errors["depends_on"]
+
+
+def test_depends_on_requires_an_asset():
+    a = _base("api", job=True, depends_on=["notes/daily"])
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert "depends_on" in errors
+
+
+def test_on_upstream_and_on_missing_apply_only_to_assets():
+    a = _base("api", job=True, on_upstream=True, on_missing=True)
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert "on_upstream" in errors and "on_missing" in errors
+
+
+def test_on_upstream_and_on_missing_ok_for_asset():
+    a = _base("api", asset="refined/daily", on_upstream=True, on_missing=True)
+    assert schema.validate(a, prompt_exists=ALWAYS_TRUE) == {}
+
+
+def test_trigger_flags_must_be_bool():
+    a = _base("api", asset="refined/daily", on_upstream="yes")
+    errors = schema.validate(a, prompt_exists=ALWAYS_TRUE)
+    assert "on_upstream" in errors
+
+
+# ── author-time depends_on cross-check (spec 013 §3, US4) ──
+def test_check_graph_accepts_acyclic_known_refs():
+    others = {"notes/daily": [], "extras/daily": []}
+    assert schema.check_depends_on_graph("refined/daily", ["notes/daily", "extras/daily"], others) is None
+
+
+def test_check_graph_blocks_unknown_asset_key():
+    others = {"notes/daily": []}
+    msg = schema.check_depends_on_graph("refined/daily", ["ghost/daily"], others)
+    assert msg and "ghost/daily" in msg
+
+
+def test_check_graph_blocks_direct_cycle():
+    # saving b/x depends_on c/y while c/y already depends_on b/x forms a cycle.
+    others = {"c/y": ["b/x"]}
+    msg = schema.check_depends_on_graph("b/x", ["c/y"], others)
+    assert msg and "cycle" in msg
+
+
+def test_check_graph_blocks_self_cycle():
+    msg = schema.check_depends_on_graph("a/b", ["a/b"], {})
+    assert msg and "cycle" in msg
+
+
+def test_check_graph_none_when_no_depends_on():
+    assert schema.check_depends_on_graph("a/b", [], {"x/y": []}) is None
 
 
 def test_validate_rejects_bad_partition():
@@ -401,8 +487,16 @@ def test_output_dir_no_longer_required(monkeypatch):
 
 
 # ── Migrations ──────────────────────────────────────────
-def test_schema_version_is_six():
-    assert schema.SCHEMA_VERSION == 6
+def test_schema_version_is_seven():
+    assert schema.SCHEMA_VERSION == 7
+
+
+def test_migrate_6_to_7_is_identity():
+    # spec 013: produces.depends_on + triggers.on_upstream/on_missing are additive, so 6->7 leaves
+    # a schema-6 file untouched (identity), same posture as migrate_4_to_5 / migrate_5_to_6.
+    data = {"name": "x", "harness": "api", "produces": {"asset": "a/b"},
+            "triggers": {"asset_schedule": "0 6 * * *"}}
+    assert schema.migrate_6_to_7(dict(data)) == data
 
 
 def test_migrate_4_to_5_is_identity():
@@ -467,29 +561,29 @@ def test_schema_too_new_raises():
         schema.apply_migrations({}, schema.SCHEMA_VERSION + 1)
 
 
-def test_schema_5_file_reads_as_6_and_restamps_only_on_save(settings):
-    # R-PV-3: a schema-5 file migrates to 6 in memory with unchanged fields (zero migration
-    # noise), keeps its `# agentbox-schema: 5` header until the UI next saves it, and re-stamps
-    # to 6 on that save.
+def test_schema_6_file_reads_as_7_and_restamps_only_on_save(settings):
+    # spec 013: a schema-6 file migrates to 7 in memory with unchanged fields (zero migration
+    # noise), keeps its `# agentbox-schema: 6` header until the UI next saves it, and re-stamps
+    # to 7 on that save.
     import os
 
     import agents_store as st
 
-    path = os.path.join(settings.AGENTS_DIR, "was-five.yaml")
+    path = os.path.join(settings.AGENTS_DIR, "was-six.yaml")
     with open(path, "w", encoding="utf-8") as f:
-        f.write("# agentbox-schema: 5\nname: was-five\nharness: api\nmodel: cheap\n"
-                "prompt_file: p.md\noutput_dir: /data/outputs/was-five\n"
+        f.write("# agentbox-schema: 6\nname: was-six\nharness: api\nmodel: cheap\n"
+                "prompt_file: p.md\noutput_dir: /data/outputs/was-six\n"
                 "network: agentnet-isolated\njob: true\n")
     before = open(path).read()
 
-    info = st.read_agent("was-five")
+    info = st.read_agent("was-six")
     assert info["parse_error"] is None
-    assert info["schema_version"] == 5                        # the file's own stamp is unchanged
-    assert info["agent"]["output_dir"] == "/data/outputs/was-five"  # fields preserved
+    assert info["schema_version"] == 6                        # the file's own stamp is unchanged
+    assert info["agent"]["output_dir"] == "/data/outputs/was-six"  # fields preserved
     assert open(path).read() == before                        # read never rewrote the file
 
-    st.write_agent("was-five", info["agent"])                 # saving re-stamps to the current version
-    assert "# agentbox-schema: 6" in open(path).read()
+    st.write_agent("was-six", info["agent"])                  # saving re-stamps to the current version
+    assert "# agentbox-schema: 7" in open(path).read()
 
 
 # ── litellm aliases ─────────────────────────────────────
@@ -540,7 +634,10 @@ _FIELD_SECTION = {
     "asset": "produces",
     "partition": "produces",
     "checks": "produces",
+    "depends_on": "produces",
     "asset_schedule": "triggers",
+    "on_upstream": "triggers",
+    "on_missing": "triggers",
     "job_schedule": "triggers",
     "job": "run_as_job",
     "prompt_file": "prompt",

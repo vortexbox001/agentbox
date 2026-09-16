@@ -14,3 +14,13 @@
 retention:
   mode: keep_forever
   # days: 30   # required (int >= 1) when mode is prune_after_days
+
+# Run governors (spec 013, FR-014..018). Bound automated trigger chains; the orchestrator reads
+# this block at op time and the Settings page edits it. Manual runs bypass both limits.
+#   max_runs_per_hour — cap on automated runs in a rolling 60-minute window; a run that would
+#                       exceed it is refused, logged, and skipped without consuming a slot.
+#   max_chain_depth   — cap on how deep an automated chain of triggers may go (root run = 1).
+# Absent block/keys fall back to the defaults shown below.
+governors:
+  max_runs_per_hour: 12
+  max_chain_depth: 5

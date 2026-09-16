@@ -219,3 +219,31 @@ def test_checks_catch_inserted_literals():
     assert [u for u in _URL.findall(imp) if not _NS_ALLOW.match(u)]
     assert not [u for u in _URL.findall('xmlns="http://www.w3.org/2000/svg"')
                 if not _NS_ALLOW.match(u)]
+
+
+# ── Golden / new-field coverage (spec 013 T043) ────────────────────────────
+import glob as _glob
+
+
+def test_golden_files_carry_current_schema_header():
+    # After the schema 6→7 bump, every regenerated golden carries the current header.
+    import schema
+    golden_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "golden")
+    files = _glob.glob(os.path.join(golden_dir, "*.yaml"))
+    assert files, "no golden files found"
+    for path in files:
+        with open(path, encoding="utf-8") as f:
+            assert f"# agentbox-schema: {schema.SCHEMA_VERSION}" in f.read(), path
+
+
+def test_emitter_covers_new_fields_for_an_asset():
+    # The three new fields (spec 013) emit for an asset: depends_on as a nested sequence and the
+    # two triggers as booleans — golden coverage of the added surface.
+    import agents_store
+    cfg = {"name": "graph-agent", "harness": "api", "model": "cheap", "prompt_file": "p.md",
+           "output_dir": "/data/agentbox/outputs/graph-agent", "network": "agentnet-isolated",
+           "asset": "refined/daily", "partition": "daily",
+           "depends_on": ["notes/daily", "extras/daily"], "on_upstream": True, "on_missing": True}
+    text = agents_store.emit_yaml(cfg)
+    assert "  depends_on:  #" in text and "    - notes/daily" in text
+    assert "  on_upstream: true  #" in text and "  on_missing: true  #" in text

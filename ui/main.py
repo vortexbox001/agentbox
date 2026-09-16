@@ -284,7 +284,8 @@ async def _settings_page(request: Request):
     return templates.TemplateResponse(
         request, "settings/page.html",
         _shell_context(request, title="Settings", retention=settings_store.read_retention(),
-                       modes=list(settings_store.MODES)),
+                       modes=list(settings_store.MODES),
+                       governors=settings_store.read_governors()),
     )
 
 
@@ -305,6 +306,32 @@ async def _api_settings_retention(request: Request):
         return JSONResponse({"error": "validation", "message": str(e)}, status_code=400)
     logger.info("event=retention_updated mode=%s days=%s", policy["mode"], policy["days"])
     return JSONResponse({"retention": policy})
+
+
+@app.post("/api/settings/governors")
+async def _api_settings_governors(request: Request):
+    # Validate + persist the two run governors (spec 013, contract ui-settings-and-form §4). 400 on
+    # an invalid value; no Dagster reload (the orchestrator reads the file at op time / next reload).
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body = body or {}
+
+    def _as_int(v):
+        if isinstance(v, str) and v.strip().lstrip("-").isdigit():
+            return int(v)
+        return v
+
+    try:
+        governors = settings_store.write_governors(
+            _as_int(body.get("max_runs_per_hour")), _as_int(body.get("max_chain_depth")),
+        )
+    except settings_store.GovernorError as e:
+        return JSONResponse({"error": "validation", "message": str(e)}, status_code=400)
+    logger.info("event=governors_updated max_runs_per_hour=%s max_chain_depth=%s",
+                governors["max_runs_per_hour"], governors["max_chain_depth"])
+    return JSONResponse({"governors": governors})
 
 
 # --- Runs viewer (spec 012) ----------------------------------------------
@@ -604,6 +631,17 @@ async def _write_agent(request: Request, stem_from_path: str | None) -> JSONResp
 
     # Validation (400). A prompt created in this same save counts as existing.
     errors = schema.validate(agent, prompt_exists=_prompt_exists_factory(pending_prompt))
+    # Best-effort author-time depends_on cross-check against the known agent set (spec 013 §3):
+    # block saving a dependency on an unknown asset key or one that forms a cycle. The load-time
+    # check in the orchestrator remains the authority; this tells the operator immediately.
+    if "depends_on" not in errors:
+        asset_key = agent.get("asset")
+        deps = agent.get("depends_on")
+        if isinstance(asset_key, str) and asset_key.strip() and isinstance(deps, list) and deps:
+            others = agents_store.asset_graph(exclude=str(agent.get("name")) if is_update else None)
+            msg = schema.check_depends_on_graph(asset_key.strip(), deps, others)
+            if msg:
+                errors["depends_on"] = msg
     if errors:
         return JSONResponse({"error": "validation", "fields": errors}, status_code=400)
 

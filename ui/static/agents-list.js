@@ -172,10 +172,12 @@ function fillChecks(row, checks) {
   cell.innerHTML = `<div class="ax-check-grid">${cells}</div>`;
 }
 
-// Toggle kind is derived from the store's canonical cron type (contract §0):
-// job_schedule → schedule, asset_schedule → sensor.
+// Toggle kind is derived from the store's canonical trigger type (contract §0):
+// job_schedule → schedule; the asset-kind triggers (asset_schedule, on_upstream, on_missing —
+// spec 013) all share the paused autocond_<name> sensor.
 function kindFromType(type) {
-  return type === "asset_schedule" ? "sensor" : "schedule";
+  return (type === "asset_schedule" || type === "on_upstream" || type === "on_missing")
+    ? "sensor" : "schedule";
 }
 
 // Flip one schedule/sensor: POST {name, kind, running}, then reflect the returned state.

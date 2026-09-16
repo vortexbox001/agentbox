@@ -22,7 +22,7 @@ import config
 
 # Current schema version, stamped into every emitted file. Bump when a migration
 # is added below. Files without the stamp are read as version 0.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def migrate_1_to_2(data: dict) -> dict:
@@ -72,12 +72,21 @@ def migrate_5_to_6(data: dict) -> dict:
     return data
 
 
+def migrate_6_to_7(data: dict) -> dict:
+    """Schema 6 -> 7: the dependency graph (spec 013). ``produces.depends_on`` (a list of
+    upstream asset keys) and the two asset-kind triggers ``triggers.on_upstream`` /
+    ``triggers.on_missing`` were added. All three are additive — a schema-6 file simply has
+    none — so this is the identity function: existing files load with zero migration noise and
+    re-stamp to 7 only when next saved from the UI (same posture as migrate_4_to_5/5_to_6)."""
+    return data
+
+
 # Ordered, forward-only migrations. Each pair is (target_version, fn) where fn
 # transforms a definition dict from target_version - 1 to target_version. Pure
 # dict -> dict, applied on read (never mutating the file until the user saves).
 MIGRATIONS: list[tuple[int, Callable[[dict], dict]]] = [
     (2, migrate_1_to_2), (3, migrate_2_to_3), (4, migrate_3_to_4), (5, migrate_4_to_5),
-    (6, migrate_5_to_6),
+    (6, migrate_5_to_6), (7, migrate_6_to_7),
 ]
 
 
@@ -221,12 +230,39 @@ FIELDS: list[SchemaField] = [
         CHECKS_BLOCK_HELP,
         _ALL, block="produces",
     ),
+    # The upstream asset keys this asset depends on (spec 013). A new `list` field under the
+    # `produces` block; each entry is validated against ASSET_KEY_RE, and existence + acyclicity
+    # across agents are enforced at load (orchestrator) / best-effort at author time.
+    SchemaField(
+        "depends_on", "produces", "Depends on", "list",
+        "Upstream asset keys this asset depends on (kebab segments joined by /). When on_upstream "
+        "is set, a materialization of any of these fires this asset for the matching partition; "
+        "each is also handed to the container as AGENTBOX_UPSTREAM_<KEY>. Needs an asset.",
+        _ALL, block="produces",
+    ),
     # Triggers (Runs) — the nested `triggers` block; each cron applies only to its kind.
     SchemaField(
         "asset_schedule", "triggers", "Asset schedule", "cron",
         "Cron that materializes the asset on a schedule (drives an on-cron auto-condition). "
         "Five fields, no @-macros. Applies only when the agent is an asset; blank = no schedule.",
         _ALL, block="triggers",
+    ),
+    # The two asset-kind event triggers (spec 013), bools under the `triggers` block. Both default
+    # false (absent ⇒ off) and, like asset_schedule, apply only when the agent is an asset; they
+    # live behind the same paused per-asset automation sensor.
+    SchemaField(
+        "on_upstream", "triggers", "On upstream", "bool",
+        "Materialize this asset when any declared upstream materializes and passes its blocking "
+        "checks. Applies only when the agent is an asset; starts paused behind the asset's "
+        "automation sensor.",
+        _ALL, default=False, choices=[True, False], block="triggers",
+    ),
+    SchemaField(
+        "on_missing", "triggers", "On missing", "bool",
+        "Materialize the current/latest partition (today for daily; the single partition when "
+        "unpartitioned) when it has never been produced. Does not backfill history. Applies only "
+        "when the agent is an asset; starts paused behind the asset's automation sensor.",
+        _ALL, default=False, choices=[True, False], block="triggers",
     ),
     SchemaField(
         "job_schedule", "triggers", "Job schedule", "cron",
@@ -764,7 +800,70 @@ def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, 
         elif not is_valid_cron(agent[sid]):
             errors[sid] = "cron must have exactly five fields and no @-macros"
 
+    # depends_on — a list of asset keys; each must match ASSET_KEY_RE and the field needs an asset
+    # (contract agent-model §3 rule 1 / FR-001/FR-002). Existence + acyclicity across agents are
+    # enforced at load (orchestrator §4); the UI additionally cross-checks them when it can (§3).
+    dep_f = FIELDS_BY_ID["depends_on"]
+    if "depends_on" in agent and not _is_unset(dep_f, agent.get("depends_on")) and "depends_on" not in errors:
+        dep = agent["depends_on"]
+        if not isinstance(dep, list):
+            errors["depends_on"] = "depends_on must be a list of asset keys"
+        elif not is_asset:
+            errors["depends_on"] = "depends_on requires an asset — declare an asset key above."
+        else:
+            for entry in dep:
+                if not isinstance(entry, str) or not re.match(ASSET_KEY_RE, entry):
+                    errors["depends_on"] = (
+                        f"invalid depends_on entry {entry!r} — each must be an asset key "
+                        "(kebab segments joined by /)"
+                    )
+                    break
+
+    # on_upstream / on_missing are asset-kind trigger flags — they apply only when the agent is an
+    # asset (contract agent-model §3 rule 2 / FR-005/FR-009, mirror of the asset_schedule rule).
+    # The bool type is already enforced above; here only the kind rule is added. A falsey flag is
+    # off (the default), so only a truthy flag on a non-asset agent is rejected.
+    for tid, msg in (
+        ("on_upstream", "on_upstream applies only when the agent is an asset"),
+        ("on_missing", "on_missing applies only when the agent is an asset"),
+    ):
+        if tid in errors:
+            continue
+        if agent.get(tid) is True and not is_asset:
+            errors[tid] = msg
+
     return errors
+
+
+def check_depends_on_graph(asset_key: str, depends_on: list, other_edges: dict) -> str | None:
+    """Best-effort author-time cross-check of a `depends_on` graph (spec 013 §3 / FR-002/FR-003).
+
+    Given the asset key being saved, its proposed ``depends_on``, and ``other_edges`` — the known
+    graph ``{asset_key: [upstream keys]}`` of every OTHER agent — return a clear message when an
+    entry names an asset key produced by no known agent, or when the new edges would form a cycle
+    (direct or transitive); else ``None``. The load-time check (orchestrator ``definitions.discover``)
+    remains the authority — this only lets the form tell the operator immediately.
+    """
+    if not depends_on:
+        return None
+    graph = dict(other_edges)
+    graph[asset_key] = list(depends_on)
+    produced = set(graph)
+    for dep in depends_on:
+        if dep not in produced:
+            return f"depends_on names an unknown asset key: {dep}"
+    # A new cycle must run through asset_key: can we get back to it by following its deps' edges?
+    seen: set[str] = set()
+    stack = list(depends_on)
+    while stack:
+        cur = stack.pop()
+        if cur == asset_key:
+            return f"depends_on forms a dependency cycle involving {asset_key}"
+        if cur in seen:
+            continue
+        seen.add(cur)
+        stack.extend(graph.get(cur, []))
+    return None
 
 
 def network_mismatch_warning(agent: dict) -> str | None:

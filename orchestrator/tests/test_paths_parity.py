@@ -92,3 +92,43 @@ def test_default_state_and_dagster_roots_agree_when_unset(monkeypatch):
         assert p.DAGSTER_ROOT == c.DAGSTER_ROOT == "/data/dagster"
     finally:
         importlib.reload(paths)
+
+
+def _load_ui_settings_store():
+    """Load ui/settings_store.py, injecting ui/config.py as ``config`` so its import resolves."""
+    import sys
+    ui_dir = Path(__file__).resolve().parents[2] / "ui"
+    saved = sys.modules.get("config")
+    cfg_spec = importlib.util.spec_from_file_location("config", ui_dir / "config.py")
+    cfg = importlib.util.module_from_spec(cfg_spec)
+    sys.modules["config"] = cfg
+    try:
+        cfg_spec.loader.exec_module(cfg)
+        spec = importlib.util.spec_from_file_location("ui_settings_store_parity",
+                                                      ui_dir / "settings_store.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        if saved is not None:
+            sys.modules["config"] = saved
+        else:
+            sys.modules.pop("config", None)
+
+
+def test_governor_defaults_agree_across_packages():
+    # The governor defaults (12/5) are stated once per package; pin the two twins in agreement
+    # (spec 013 R10). The live value is settings.yaml; only the fallback default is duplicated.
+    import governors
+    ss = _load_ui_settings_store()
+    assert governors.DEFAULT_GOVERNORS == {"max_runs_per_hour": 12, "max_chain_depth": 5}
+    assert ss.DEFAULT_GOVERNORS == governors.DEFAULT_GOVERNORS
+
+
+def test_upstream_env_key_transform_documented_form():
+    # The AGENTBOX_UPSTREAM_<KEY> upper-snake transform, pinned to its documented form (R6/R10).
+    import factory
+    assert factory.upstream_env_key("notes/daily") == "NOTES_DAILY"
+    assert factory.upstream_env_key("repo-review/list-commits") == "REPO_REVIEW_LIST_COMMITS"
+    assert factory.upstream_env_key("a-b/c-d/e") == "A_B_C_D_E"
+    assert factory.upstream_key_slug("notes/daily") == "notes_daily"

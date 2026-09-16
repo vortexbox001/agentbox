@@ -133,6 +133,11 @@ function collect() {
     delete agent.partition;
     delete agent.asset_schedule;
     delete agent.checks;   // checks are children of the asset; drop them with the produces block
+    // The dependency graph + event triggers are asset-kind too (spec 013): drop them when the
+    // agent is not an asset, mirroring asset/partition/checks (FR-019/FR-020, contract ui §1).
+    delete agent.depends_on;
+    delete agent.on_upstream;
+    delete agent.on_missing;
   }
   if (agent.job !== true) delete agent.job_schedule;
   // Carry the file's unmanaged keys through edit saves and the preview untouched.
@@ -870,10 +875,17 @@ function buildAssetCard() {
 
   const grid = document.createElement("div");
   grid.className = "ax-grid-form";
-  for (const fid of ["asset", "partition", "asset_schedule"]) {
+  // The two asset-kind event-trigger toggles (spec 013, FR-020) render beside asset_schedule.
+  for (const fid of ["asset", "partition", "asset_schedule", "on_upstream", "on_missing"]) {
     const w = fieldWrapIfApplicable(fid);
     if (w) grid.appendChild(w);
   }
+
+  // Depends-on (spec 013, FR-019): a list control for upstream asset keys, inside the Asset card
+  // so it is present only for an asset and gated off with the rest of the produces fields. Wide,
+  // like Checks.
+  const depW = fieldWrapIfApplicable("depends_on");
+  if (depW) grid.appendChild(depW);
 
   // The Checks editor (spec 008): a wide, full-row control inside the Asset card so it is present
   // only for an asset and gated off with the rest of the produces fields (FR-011).

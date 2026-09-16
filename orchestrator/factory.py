@@ -1,16 +1,22 @@
 """Turns an agent YAML dict into a Dagster job that docker-runs the agent."""
-import os, re, json, uuid, shutil, tempfile, threading, datetime, subprocess
+import os, re, json, uuid, shutil, logging, tempfile, threading, datetime, subprocess
 from collections import namedtuple
 from dagster import (
     job, op, Output, OpExecutionContext, ScheduleDefinition, Config, Field, Permissive,
-    AssetKey, AssetMaterialization, AssetObservation, AssetsDefinition, DailyPartitionsDefinition,
+    AssetKey, AssetDep, AssetMaterialization, AssetObservation, AssetsDefinition,
+    DailyPartitionsDefinition, TimeWindowPartitionMapping,
     MetadataValue,
     AutomationCondition, AutomationConditionSensorDefinition, AssetSelection,
     DefaultSensorStatus, DefaultScheduleStatus, define_asset_job,
     Out, Nothing,
     AssetSpec, AssetCheckSpec, AssetCheckResult, AssetCheckSeverity, MaterializeResult,
+    EventRecordsFilter, DagsterEventType, RunsFilter,
     open_pipes_session, PipesEnvContextInjector, PipesFileMessageReader,
 )
+
+import governors
+
+log = logging.getLogger("agentbox.factory")
 from dagster_pipes import (
     encode_env_var, decode_env_var,
     DAGSTER_PIPES_CONTEXT_ENV_VAR, DAGSTER_PIPES_MESSAGES_ENV_VAR,
@@ -171,6 +177,31 @@ def validate_checks(cfg: dict, file: str) -> None:
                 f'duplicate check name "{name}" — check names must be unique within the agent',
             )
         seen.add(name)
+
+
+def validate_depends_on(cfg: dict, file: str) -> list[str]:
+    """Load-time structural backstop for ``produces.depends_on`` (contract agent-model §5, FR-001).
+
+    The UI's ``schema.validate`` is the authoring guard; this is the structural twin that keeps a
+    hand-written bad file from reaching the graph. Returns the list of upstream asset keys (``[]``
+    when absent). Raises ``RejectAgent`` (naming ``file``) when ``depends_on`` is not a list, or an
+    entry is not an asset-key string — no ``croniter``-style extras. Existence + acyclicity are
+    graph properties across all agents, enforced in ``definitions.discover`` (§4), not here.
+    """
+    produces = cfg.get("produces")
+    depends_on = produces.get("depends_on") if isinstance(produces, dict) else None
+    if depends_on is None:
+        return []
+    if not isinstance(depends_on, list):
+        raise RejectAgent(file, "produces.depends_on must be a list of asset keys")
+    keys: list[str] = []
+    for entry in depends_on:
+        if not isinstance(entry, str) or not re.match(ASSET_KEY_RE, entry):
+            raise RejectAgent(
+                file, f'invalid produces.depends_on entry {entry!r} — must match {ASSET_KEY_RE}'
+            )
+        keys.append(entry)
+    return keys
 # full per-run transcripts: <root>/<agent>/<YYYY-MM-DD>/<run-id>.jsonl. Now under
 # $AGENTBOX_DATA/runs (moved out of the Dagster home — FR-010/R3).
 RUNS_ROOT = paths.RUNS_ROOT
@@ -318,7 +349,8 @@ def _numeric_md(value):
 
 def build_metadata(cfg: dict, report: dict, output_files: list[str], log_path: str,
                    stamp: str, session_id: str, context: OpExecutionContext,
-                   run_dir: str | None = None) -> dict:
+                   run_dir: str | None = None, chain_depth: int | None = None,
+                   automated: bool | None = None) -> dict:
     """The metadata union attached to a run/materialization (contract metadata.md).
 
     The union of the run-report fields and the run-context fields recorded today.
@@ -353,7 +385,255 @@ def build_metadata(cfg: dict, report: dict, output_files: list[str], log_path: s
         metadata["notes"] = MetadataValue.md(str(report["notes"]))
     if context.has_partition_key:
         metadata["partition"] = context.partition_key
+    # chain_depth + automated (spec 013 US5): recorded so a downstream reads them via the handoff
+    # query (R7). Null until the op derives them (build_metadata is also used by non-graph paths).
+    if chain_depth is not None:
+        metadata["chain_depth"] = MetadataValue.int(chain_depth)
+    if automated is not None:
+        metadata["automated"] = MetadataValue.bool(automated)
     return metadata
+
+
+# --- Upstream handoff (spec 013 US2, FR-011/FR-012/FR-012a/FR-013) ----------
+#
+# For each declared upstream, the downstream container receives an env var
+# AGENTBOX_UPSTREAM_<KEY> pointing at a read-only JSON file describing that upstream's latest
+# matching-partition materialization. The key transform is stated once here (writer) and mirrored
+# in the README (docs) + pinned by a parity test (research R6/R10).
+
+# The spec-007 report fields recovered off a materialization's metadata for the handoff `report`.
+_HANDOFF_REPORT_KEYS = ("status", "tokens_in", "tokens_out", "turns", "cost_usd",
+                        "files_written", "notes", "error")
+
+
+def upstream_env_key(asset_key: str) -> str:
+    """The ``AGENTBOX_UPSTREAM_<KEY>`` suffix: the asset key upper-snaked (``/`` and ``-`` → ``_``,
+    uppercased). ``notes/daily`` → ``NOTES_DAILY``; ``repo-review/list-commits`` →
+    ``REPO_REVIEW_LIST_COMMITS``. Stated once here (writer) and pinned by a parity test (R6/R10)."""
+    return re.sub(r"[/-]", "_", asset_key).upper()
+
+
+def upstream_key_slug(asset_key: str) -> str:
+    """The handoff filename stem: the lowercased key with ``/`` → ``_`` (``notes/daily`` →
+    ``notes_daily``). Hyphens are preserved (only ``/`` is replaced)."""
+    return asset_key.replace("/", "_")
+
+
+def _md_plain(value):
+    """Recover a raw Python value from a materialization metadata entry, mapping the null-numeric
+    placeholder back to ``None`` so a downstream reads a real null, not the em-dash."""
+    val = value.value if hasattr(value, "value") else value
+    return None if val == NULL_NUMERIC_PLACEHOLDER else val
+
+
+def _read_upstream_materialization(context: OpExecutionContext, asset_key: AssetKey,
+                                   partition: str | None) -> dict | None:
+    """The latest materialization of ``asset_key`` for ``partition`` as a plain dict, or ``None``.
+
+    Partitioned: the newest ``ASSET_MATERIALIZATION`` event for that partition; unpartitioned: the
+    asset's latest materialization event. Reads ``output_files`` / the spec-007 report fields /
+    ``chain_depth`` / ``automated`` off the materialization metadata and the event timestamp for
+    ``materialized_at`` (contract orchestrator-model §3).
+    """
+    instance = context.instance
+    if partition is not None:
+        records = instance.get_event_records(
+            EventRecordsFilter(
+                DagsterEventType.ASSET_MATERIALIZATION, asset_key=asset_key,
+                asset_partitions=[partition],
+            ),
+            limit=1, ascending=False,
+        )
+        if not records:
+            return None
+        entry = records[0].event_log_entry
+    else:
+        entry = instance.get_latest_materialization_event(asset_key)
+        if entry is None:
+            return None
+    materialization = entry.asset_materialization
+    md = (materialization.metadata if materialization else None) or {}
+    report = {k: _md_plain(md[k]) for k in _HANDOFF_REPORT_KEYS if k in md}
+    output_files = _md_plain(md.get("output_files")) or []
+    materialized_at = None
+    if entry.timestamp is not None:
+        materialized_at = datetime.datetime.fromtimestamp(
+            entry.timestamp, tz=datetime.timezone.utc
+        ).isoformat()
+    return {
+        "output_files": list(output_files),
+        "report": report or None,
+        "materialized_at": materialized_at,
+        # chain_depth + automated are recorded by US5 (T036); null until then, by design.
+        "chain_depth": _md_plain(md.get("chain_depth")),
+        "automated": _md_plain(md.get("automated")),
+    }
+
+
+def build_upstream_handoff(cfg: dict, context: OpExecutionContext, handoff_dir: str) -> dict[str, str]:
+    """Write one read-only JSON handoff file per declared upstream and return the env-var map
+    ``{AGENTBOX_UPSTREAM_<KEY>: /upstreams/<slug>.json}`` (contract §3, upstream-handoff.schema.json).
+
+    For each ``produces.depends_on`` key: resolve the matching partition
+    (``context.partition_key`` when partitioned, else ``None``), query the latest matching
+    materialization, and write ``<slug>.json`` describing it — ``materialized: false`` with
+    null/empty fields when there is none (FR-012a). Files are ``chmod 0644`` so the non-root
+    container reads them; the dir is mounted read-only at ``/upstreams`` by the caller (FR-013).
+    """
+    depends_on = (cfg.get("produces") or {}).get("depends_on") or []
+    partition = context.partition_key if getattr(context, "has_partition_key", False) else None
+    env: dict[str, str] = {}
+    for k in depends_on:
+        record = _read_upstream_materialization(context, AssetKey(k.split("/")), partition)
+        doc = {
+            "asset_key": k,
+            "partition": partition,
+            "materialized": record is not None,
+            "output_files": record["output_files"] if record else [],
+            "report": record["report"] if record else None,
+            "materialized_at": record["materialized_at"] if record else None,
+            "chain_depth": record["chain_depth"] if record else None,
+            "automated": record["automated"] if record else None,
+        }
+        slug = upstream_key_slug(k)
+        path = os.path.join(handoff_dir, f"{slug}.json")
+        with open(path, "w") as f:
+            json.dump(doc, f)
+        os.chmod(path, 0o644)
+        env[f"AGENTBOX_UPSTREAM_{upstream_env_key(k)}"] = f"/upstreams/{slug}.json"
+    return env
+
+
+def _prepare_upstream_handoff(cfg: dict, context: OpExecutionContext) -> tuple[str | None, dict]:
+    """Create the per-run read-only handoff dir + one JSON file per declared upstream (US2, §3).
+
+    Returns ``(handoff_dir, env_map)`` — ``(None, {})`` when the asset declares no upstreams (no
+    mount is added). The dir lives under ``STAGING_ROOT`` (host==container, the same boundary the
+    pipes/staging dirs use), ``chmod 0777`` so the non-root container can traverse it; the caller
+    ``--rm``-cleans it in ``finally`` and mounts it read-only at ``/upstreams``.
+    """
+    depends_on = (cfg.get("produces") or {}).get("depends_on") or []
+    if not depends_on:
+        return None, {}
+    os.makedirs(STAGING_ROOT, exist_ok=True)
+    handoff_dir = tempfile.mkdtemp(prefix=f"agentbox-upstreams-{context.run_id[:8]}-", dir=STAGING_ROOT)
+    os.chmod(handoff_dir, 0o777)
+    return handoff_dir, build_upstream_handoff(cfg, context, handoff_dir)
+
+
+# --- chain_depth + governors (spec 013 US5, contract orchestrator-model §5/§6) --------------
+
+class GovernorRefusal(Exception):
+    """An automated run refused by a governor (rate or chain depth). Raising ends the run without
+    greening the partition; the run is never tagged ``agentbox/launched``, so it consumes no
+    per-hour slot (FR-014/FR-016, R8)."""
+
+
+# The Dagster run tags that mark an automation-launched run (automation-condition sensor / schedule)
+# — their presence classifies a run as automated; their absence is a manual launch (R8).
+_AUTOMATION_TAG_KEYS = ("dagster/auto_materialize", "dagster/sensor_name", "dagster/schedule_name")
+
+
+def _run_tags(context: OpExecutionContext) -> dict:
+    """The current run's tags, or ``{}`` when unavailable (e.g. a directly-invoked op in a test)."""
+    try:
+        return dict(context.run.tags or {})
+    except Exception:
+        return {}
+
+
+def is_automated_run(context: OpExecutionContext) -> bool:
+    """True when this run was launched by Dagster automation (an automation-condition sensor or a
+    schedule), false for a manual launch (launchpad / GraphQL materialize). Governors apply only to
+    automated runs; manual runs bypass them (FR-017, R8)."""
+    tags = _run_tags(context)
+    return any(k in tags for k in _AUTOMATION_TAG_KEYS)
+
+
+def derive_chain_depth(cfg: dict, context: OpExecutionContext) -> int:
+    """This run's ``chain_depth`` (FR-015, R7): ``max`` of the automated upstreams' recorded
+    ``chain_depth`` + 1, or 1 when there is no automated upstream (a root — schedule/on_missing-
+    initiated, or fired by a manual upstream). Reuses the upstream-materialization read the handoff
+    uses; a manual upstream (``automated`` false) is excluded, so its downstream is a root."""
+    depends_on = (cfg.get("produces") or {}).get("depends_on") or []
+    partition = context.partition_key if getattr(context, "has_partition_key", False) else None
+    depths = []
+    for k in depends_on:
+        rec = _read_upstream_materialization(context, AssetKey(k.split("/")), partition)
+        if rec and rec.get("automated") and isinstance(rec.get("chain_depth"), int):
+            depths.append(rec["chain_depth"])
+    return max(depths) + 1 if depths else 1
+
+
+def record_chain_depth(context: OpExecutionContext, chain_depth: int, automated: bool) -> None:
+    """Tag the run with its ``chain_depth`` + ``automated`` flag for inspection (contract §5).
+
+    The same values are recorded in the materialization metadata (``build_metadata``) so downstreams
+    read them via the handoff query. Best-effort — a tag write must never fail the run."""
+    try:
+        context.instance.add_run_tags(context.run_id, {
+            "agentbox/chain_depth": str(chain_depth),
+            "agentbox/automated": "1" if automated else "0",
+        })
+    except Exception as e:  # pragma: no cover - defensive
+        context.log.warning(f"could not record chain_depth tags: {e}")
+
+
+def _refuse(context: OpExecutionContext, cfg: dict, reason: str, is_asset: bool) -> None:
+    """Refuse an automated run: log it, mark the partition red-with-reason (never greened), and
+    raise ``GovernorRefusal``. The run is NOT tagged ``agentbox/launched``, so it consumes no
+    per-hour slot (contract §6, R8)."""
+    context.log.warning(f"{cfg['name']}: automated run refused — {reason} (manual runs bypass)")
+    if is_asset:
+        context.log_event(AssetObservation(
+            asset_key=AssetKey(cfg["produces"]["asset"].split("/")),
+            partition=context.partition_key if context.has_partition_key else None,
+            metadata={"refused": MetadataValue.text(reason)},
+        ))
+    else:
+        context.add_output_metadata({"refused": MetadataValue.text(reason)})
+    raise GovernorRefusal(reason)
+
+
+def governor_refusal_reason(gov: dict, chain_depth: int, launched_count: int) -> str | None:
+    """The pure governor decision: the refusal reason, or ``None`` to allow (contract §6, FR-014/016).
+
+    Refuse when ``chain_depth`` exceeds ``max_chain_depth`` (depth first), or when at least
+    ``max_runs_per_hour`` automated runs already launched in the trailing 60 minutes.
+    """
+    if chain_depth > gov["max_chain_depth"]:
+        return f"chain_depth {chain_depth} > max_chain_depth {gov['max_chain_depth']}"
+    if launched_count >= gov["max_runs_per_hour"]:
+        return f"max_runs_per_hour {gov['max_runs_per_hour']} reached in the last 60m"
+    return None
+
+
+def _count_recent_launched_automated(context: OpExecutionContext) -> int:
+    """The number of automated runs that actually launched in the trailing 60 minutes (the rolling
+    window count — only ``agentbox/launched`` runs count, so refusals consume no slot)."""
+    since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=60)
+    return len(context.instance.get_run_records(RunsFilter(
+        created_after=since,
+        tags={"agentbox/automated": "1", "agentbox/launched": "1"},
+    )))
+
+
+def governor_gate(context: OpExecutionContext, cfg: dict, chain_depth: int, automated: bool,
+                  is_asset: bool) -> None:
+    """Enforce the two governors at op start, after ``record_chain_depth`` (contract §6, R8).
+
+    Manual runs bypass entirely (FR-017). For an automated run: refuse (log + observation/metadata +
+    raise) when ``governor_refusal_reason`` returns a reason; otherwise tag the run
+    ``agentbox/launched`` BEFORE launch so it counts toward the window. A refused run is never so
+    tagged, so it consumes no per-hour slot.
+    """
+    if not automated:
+        return  # manual bypass (FR-017)
+    gov = governors.load_governors()
+    reason = governor_refusal_reason(gov, chain_depth, _count_recent_launched_automated(context))
+    if reason:
+        _refuse(context, cfg, reason, is_asset)
+    context.instance.add_run_tags(context.run_id, {"agentbox/launched": "1"})
 
 
 def _launch_env_names(cfg: dict, runtime_env: dict) -> list[str]:
@@ -378,11 +658,12 @@ def _launch_env_names(cfg: dict, runtime_env: dict) -> list[str]:
     return sorted(names)
 
 
-def _launch_mounts(cfg: dict, ws: str) -> list[dict]:
+def _launch_mounts(cfg: dict, ws: str, handoff_dir: str | None = None) -> list[dict]:
     """The agent-facing bind mounts of the launch, as ``[{source, target, mode}]`` (FR-009).
 
-    Records the data mounts the agent sees (/output, /workspace, and the api prompt mount) —
-    not the ephemeral capture plumbing (/pipes, /staging), which is not agent-facing config.
+    Records the data mounts the agent sees (/output, /workspace, the api prompt mount, and — when
+    the asset declares upstreams — the read-only /upstreams handoff dir, FR-013) — not the ephemeral
+    capture plumbing (/pipes, /staging), which is not agent-facing config.
     """
     mounts = [{"source": _output_dir(cfg), "target": "/output", "mode": "rw"}]
     if cfg["harness"] in WORKSPACE_HARNESSES:
@@ -392,11 +673,14 @@ def _launch_mounts(cfg: dict, ws: str) -> list[dict]:
             "source": f"{paths.PROMPTS_DIR}/{cfg.get('prompt_file', '')}",
             "target": "/config/prompt.md", "mode": "ro",
         })
+    if handoff_dir is not None:
+        mounts.append({"source": handoff_dir, "target": "/upstreams", "mode": "ro"})
     return mounts
 
 
 def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_id: str,
-                    ws: str, runtime_env: dict, is_asset: bool) -> dict:
+                    ws: str, runtime_env: dict, is_asset: bool, handoff_dir: str | None = None,
+                    upstream_inputs: dict | None = None) -> dict:
     """Build the context snapshot from the launch config (spec 012, R3 orchestrator side).
 
     The instruction files, MCP exposed tools, and completeness statement are the image
@@ -421,9 +705,11 @@ def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_
             "asset_key": str(produces.get("asset") or ""),
             "partition_key": context.partition_key if context.has_partition_key else None,
             "variant": produces.get("variant"),
-            # Handoff inputs from the triggering run (op config), captured verbatim; None when
-            # nothing was handed off, so "no upstream inputs" is distinct from "not captured".
-            "upstream_inputs": ((context.op_config or {}).get("inputs") or None),
+            # Handoff inputs captured as provenance (spec 013 US2/R6): the read-only handoff files
+            # given to the container, keyed by AGENTBOX_UPSTREAM_<KEY> env var → in-container path.
+            # Falls back to op-config `inputs` when nothing was handed off, so "no upstream inputs"
+            # stays distinct from "not captured". The file remains the launch-time transport.
+            "upstream_inputs": (upstream_inputs or (context.op_config or {}).get("inputs") or None),
             "attempt": int(getattr(context, "retry_number", 0) or 0) + 1,
         }
     return run_capture.build_context(
@@ -433,7 +719,7 @@ def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_
         image_ref=image_ref,
         image_digest=_image_digest(image_ref) if image_ref else "",
         env_names=_launch_env_names(cfg, runtime_env),
-        mounts=_launch_mounts(cfg, ws),
+        mounts=_launch_mounts(cfg, ws, handoff_dir),
         network=cfg.get("network", "agentnet"),
         working_dir="/workspace" if cfg["harness"] in WORKSPACE_HARNESSES else None,
         workspace_dir=ws if cfg["harness"] in WORKSPACE_HARNESSES else None,
@@ -448,7 +734,8 @@ def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_
 
 
 def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
-                     session_id: str, ws: str, runtime_env: dict) -> list[str]:
+                     session_id: str, ws: str, runtime_env: dict,
+                     handoff_dir: str | None = None) -> list[str]:
     """Build the full ``docker run`` argv for one agent launch.
 
     Extracted verbatim from the op body so the launch is defined in one place and the
@@ -464,6 +751,10 @@ def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
         "--network", cfg.get("network", "agentnet"),
         "-v", f"{_output_dir(cfg)}:/output",
     ]
+    if handoff_dir is not None:
+        # one read-only handoff file per declared upstream at /upstreams (spec 013, FR-013); the
+        # AGENTBOX_UPSTREAM_<KEY> env vars pointing into it are merged via runtime_env below.
+        cmd += ["-v", f"{handoff_dir}:/upstreams:ro"]
     if cfg["harness"] in PROMPT_MOUNT_HARNESSES:
         # the prompt lives under the config root; the `-v` source is its HOST path (the host
         # daemon resolves bind sources — Docker-outside-of-Docker).
@@ -597,7 +888,8 @@ _ProducerResult = namedtuple(
 def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str],
                   pipes_dir: str, msg_path: str, stamp: str, session_id: str,
                   is_asset: bool, capture: run_capture.RunCapture, staging_dir: str,
-                  launch_context: dict) -> "_ProducerResult":
+                  launch_context: dict, chain_depth: int | None = None,
+                  automated: bool | None = None) -> "_ProducerResult":
     """Launch the producing container and hand back its report + metadata union.
 
     The shared launch+report core (spec 008 FR-013), extracted from ``make_run_op`` so both the
@@ -722,7 +1014,7 @@ def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str
         context.log.warning(f"report capture failed: {e}")
 
     metadata = build_metadata(cfg, report, output_files, log_path, stamp, session_id, context,
-                              run_dir=capture.dir)
+                              run_dir=capture.dir, chain_depth=chain_depth, automated=automated)
     context.log.info(
         f"result: status={report.get('status')} turns={report.get('turns')}"
         f" tokens_in/out={report.get('tokens_in')}/{report.get('tokens_out')}"
@@ -898,7 +1190,6 @@ def make_run_op(cfg: dict):
                 else:
                     os.remove(entry.path)
             context.log.info(f"wiped workspace {ws}")
-        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, runtime_env)
 
         # Whether this op runs bound to an asset (asset-mode via from_op / a materializing
         # job) or as a plain job. The container decides report_asset_materialization vs
@@ -906,12 +1197,28 @@ def make_run_op(cfg: dict):
         # matching channel back. Both agree with cfg's produces block.
         is_asset = bool((cfg.get("produces") or {}).get("asset"))
 
+        # chain_depth + governors (spec 013 US5): classify the run, derive its depth from upstream
+        # materializations, record both, then enforce the governors BEFORE any launch work — a
+        # refused automated run raises GovernorRefusal here, before any run/staging/pipes dir is
+        # created and without a launched tag, so it consumes no slot (R7/R8, contract §5/§6).
+        automated = is_automated_run(context)
+        chain_depth = derive_chain_depth(cfg, context)
+        record_chain_depth(context, chain_depth, automated)
+        governor_gate(context, cfg, chain_depth, automated, is_asset)
+
+        # Upstream handoff (spec 013 US2): one read-only /upstreams/<key>.json per declared upstream
+        # + the AGENTBOX_UPSTREAM_<KEY> env vars, merged into the launch env (FR-011/012/013).
+        handoff_dir, upstream_env = _prepare_upstream_handoff(cfg, context)
+        launch_env = {**runtime_env, **upstream_env}
+        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, launch_env, handoff_dir=handoff_dir)
+
         # Assemble + write the run directory's context.json FIRST (spec 012, contracts/run-directory.md):
         # so the audit record exists even for a crash before the first event. The image context
         # fragment (instruction files, MCP tools, completeness) is merged in after the run (T044).
         capture = run_capture.RunCapture(name, stamp[:10], context.run_id)
         capture.create()
-        launch_context = _launch_context(cfg, context, stamp, session_id, ws, runtime_env, is_asset)
+        launch_context = _launch_context(cfg, context, stamp, session_id, ws, launch_env, is_asset,
+                                         handoff_dir=handoff_dir, upstream_inputs=upstream_env or None)
         capture.write_context(launch_context)
         # Per-run ephemeral staging the image writes events.jsonl + the context fragment to,
         # bind-mounted at /staging (spec 012, T010a). Under STAGING_ROOT ($AGENTBOX_DATA,
@@ -943,7 +1250,7 @@ def make_run_op(cfg: dict):
             ) as session:
                 pr = _run_producer(
                     context, cfg, session, cmd, pipes_dir, msg_path, stamp, session_id, is_asset,
-                    capture, staging_dir, launch_context,
+                    capture, staging_dir, launch_context, chain_depth=chain_depth, automated=automated,
                 )
 
                 if not pr.timed_out and pr.report.get("status") == "ok" and pr.returncode == 0:
@@ -981,10 +1288,14 @@ def make_run_op(cfg: dict):
         finally:
             shutil.rmtree(pipes_dir, ignore_errors=True)
             shutil.rmtree(staging_dir, ignore_errors=True)  # --rm-cleaned staging (T010a)
+            if handoff_dir is not None:
+                shutil.rmtree(handoff_dir, ignore_errors=True)  # --rm-cleaned handoff (US2)
     return run_agent
 
-def build_asset(cfg: dict, file: str | None = None, cron: str | None = None):
-    """Represent an agent that declares `produces` as a Dagster asset (contract §3).
+def build_asset(cfg: dict, file: str | None = None, cron: str | None = None,
+                depends_on: list[str] | None = None, on_upstream: bool = False,
+                on_missing: bool = False):
+    """Represent an agent that declares `produces` as a Dagster asset (contract §3, §1/§2).
 
     Wraps the SAME op ``make_run_op(cfg)`` would build for a job via
     ``AssetsDefinition.from_op`` — the container launch is not re-implemented and the
@@ -993,37 +1304,56 @@ def build_asset(cfg: dict, file: str | None = None, cron: str | None = None):
     omitted attaches none. The partition is a label only — materializing any partition
     (including a past date) launches the identical container (FR-008b).
 
-    When ``cron`` is given (the agent's ``triggers.asset_schedule``), an
-    ``AutomationCondition.on_cron`` is attached to the asset (FR-008). On a daily-partitioned
-    root asset ``on_cron`` targets the latest (current-day) partition per tick (research R5);
-    the operator-facing on/off toggle is the per-asset sensor from
-    ``build_asset_automation_sensor`` (FR-021).
+    ``depends_on`` (spec 013, FR-001) attaches one Dagster dep per upstream asset key — non-arg
+    (the op signature is unchanged; the data handoff is the ``AGENTBOX_UPSTREAM_<KEY>`` file, US2).
+    The asset's automation condition is composed from all asset-kind triggers
+    (``cron``/``on_upstream``/``on_missing``) by ``compose_automation_condition`` and driven by the
+    one paused ``autocond_<name>`` sensor (research R1/R3/R4). On a daily asset, when
+    ``partition_upstream_supported()`` is false the upstream condition is dropped and a load-warning
+    names the asset (R2/FR-007).
     """
     validate_asset_key(cfg, file or cfg.get("name", "<agent>"))
     key = AssetKey(cfg["produces"]["asset"].split("/"))
     partition = (cfg["produces"] or {}).get("partition", "none")
+    partitioned = partition == "daily"
     partitions_def = (
-        DailyPartitionsDefinition(start_date=PARTITION_START_DATE) if partition == "daily" else None
+        DailyPartitionsDefinition(start_date=PARTITION_START_DATE) if partitioned else None
+    )
+    depends_on = depends_on or []
+    if on_upstream and partitioned and not partition_upstream_supported():
+        log.warning(
+            "%s: on_upstream dropped for daily asset %s — partitioned upstream mapping is "
+            "unsupported on this Dagster (AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY); restrict "
+            "on_upstream to unpartitioned assets (R2/FR-007)",
+            file or cfg.get("name", "<agent>"), cfg["produces"]["asset"],
+        )
+    automation_condition = compose_automation_condition(
+        cfg, cron=cron, on_upstream=on_upstream, on_missing=on_missing, partitioned=partitioned
     )
     checks = (cfg["produces"] or {}).get("checks") or []
     if checks:
         # Check-bearing asset: a @multi_asset whose generator op runs the producer AND its checks
         # (from_op cannot declare check_specs — research R1). Checkless assets keep from_op (FR-013).
-        return _build_checked_asset(cfg, key, partitions_def, cron, checks)
+        return _build_checked_asset(cfg, key, partitions_def, checks,
+                                    _spec_deps(depends_on, partitioned), automation_condition)
     the_op = make_run_op(cfg)  # the same op object job-mode would use
-    automation_conditions = (
-        {"result": AutomationCondition.on_cron(cron, cron_timezone=cron_timezone())} if cron else None
+    automation_conditions = {"result": automation_condition} if automation_condition else None
+    # Non-arg deps on the checkless from_op path: internal_asset_deps declares upstream asset keys
+    # the op takes no argument for (from_op has no `deps=`), so any_deps_updated() can react to them.
+    internal_asset_deps = (
+        {"result": {AssetKey(k.split("/")) for k in depends_on}} if depends_on else None
     )
     return AssetsDefinition.from_op(
         the_op,
         keys_by_output_name={"result": key},
         partitions_def=partitions_def,
+        internal_asset_deps=internal_asset_deps,
         automation_conditions_by_output_name=automation_conditions,
     )
 
 
-def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | None,
-                         checks: list):
+def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
+                         deps: list, automation_condition):
     """A check-bearing asset whose one op runs the producer AND its checks (contract §1–§4).
 
     ``from_op`` cannot declare check specs (research R1), and ``@multi_asset`` derives each check's
@@ -1041,9 +1371,6 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
     ``finally``, after the checks have run.
     """
     name = cfg["name"]
-    automation_condition = (
-        AutomationCondition.on_cron(cron, cron_timezone=cron_timezone()) if cron else None
-    )
     # check i -> output "check_<i>" (Dagster-valid) mapped to an AssetCheckSpec keeping the kebab
     # name. `blocking` (default true when omitted) makes a failing check gate downstream automation
     # while the asset still materializes (FR-006, contract §4).
@@ -1084,12 +1411,25 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
                 else:
                     os.remove(entry.path)
             context.log.info(f"wiped workspace {ws}")
-        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, runtime_env)
+
+        # chain_depth + governors (spec 013 US5): a check-bearing asset is always an asset; classify,
+        # derive depth, record, then enforce the governors before any launch work (R7/R8, §5/§6).
+        automated = is_automated_run(context)
+        chain_depth = derive_chain_depth(cfg, context)
+        record_chain_depth(context, chain_depth, automated)
+        governor_gate(context, cfg, chain_depth, automated, True)
+
+        # Upstream handoff (spec 013 US2): one read-only /upstreams/<key>.json per declared upstream
+        # + the AGENTBOX_UPSTREAM_<KEY> env vars, merged into the launch env (FR-011/012/013).
+        handoff_dir, upstream_env = _prepare_upstream_handoff(cfg, context)
+        launch_env = {**runtime_env, **upstream_env}
+        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, launch_env, handoff_dir=handoff_dir)
 
         # Run directory + context.json first (spec 012); the image fragment is merged after the run.
         capture = run_capture.RunCapture(name, stamp[:10], context.run_id)
         capture.create()
-        launch_context = _launch_context(cfg, context, stamp, session_id, ws, runtime_env, True)
+        launch_context = _launch_context(cfg, context, stamp, session_id, ws, launch_env, True,
+                                         handoff_dir=handoff_dir, upstream_inputs=upstream_env or None)
         capture.write_context(launch_context)
         os.makedirs(STAGING_ROOT, exist_ok=True)
         staging_dir = tempfile.mkdtemp(prefix=f"agentbox-staging-{context.run_id[:8]}-", dir=STAGING_ROOT)
@@ -1108,6 +1448,7 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
                 pr = _run_producer(
                     context, cfg, session, cmd, pipes_dir, msg_path, stamp, session_id,
                     True, capture, staging_dir, launch_context,
+                    chain_depth=chain_depth, automated=automated,
                 )
                 # Write the report where the checks can read it: a per-run file under PIPES_ROOT
                 # (host==container shared), bind-mounted read-only at /report.json (R5). 0644 so a
@@ -1151,6 +1492,8 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
         finally:
             shutil.rmtree(pipes_dir, ignore_errors=True)
             shutil.rmtree(staging_dir, ignore_errors=True)  # --rm-cleaned staging (T010a)
+            if handoff_dir is not None:
+                shutil.rmtree(handoff_dir, ignore_errors=True)  # --rm-cleaned handoff (US2)
 
     return AssetsDefinition.dagster_internal_init(
         keys_by_input_name={},
@@ -1163,7 +1506,7 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
         check_specs_by_output_name=check_specs_by_output_name,
         selected_asset_check_keys=None,
         is_subset=False,
-        specs=[AssetSpec(key=key, partitions_def=partitions_def,
+        specs=[AssetSpec(key=key, partitions_def=partitions_def, deps=deps,
                          automation_condition=automation_condition)],
         execution_type=None,
         hook_defs=None,
@@ -1171,12 +1514,15 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
 
 
 def build_asset_automation_sensor(cfg: dict, asset_def: AssetsDefinition):
-    """A per-asset automation-condition sensor for an asset-mode agent with a cron (FR-021).
+    """A per-asset automation-condition sensor for an asset with any asset-kind trigger (FR-021).
 
-    Named ``autocond_<name>`` and STOPPED by default, so an asset's cron is operator-toggleable
+    Named ``autocond_<name>`` and STOPPED by default, so the asset's composed automation condition
+    (any of ``asset_schedule`` / ``on_upstream`` / ``on_missing``, spec 013) is operator-toggleable
     and paused-by-default — the asset-mode parallel to a job schedule's per-schedule toggle
-    (research R4). One sensor per automation asset means Dagster does not also attach its global
-    default automation sensor to it.
+    (research R4). The unchanged name preserves an asset's existing operator toggle when new triggers
+    are added. The gate — *whether* an asset needs this sensor — is ``asset_has_automation_condition``
+    (owned here, one place); ``definitions.discover`` only decides whether to call this. One sensor
+    per automation asset means Dagster does not also attach its global default automation sensor.
     """
     return AutomationConditionSensorDefinition(
         name=f"autocond_{cfg['name'].replace('-', '_')}",
@@ -1228,6 +1574,85 @@ def partition_on_cron_supported() -> bool:
     Automation page's ``fallback`` marker agrees with what the orchestrator wired (research R6).
     """
     return os.environ.get("AGENTBOX_PARTITION_FALLBACK", "").lower() not in ("1", "true", "yes")
+
+
+def partition_upstream_supported() -> bool:
+    """Whether partitioned ``on_upstream`` (the identity daily→daily ``TimeWindowPartitionMapping``)
+    is reliable on the installed Dagster (research R2 / FR-007). True on the pinned 1.13.21 — the
+    primary path, where a today upstream partition drives the today downstream partition.
+
+    Set ``AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY=1`` to force the documented fallback: a daily asset
+    with ``on_upstream`` is loaded WITHOUT its upstream automation condition, the restriction is
+    logged naming the asset, and the README states it. Mirrors the ``partition_on_cron_supported``
+    build-time-check lever. Read at build time so a reload picks up a change.
+    """
+    return os.environ.get("AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY", "").lower() not in ("1", "true", "yes")
+
+
+def compose_automation_condition(cfg: dict, *, cron: str | None, on_upstream: bool,
+                                 on_missing: bool, partitioned: bool):
+    """OR-compose the asset's enabled asset-kind trigger contributions into one AutomationCondition,
+    then AND ``~in_progress()`` so a run already in flight is not re-triggered; return ``None`` when
+    nothing is enabled (contract orchestrator-model §2, research R1/R3/R4).
+
+    - ``asset_schedule`` (``cron``) → ``on_cron(cron, tz)`` (spec 006).
+    - ``on_upstream`` → ``any_deps_updated()`` — but only when the asset is unpartitioned or
+      ``partition_upstream_supported()`` (the daily→daily fallback drops it, R2/FR-007).
+    - ``on_missing`` → ``missing() & in_latest_time_window()`` (never backfills history, R3).
+
+    All three OR-compose behind the single paused ``autocond_<name>`` sensor (FR-010).
+    """
+    parts = []
+    if cron:
+        parts.append(AutomationCondition.on_cron(cron, cron_timezone=cron_timezone()))
+    if on_upstream and (not partitioned or partition_upstream_supported()):
+        # Fire only when a dep newly materialized AND every dep's blocking checks pass: a failed
+        # blocking check on an upstream must not trigger the downstream, and it must fire once that
+        # materialization's blocking checks pass (SC-003 / US1 #2/#3). The producer op still emits a
+        # materialization when a blocking check fails, so any_deps_updated() alone is not enough — the
+        # check gate is required. A dep with no blocking checks trivially passes, so plain upstreams
+        # still fire.
+        parts.append(AutomationCondition.any_deps_updated()
+                     & AutomationCondition.all_deps_blocking_checks_passed())
+    if on_missing:
+        parts.append(AutomationCondition.missing() & AutomationCondition.in_latest_time_window())
+    if not parts:
+        return None
+    cond = parts[0]
+    for p in parts[1:]:
+        cond = cond | p
+    return cond & ~AutomationCondition.in_progress()
+
+
+def asset_has_automation_condition(cfg: dict, *, cron: str | None, on_upstream: bool,
+                                   on_missing: bool, partitioned: bool) -> bool:
+    """The single gate predicate — does this asset have a sensor-driven automation condition? (R4).
+
+    Owned here (beside ``build_asset_automation_sensor``) so the "any asset-kind trigger?" decision
+    lives in one place; ``definitions.discover`` only decides whether to *call*
+    ``build_asset_automation_sensor``, it does not re-implement the check. True iff
+    ``compose_automation_condition`` would build a condition (so a partition-dropped ``on_upstream``
+    that composes nothing does not spuriously create a sensor).
+    """
+    return compose_automation_condition(
+        cfg, cron=cron, on_upstream=on_upstream, on_missing=on_missing, partitioned=partitioned
+    ) is not None
+
+
+def _spec_deps(depends_on: list[str], partitioned: bool) -> list:
+    """The ``AssetSpec.deps`` (check-bearing path) for a set of upstream keys (contract §1).
+
+    Attach the identity daily→daily ``TimeWindowPartitionMapping`` only when the downstream is
+    partitioned and ``partition_upstream_supported()``; otherwise a plain ``AssetDep`` (default
+    mapping). Deps are non-arg — the op signature is unchanged; the handoff file is the data path.
+    """
+    use_mapping = partitioned and partition_upstream_supported()
+    deps = []
+    for k in depends_on:
+        ak = AssetKey(k.split("/"))
+        deps.append(AssetDep(ak, partition_mapping=TimeWindowPartitionMapping()) if use_mapping
+                    else AssetDep(ak))
+    return deps
 
 
 def build_prune_job():

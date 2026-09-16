@@ -192,6 +192,8 @@ def read_agent(stem: str, base_dir: str | None = None) -> dict:
             loaded["partition"] = block["partition"]
         if "checks" in block:
             loaded["checks"] = block["checks"]
+        if "depends_on" in block:
+            loaded["depends_on"] = block["depends_on"]
 
     # Lift the nested `triggers:` block into flat asset_schedule/job_schedule managed fields the
     # same way `produces` is lifted — never routed to "Unmanaged" (contract agent-model §2). An
@@ -203,6 +205,10 @@ def read_agent(stem: str, base_dir: str | None = None) -> dict:
             loaded["asset_schedule"] = block["asset_schedule"]
         if "job_schedule" in block:
             loaded["job_schedule"] = block["job_schedule"]
+        if "on_upstream" in block:
+            loaded["on_upstream"] = block["on_upstream"]
+        if "on_missing" in block:
+            loaded["on_missing"] = block["on_missing"]
 
     # Separate schema-managed keys from unmanaged ones.
     managed: dict = {}
@@ -262,6 +268,36 @@ def list_templates() -> list[dict]:
     return templates
 
 
+def asset_graph(exclude: str | None = None) -> dict[str, list[str]]:
+    """The ``{asset_key: [depends_on...]}`` graph over every asset-declaring instance agent.
+
+    Source for the form's best-effort author-time cross-check (spec 013 §3): existence + cycle
+    checks against the known agent set. ``exclude`` omits one stem (the agent being saved, so its
+    stored edges do not shadow the proposed ones). A missing/unreadable file is skipped, not fatal.
+    """
+    graph: dict[str, list[str]] = {}
+    try:
+        paths = sorted(glob.glob(os.path.join(_agents_dir(), "*.yaml")))
+    except OSError:
+        return graph
+    for path in paths:
+        stem = os.path.splitext(os.path.basename(path))[0]
+        if exclude is not None and stem == exclude:
+            continue
+        try:
+            info = read_agent(stem)
+        except (FileNotFoundError, OSError):
+            continue
+        agent = info.get("agent") or {}
+        asset = agent.get("asset")
+        if isinstance(asset, str) and asset.strip():
+            deps = agent.get("depends_on")
+            graph[asset.strip()] = (
+                [d for d in deps if isinstance(d, str)] if isinstance(deps, list) else []
+            )
+    return graph
+
+
 def _list_view_fields(stem: str, agent: dict) -> dict:
     """Derive the tabbed-list row's kind/crons/checks from a parsed definition.
 
@@ -280,6 +316,14 @@ def _list_view_fields(stem: str, agent: dict) -> dict:
     asset_sched = agent.get("asset_schedule")
     if isinstance(asset_sched, str) and asset_sched.strip():
         crons.append({"type": "asset_schedule", "expr": asset_sched.strip(),
+                      "dagster_name": f"autocond_{dagster_stem}"})
+    # The two asset-kind event triggers (spec 013, FR-020) show as pills on the same paused
+    # autocond_<stem> sensor as asset_schedule; they carry a fixed label (no cron expr).
+    if agent.get("on_upstream") is True:
+        crons.append({"type": "on_upstream", "expr": None, "label": "on upstream",
+                      "dagster_name": f"autocond_{dagster_stem}"})
+    if agent.get("on_missing") is True:
+        crons.append({"type": "on_missing", "expr": None, "label": "on missing",
                       "dagster_name": f"autocond_{dagster_stem}"})
     job_sched = agent.get("job_schedule")
     if isinstance(job_sched, str) and job_sched.strip():
@@ -436,6 +480,13 @@ def _produces_block_lines(agent: dict, harness: str) -> list[str]:
             f"  asset: {_emit_scalar(asset_val)}  # {asset_help}",
             f"  partition: {_emit_scalar(part_val)}  # {part_help}",
         ]
+        # The declared upstream asset keys (spec 013), emitted as a nested sequence beside
+        # asset/partition/checks; written only when non-empty (contract agent-model §4).
+        depends_on = agent.get("depends_on")
+        if isinstance(depends_on, list) and depends_on:
+            lines.append(f"  depends_on:  # {schema.field_help('depends_on', harness)}")
+            for key in depends_on:
+                lines.append(f"    - {_emit_scalar(key)}")
         checks = agent.get("checks")
         if isinstance(checks, list) and checks:
             lines.append(f"  checks:  # {schema.CHECKS_BLOCK_HELP}")
@@ -456,33 +507,44 @@ def _has_value(agent: dict, fid: str) -> bool:
     return not (v is None or (isinstance(v, str) and v.strip() == ""))
 
 
+def _trigger_set(agent: dict, fid: str) -> bool:
+    """Whether a trigger field carries a real value to emit: a non-empty cron, or a True bool.
+
+    ``on_upstream``/``on_missing`` are bools defaulting to false; only a ``True`` value is written
+    (like the other opt-in fields, they are absent when off). Cron fields keep the string rule.
+    """
+    if FIELDS_BY_ID[fid].type == "bool":
+        return agent.get(fid) is True
+    return _has_value(agent, fid)
+
+
 def _triggers_block_lines(agent: dict, harness: str) -> list[str]:
     """The `triggers:` block lines (contract agent-model §2/§5).
 
-    Re-nests the flat ``asset_schedule``/``job_schedule`` fields into a ``triggers:`` block.
-    A schedule whose kind is off (``asset_schedule`` on a non-asset agent, ``job_schedule`` on
-    an agent with no job) is omitted entirely. When at least one applicable schedule is set the
-    block is real (an applicable-but-unset schedule appears as a commented child); when none is
-    set the whole block is emitted commented-out so an author can opt in by uncommenting —
-    mirroring ``_produces_block_lines``.
+    Re-nests the flat ``asset_schedule``/``on_upstream``/``on_missing``/``job_schedule`` fields
+    into a ``triggers:`` block. A trigger whose kind is off (an asset-kind trigger on a non-asset
+    agent, ``job_schedule`` on an agent with no job) is omitted entirely. When at least one
+    applicable trigger is set the block is real (an applicable-but-unset trigger appears as a
+    commented child); when none is set the whole block is emitted commented-out so an author can
+    opt in by uncommenting — mirroring ``_produces_block_lines``.
     """
     header = schema.TRIGGERS_BLOCK_HELP
     is_asset = _has_value(agent, "asset")
     is_job = agent.get("job") is True
     applicable = []
-    if is_asset:
-        applicable.append("asset_schedule")
+    if is_asset:  # the asset-kind triggers (spec 006 asset_schedule + spec 013 on_upstream/on_missing)
+        applicable += ["asset_schedule", "on_upstream", "on_missing"]
     if is_job:
         applicable.append("job_schedule")
     if not applicable:  # neither kind (an invalid agent the emitter still renders defensively)
-        applicable = ["asset_schedule", "job_schedule"]
+        applicable = ["asset_schedule", "on_upstream", "on_missing", "job_schedule"]
 
-    any_set = any(_has_value(agent, fid) for fid in applicable)
+    any_set = any(_trigger_set(agent, fid) for fid in applicable)
     if any_set:
         lines = [f"triggers:  # {header}"]
         for fid in applicable:
             help_text = schema.field_help(fid, harness)
-            if _has_value(agent, fid):
+            if _trigger_set(agent, fid):
                 lines.append(f"  {fid}: {_emit_scalar(agent[fid])}  # {help_text}")
             else:
                 lines.append(f"#  {fid}:  # {help_text}")
@@ -530,6 +592,8 @@ def emit_yaml(agent: dict) -> str:
             agent.setdefault("partition", block["partition"])
         if "checks" in block:
             agent.setdefault("checks", block["checks"])
+        if "depends_on" in block:
+            agent.setdefault("depends_on", block["depends_on"])
     triggers = agent.get("triggers", _MISSING)
     if triggers is not _MISSING:
         block = agent.pop("triggers") if isinstance(triggers, dict) else {}
@@ -537,6 +601,10 @@ def emit_yaml(agent: dict) -> str:
             agent.setdefault("asset_schedule", block["asset_schedule"])
         if "job_schedule" in block:
             agent.setdefault("job_schedule", block["job_schedule"])
+        if "on_upstream" in block:
+            agent.setdefault("on_upstream", block["on_upstream"])
+        if "on_missing" in block:
+            agent.setdefault("on_missing", block["on_missing"])
 
     desc = HARNESS_BY_ID[harness]["description"]
     lines = [f"# {desc}", _HEADER_GENERATED, f"# agentbox-schema: {schema.SCHEMA_VERSION}"]

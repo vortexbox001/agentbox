@@ -36,9 +36,10 @@ skipped; every other agent still loads (FR-010).
 import glob, os, logging, yaml
 from dagster import Definitions
 import paths
+import factory
 from factory import (
     build_job, build_schedule, build_asset, build_materializing_job,
-    build_asset_automation_sensor, validate_asset_key, validate_checks,
+    build_asset_automation_sensor, validate_asset_key, validate_checks, validate_depends_on,
     partition_on_cron_supported, build_prune_job, build_prune_schedule, RejectAgent,
 )
 
@@ -65,6 +66,103 @@ def _triggers(cfg: dict) -> tuple[str | None, str | None]:
     )
 
 
+def _event_triggers(cfg: dict) -> tuple[bool, bool]:
+    """Read ``(on_upstream, on_missing)`` off an agent's ``triggers`` block (spec 013, FR-004/008).
+
+    The two asset-kind event triggers default false (absent ⇒ off); only a value of ``True``
+    enables one. An absent or non-mapping ``triggers`` block yields both off.
+    """
+    block = cfg.get("triggers")
+    if not isinstance(block, dict):
+        return False, False
+    return block.get("on_upstream") is True, block.get("on_missing") is True
+
+
+def _detect_cycles(graph: dict[str, list[str]]) -> tuple[set[str], list[list[str]]]:
+    """DFS over the asset-key graph; return (keys on any cycle, the cycle paths for logging).
+
+    A cycle path names its assets joined by ``->`` (e.g. ``b/x -> c/y -> b/x``). Only edges whose
+    target is itself a produced key are followed — dangling edges are handled separately. Self-loops
+    (an asset depending on itself) are reported as a length-1 cycle.
+    """
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color = {k: WHITE for k in graph}
+    on_cycle: set[str] = set()
+    cycles: list[list[str]] = []
+    stack: list[str] = []
+
+    def dfs(u: str) -> None:
+        color[u] = GRAY
+        stack.append(u)
+        for v in graph.get(u, []):
+            if v not in graph:
+                continue  # dangling — handled by the dangling pass, not a cycle
+            if color[v] == GRAY:
+                i = stack.index(v)
+                cycles.append(stack[i:] + [v])
+                on_cycle.update(stack[i:])
+            elif color[v] == WHITE:
+                dfs(v)
+        stack.pop()
+        color[u] = BLACK
+
+    for k in graph:
+        if color[k] == WHITE:
+            dfs(k)
+    return on_cycle, cycles
+
+
+def _reject_bad_graph(pending_assets: list[tuple], rejected_files: set) -> None:
+    """Reject dangling-ref and cyclic assets (and their dependents) in-place (spec 013 §4).
+
+    Builds the asset-key graph from every surviving pending asset's ``depends_on``, then: (1) rejects
+    any asset naming an unknown upstream key (naming the key); (2) rejects every asset on a cycle
+    (naming the assets); (3) cascades to a fixpoint so an asset whose upstream was rejected is
+    rejected too. Rejected assets are added to ``rejected_files`` so their asset def, sensor, and job
+    are skipped — no automation runs against a bad graph. Every unrelated asset still loads.
+    """
+    surviving = [
+        (file, cfg, list(depends_on))
+        for (file, name, cfg, asset_def, a_s, j_s, is_job, on_up, on_mi, depends_on) in pending_assets
+        if file not in rejected_files
+    ]
+    produced = {cfg["produces"]["asset"] for (file, cfg, deps) in surviving}
+    file_by_key = {cfg["produces"]["asset"]: file for (file, cfg, deps) in surviving}
+    deps_by_key = {cfg["produces"]["asset"]: deps for (file, cfg, deps) in surviving}
+
+    rejected_keys: set[str] = set()
+
+    # 1) Dangling references: an upstream key produced by no surviving asset (FR-002 / US4 #3).
+    for key, deps in deps_by_key.items():
+        for dep in deps:
+            if dep not in produced:
+                log.warning("%s: depends_on names unknown asset key %r", file_by_key[key], dep)
+                rejected_keys.add(key)
+
+    # 2) Cycles: every asset on a cycle, naming the assets in it (FR-003 / US4 #1).
+    on_cycle, cycles = _detect_cycles(deps_by_key)
+    for cycle in cycles:
+        log.warning("dependency cycle: %s", " -> ".join(cycle))
+    rejected_keys |= on_cycle
+
+    # 3) Cascade to a fixpoint: an asset whose upstream was rejected now dangles ⇒ reject too.
+    changed = True
+    while changed:
+        changed = False
+        for key, deps in deps_by_key.items():
+            if key in rejected_keys:
+                continue
+            bad = next((d for d in deps if d in rejected_keys), None)
+            if bad is not None:
+                log.warning("%s: depends_on upstream %r was rejected — cascading rejection",
+                            file_by_key[key], bad)
+                rejected_keys.add(key)
+                changed = True
+
+    for key in rejected_keys:
+        rejected_files.add(file_by_key[key])
+
+
 def discover(agents_glob: str = AGENTS_GLOB) -> dict:
     """Load every enabled agent, classify its nature, and wire it and its triggers.
 
@@ -88,6 +186,7 @@ def discover(agents_glob: str = AGENTS_GLOB) -> dict:
             continue
         file = "agents/" + os.path.basename(path)
         asset_schedule, job_schedule = _triggers(cfg)
+        on_upstream, on_missing = _event_triggers(cfg)
         try:
             # produces.checks are rejected here — without a valid asset, or malformed — before
             # any nature routing, so one bad checks file is skipped by name (FR-010, contract §6).
@@ -102,8 +201,13 @@ def discover(agents_glob: str = AGENTS_GLOB) -> dict:
                 )
             if is_asset:
                 asset_key = validate_asset_key(cfg, file)  # raises RejectAgent, naming the file
-                asset_def = build_asset(cfg, file, cron=asset_schedule)
-                pending_assets.append((file, name, cfg, asset_def, asset_schedule, job_schedule, is_job))
+                # depends_on shape backstop (spec 013, contract §5); existence + acyclicity are
+                # enforced across all agents below once every produced key is known.
+                depends_on = validate_depends_on(cfg, file)
+                asset_def = build_asset(cfg, file, cron=asset_schedule, depends_on=depends_on,
+                                        on_upstream=on_upstream, on_missing=on_missing)
+                pending_assets.append((file, name, cfg, asset_def, asset_schedule, job_schedule,
+                                       is_job, on_upstream, on_missing, depends_on))
                 files_by_key.setdefault(asset_key, []).append(file)
             else:
                 # Job-only: a plain op job, optionally scheduled by its own job_schedule.
@@ -121,21 +225,37 @@ def discover(agents_glob: str = AGENTS_GLOB) -> dict:
     for key, files in dup_keys.items():
         log.warning('asset key "%s" declared by %s — all rejected', key, ", ".join(files))
 
-    for file, name, cfg, asset_def, asset_schedule, job_schedule, is_job in pending_assets:
+    # Dependency graph: reject dangling refs + cycles at load, before any automation runs (spec 013
+    # §4 / FR-002/FR-003 / US4). Only assets that survived the duplicate-key check participate; the
+    # offending assets (and any that transitively depend on them) are skipped and named, while every
+    # unrelated agent still loads (the resilient skip-and-log loader, R5).
+    _reject_bad_graph(pending_assets, rejected_files)
+
+    for (file, name, cfg, asset_def, asset_schedule, job_schedule, is_job,
+         on_upstream, on_missing, depends_on) in pending_assets:
         if file in rejected_files:
             continue
         assets.append(asset_def)
         partition = (cfg.get("produces") or {}).get("partition", "none")
+        partitioned = partition == "daily"
 
         # Partition Null-Action fallback (FR-015): when `on_cron` cannot target the correct
         # partition on the installed Dagster, drive the schedule from a partition-filling job
         # on the asset's materializing job instead of the on_cron sensor.
         fallback = (
-            bool(asset_schedule) and partition == "daily" and not partition_on_cron_supported()
+            bool(asset_schedule) and partitioned and not partition_on_cron_supported()
         )
 
-        if asset_schedule and not fallback:
-            # Primary path: the asset's on_cron condition, toggled by a paused per-asset sensor.
+        # The paused per-asset autocond sensor is created whenever ANY asset-kind trigger drives a
+        # sensor-run automation condition (spec 013, R4) — asset_schedule (outside the on_cron
+        # partition fallback), on_upstream, or on_missing. `factory` owns the gate predicate; here
+        # we only decide whether to call build_asset_automation_sensor. In the on_cron fallback the
+        # cron is driven by a schedule, not the sensor, so it does not count toward the gate.
+        sensor_cron = None if fallback else asset_schedule
+        if factory.asset_has_automation_condition(
+            {"name": name}, cron=sensor_cron, on_upstream=on_upstream, on_missing=on_missing,
+            partitioned=partitioned,
+        ):
             sensors.append(build_asset_automation_sensor({"name": name}, asset_def))
 
         # A both-kind agent has agent_<name> as its materializing job; the fallback also needs
