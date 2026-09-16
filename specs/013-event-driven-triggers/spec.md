@@ -8,6 +8,16 @@
 
 **Input**: User description: "An agent can declare that its asset depends on other assets and be triggered when they change. Upstream outputs are handed to the container. This replaces 'watch a folder' with an explicit graph. `produces.depends_on:` list of asset keys; `triggers:` gains `on_upstream: true` and `on_missing: true` behind the same `autocond_<name>` sensor; partitioned upstream/downstream map one-to-one (daily → daily); at launch the container receives `AGENTBOX_UPSTREAM_<KEY>` pointing at a read-only JSON file listing the upstream's latest materialization for the matching partition; governors in `config/settings.yaml` cap `max_runs_per_hour` (default 12) and `max_chain_depth` (default 5) for automated runs, both editable on the Settings page; `depends_on` cycles are rejected at load naming the assets."
 
+## Clarifications
+
+### Session 2026-09-16
+
+- Q: For a daily-partitioned asset with `on_missing: true`, which never-produced partitions does it materialize? → A: Only the current/latest expected partition (today for daily; the single partition when unpartitioned) — it does not backfill older historical partitions.
+- Q: Is `max_runs_per_hour` enforced over a rolling 60-minute window or a fixed clock hour? → A: A rolling 60-minute window (count of automated launches in the trailing 60 minutes).
+- Q: When a downstream fires but one of its declared upstreams has no materialization for the matching partition, what does that upstream's `AGENTBOX_UPSTREAM_<KEY>` provide? → A: The variable is still present and points at a handoff file whose fields are null/empty, marking "no materialization" for that partition.
+- Q: What `chain_depth` does a root automated run (schedule- or `on_missing`-initiated, or fired by a manual upstream) carry? → A: Root automated run is `chain_depth` 1; each downstream run carries parent's depth + 1.
+- Q: Does an automated run refused by a governor consume a `max_runs_per_hour` slot? → A: No — only runs that actually launch count toward the per-hour cap; refused runs are skipped without consuming a slot.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Fire a downstream asset when its upstream materializes (Priority: P1)
@@ -75,9 +85,10 @@ A's output paths, report metadata, and materialization time for the matching par
 ### User Story 3 - Materialize a partition that has never been produced (Priority: P2)
 
 An operator wants an asset to fill in a partition it has never produced, without wiring it to an
-upstream event. Setting `on_missing: true` makes the asset materialize whenever its partition has
-never been produced. Like `on_upstream`, this is an automation condition on the asset controlled by
-the same paused `autocond_<name>` sensor.
+upstream event. Setting `on_missing: true` makes the asset materialize when its current/latest expected partition
+(today for a daily asset; the single partition for an unpartitioned asset) has never been produced;
+it does not backfill older historical partitions. Like `on_upstream`, this is an automation
+condition on the asset controlled by the same paused `autocond_<name>` sensor.
 
 **Why this priority**: Backfilling never-produced partitions is a distinct, valuable trigger, but
 it is secondary to reacting to upstream changes and is independently testable, so it follows the
@@ -144,7 +155,8 @@ hour, and confirm the third is refused and logged. Separately, chain A → B →
 **Acceptance Scenarios**:
 
 1. **Given** `max_runs_per_hour: 2`, **When** three automated materializations are triggered within
-   one hour, **Then** the third is refused, skipped, and the refusal is visible in the daemon log.
+   one rolling 60-minute window, **Then** the third is refused, skipped, and the refusal is visible
+   in the daemon log.
 2. **Given** `max_chain_depth: 5` and an automated chain A → B → C → D → E → F, **When** the chain
    reaches F (depth 6), **Then** F's automated run is refused and logged.
 3. **Given** an automated run is refused by either governor, **When** an operator triggers the same
@@ -169,7 +181,12 @@ hour, and confirm the third is refused and logged. Separately, chain A → B →
   rejected at load naming the missing key.
 - **Self- or transitive dependency cycle**: Rejected at load with the offending assets named.
 - **Governor refusal**: A refused automated run is logged and skipped, not queued or retried
-  silently; the operator can see it in the daemon log.
+  silently; the operator can see it in the daemon log. A refused run does not consume a
+  `max_runs_per_hour` slot — only runs that actually launch count against the rolling window.
+- **Upstream with no matching-partition materialization**: When a downstream fires from one upstream
+  but another declared upstream has no materialization for the matching partition, that upstream's
+  `AGENTBOX_UPSTREAM_<KEY>` is still set and points at a handoff file marked as "no materialization"
+  (null/empty fields).
 - **Upstream has multiple materializations**: The handoff file reflects the upstream's *latest*
   materialization for the matching partition.
 
@@ -202,7 +219,9 @@ hour, and confirm the third is refused and logged. Separately, chain A → B →
 **Missing-partition trigger (`on_missing`)**
 
 - **FR-008**: `triggers:` MUST accept `on_missing: true` as an asset-kind trigger that materializes
-  the asset for a partition that has never been produced.
+  the asset for its current/latest expected partition (today for a daily asset; the single partition
+  for an unpartitioned asset) when that partition has never been produced. `on_missing` MUST NOT
+  backfill older historical partitions.
 - **FR-009**: `on_missing` MUST be expressed as an automation condition on the asset behind the same
   `autocond_<name>` sensor, MUST start paused, and MUST NOT re-fire for a partition once it exists.
 - **FR-010**: When an asset declares both `on_upstream` and `on_missing`, materialization MUST occur
@@ -216,6 +235,10 @@ hour, and confirm the third is refused and logged. Separately, chain A → B →
 - **FR-012**: Each `AGENTBOX_UPSTREAM_<KEY>` MUST point at a read-only JSON file listing the
   upstream's latest materialization for the matching partition: its output file paths, its report
   metadata, and its materialization time.
+- **FR-012a**: When a declared upstream has no materialization for the matching partition (for
+  example, the downstream fired from a different upstream), its `AGENTBOX_UPSTREAM_<KEY>` variable
+  MUST still be present and MUST point at a handoff file whose materialization fields are null/empty,
+  explicitly marking "no materialization" for that partition.
 - **FR-013**: The handoff file MUST be read-only to the container (a container cannot modify it),
   consistent with agents never reading or modifying prior runs' output except through this
   explicit handoff.
@@ -223,9 +246,14 @@ hour, and confirm the third is refused and logged. Separately, chain A → B →
 **Governors**
 
 - **FR-014**: `config/settings.yaml` MUST support `max_runs_per_hour` (default 12), enforced before
-  launching any automated run; a run that would exceed it MUST be refused, logged, and skipped.
+  launching any automated run against a **rolling 60-minute window** (the count of automated runs
+  launched in the trailing 60 minutes); a run that would exceed it MUST be refused, logged, and
+  skipped. Only runs that actually launch count toward the window; a refused run does not consume a
+  slot.
 - **FR-015**: Every automated run MUST carry a `chain_depth` tag recording how deep in a trigger
-  chain it is.
+  chain it is. A root automated run (one initiated by a schedule or `on_missing`, or fired by a
+  manual upstream) MUST carry `chain_depth` 1; a run fired by an upstream automated run MUST carry
+  that upstream run's `chain_depth` + 1.
 - **FR-016**: `config/settings.yaml` MUST support `max_chain_depth` (default 5); an automated run
   whose `chain_depth` would exceed it MUST be refused and logged.
 - **FR-017**: Manual runs MUST bypass both `max_runs_per_hour` and `max_chain_depth`.
@@ -254,7 +282,8 @@ hour, and confirm the third is refused and logged. Separately, chain A → B →
 - **Run governor**: An instance-level limit in `config/settings.yaml` — `max_runs_per_hour` and
   `max_chain_depth` — applied to automated runs and bypassed by manual runs.
 - **Chain depth**: A tag on each automated run recording how deep in a trigger chain the run sits,
-  compared against `max_chain_depth`.
+  compared against `max_chain_depth`. A root automated run is depth 1; each downstream run is the
+  triggering upstream run's depth + 1.
 
 ## Success Criteria *(mandatory)*
 
@@ -270,9 +299,9 @@ hour, and confirm the third is refused and logged. Separately, chain A → B →
   fixing the check and re-materializing does trigger the downstream.
 - **SC-004**: A dependency cycle or a reference to a non-existent asset is caught at load 100% of the
   time, with the offending assets named, before any automation runs.
-- **SC-005**: With `max_runs_per_hour: 2`, the third automated run within an hour is refused and
-  observable in the daemon log; with `max_chain_depth: 5`, the sixth link in an automated chain is
-  refused.
+- **SC-005**: With `max_runs_per_hour: 2`, the third automated run within any rolling 60-minute
+  window is refused and observable in the daemon log; with `max_chain_depth: 5`, the sixth link in an
+  automated chain is refused.
 - **SC-006**: A manual run always proceeds even when a governor has just refused the equivalent
   automated run.
 
