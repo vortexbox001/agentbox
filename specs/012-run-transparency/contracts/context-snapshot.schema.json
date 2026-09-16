@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "context-snapshot.schema.json",
+  "title": "Context snapshot",
+  "description": "context.json — the frozen record of everything the agent was given at launch (FR-009..012). Orchestrator-authored, with a harness-contributed fragment (instruction_files, mcp_servers[].tools, completeness). Immutable after launch. Every string field passes redaction; env values never appear.",
+  "type": "object",
+  "required": ["prompt", "model", "harness", "tools", "instruction_files", "runtime", "file_trees", "completeness"],
+  "properties": {
+    "prompt": {
+      "type": "object",
+      "required": ["prompt_text"],
+      "properties": {
+        "prompt_text": { "type": "string", "description": "The effective prompt text as sent." },
+        "append_system_prompt": { "type": ["string", "null"], "description": "Appended system-prompt text (incl. the output convention), or null." }
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": ["model"],
+      "properties": {
+        "model": { "type": "string" },
+        "effort": { "type": ["string", "null"] },
+        "fallback_model": { "type": ["string", "null"] }
+      }
+    },
+    "harness": {
+      "type": "object",
+      "required": ["harness", "image_ref", "image_digest"],
+      "properties": {
+        "harness": { "type": "string", "description": "api|pi|claude-code|codex." },
+        "harness_version": { "type": ["string", "null"] },
+        "image_ref": { "type": "string", "description": "The launched image reference, e.g. agentbox/agent-claude:latest." },
+        "image_digest": { "type": "string", "description": "RepoDigest, or local image Id when no repo digest exists (R10)." }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "properties": {
+        "allowed_tools": { "type": ["array", "null"], "items": { "type": "string" } },
+        "disallowed_tools": { "type": ["array", "null"], "items": { "type": "string" } },
+        "permission_mode": { "type": ["string", "null"] },
+        "mcp_servers": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["name", "tools"],
+            "properties": {
+              "name": { "type": "string" },
+              "tools": { "type": "array", "items": { "type": "string" }, "description": "The tools this server exposed (harness-contributed)." }
+            }
+          }
+        }
+      }
+    },
+    "instruction_files": {
+      "type": "array",
+      "description": "Every instruction file the harness loaded, full contents (harness-contributed, FR-009). Empty for harnesses that load none (e.g. api).",
+      "items": {
+        "type": "object",
+        "required": ["path", "contents"],
+        "properties": {
+          "path": { "type": "string" },
+          "contents": { "type": "string" }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["env_names", "mounts", "network", "working_dir"],
+      "properties": {
+        "env_names": { "type": "array", "items": { "type": "string" }, "description": "Environment variable NAMES only — values MUST NOT appear (FR-015)." },
+        "mounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "target", "mode"],
+            "properties": {
+              "source": { "type": "string" },
+              "target": { "type": "string" },
+              "mode": { "enum": ["ro", "rw"] }
+            }
+          }
+        },
+        "network": { "type": "string" },
+        "memory": { "type": ["string", "null"] },
+        "cpus": { "type": ["string", "null"] },
+        "working_dir": { "type": ["string", "null"] }
+      }
+    },
+    "file_trees": {
+      "type": "object",
+      "required": ["workspace", "output"],
+      "description": "The file tree of the workspace and output locations at start, paths + sizes (FR-010).",
+      "properties": {
+        "workspace": { "type": "array", "items": { "$ref": "#/$defs/fileEntry" } },
+        "output": { "type": "array", "items": { "$ref": "#/$defs/fileEntry" } }
+      }
+    },
+    "asset": {
+      "type": ["object", "null"],
+      "description": "Asset runs only (FR-011).",
+      "properties": {
+        "asset_key": { "type": "string" },
+        "partition_key": { "type": ["string", "null"] },
+        "variant": { "type": ["string", "null"] },
+        "upstream_inputs": {},
+        "attempt": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "completeness": {
+      "type": "object",
+      "required": ["complete", "undisclosed", "statement"],
+      "description": "Names anything the harness does not disclose, or states completeness (FR-012).",
+      "properties": {
+        "complete": { "type": "boolean" },
+        "undisclosed": { "type": "array", "items": { "type": "string" }, "description": "e.g. [\"vendor base system prompt\"] for claude-code/codex; [] for pi/api." },
+        "statement": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "fileEntry": {
+      "type": "object",
+      "required": ["path", "size"],
+      "properties": {
+        "path": { "type": "string" },
+        "size": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "additionalProperties": true
+}

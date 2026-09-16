@@ -159,12 +159,18 @@ def stub_launch(monkeypatch, tmp_path):
     directory so the op's transcript write succeeds under test.
     """
     import factory
+    import paths
 
     stub = LaunchStub()
     monkeypatch.setattr(factory.subprocess, "Popen", stub.popen)
-    monkeypatch.setattr(factory.subprocess, "run", stub)  # only the timeout docker kill
+    monkeypatch.setattr(factory.subprocess, "run", stub)  # timeout docker kill + image inspect
     monkeypatch.setattr(factory, "_extract_report", stub.extract_report)
     monkeypatch.setattr(factory, "RUNS_ROOT", str(tmp_path / "runs"))
+    # The run directory (spec 012) is written by run_capture via paths.RUNS_ROOT, and the
+    # per-run staging by factory.STAGING_ROOT — redirect both into the temp dir so an op body
+    # runs end-to-end without writing to /data.
+    monkeypatch.setattr(paths, "RUNS_ROOT", str(tmp_path / "runs"))
+    monkeypatch.setattr(factory, "STAGING_ROOT", str(tmp_path / "staging"))
     # PIPES_ROOT points at /data/dagster in production; redirect it into the temp dir so the
     # op's mkdtemp succeeds under test without writing to /data.
     monkeypatch.setattr(factory, "PIPES_ROOT", str(tmp_path / "pipes"))

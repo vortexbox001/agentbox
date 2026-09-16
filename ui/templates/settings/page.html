@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+
+{% block content %}
+<div class="ax-settings-page">
+  <div class="ax-settings-card" id="ax-retention-card">
+    <h2>Run retention</h2>
+    <p class="ax-settings-desc">
+      Control how long run conversations are kept. Pruning removes only the conversation
+      (events + transcript); each run's report, context snapshot, and output artifacts are always
+      kept, so a pruned run still opens. The nightly job applies this policy.
+    </p>
+    <form id="ax-retention-form">
+      <div class="ax-settings-field">
+        <span class="ax-settings-field-label">Policy</span>
+        {{ ui.select(name="mode", id="ax-retention-mode", value=retention.mode, options=[
+            {"value": "keep_forever", "label": "Keep forever"},
+            {"value": "prune_after_days", "label": "Prune after N days"}
+        ]) }}
+      </div>
+      <div class="ax-settings-field" id="ax-retention-days-field"{% if retention.mode != "prune_after_days" %} hidden{% endif %}>
+        <span class="ax-settings-field-label">Days to keep</span>
+        {{ ui.text_input(name="days", id="ax-retention-days", type="number",
+                         value=(retention.days if retention.days is not none else 30)) }}
+      </div>
+      <div class="ax-settings-actions">
+        {{ ui.button(label="Save", intent="primary", type="submit", attrs={"id": "ax-retention-save"}) }}
+        <span class="ax-settings-status" id="ax-retention-status" aria-live="polite"></span>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{# settings.js is already loaded by base.html; it wires the retention form when present. #}

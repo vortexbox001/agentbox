@@ -83,7 +83,31 @@ def litellm_cfg(tmp_path):
 
 
 @pytest.fixture
-def settings(monkeypatch, tmp_agents, tmp_prompts, tmp_templates, litellm_cfg):
+def tmp_runs(tmp_path):
+    """An empty run tree standing in for $AGENTBOX_DATA/runs (spec 012 viewer source).
+
+    Tests that exercise the run viewer seed run directories under here; the default is empty
+    so a suite that never touches runs still gets a clean, isolated root (never the real data
+    root). Shape: ``<agent>/<YYYY-MM-DD>/<run-id>/{context,report}.json + {events,transcript}.jsonl``.
+    """
+    dest = tmp_path / "runs"
+    dest.mkdir()
+    return dest
+
+
+@pytest.fixture
+def tmp_settings_file(tmp_path):
+    """A temp settings.yaml path standing in for config/settings.yaml (spec 012).
+
+    Absent by default (settings_store treats a missing file as all-defaults); a test writes it
+    to exercise retention persistence.
+    """
+    return tmp_path / "settings.yaml"
+
+
+@pytest.fixture
+def settings(monkeypatch, tmp_agents, tmp_prompts, tmp_templates, litellm_cfg,
+             tmp_runs, tmp_settings_file):
     """Point ui/config.py at the temp stores for the duration of a test."""
     import config
 
@@ -91,6 +115,8 @@ def settings(monkeypatch, tmp_agents, tmp_prompts, tmp_templates, litellm_cfg):
     monkeypatch.setattr(config, "PROMPTS_DIR", str(tmp_prompts))
     monkeypatch.setattr(config, "TEMPLATES_DIR", str(tmp_templates))
     monkeypatch.setattr(config, "LITELLM_RENDERED", str(litellm_cfg))
+    monkeypatch.setattr(config, "RUNS_DIR", str(tmp_runs))
+    monkeypatch.setattr(config, "SETTINGS_FILE", str(tmp_settings_file))
     # The path-validation rule (US5, FR-025) resolves the data/product roots from config.
     # The test corpus uses the generic `/data/...` layout for output_dir/workspace/env_file,
     # so point the data root at `/data` (blessing those paths) and the product tree at the real
@@ -125,9 +151,12 @@ def dagster_stub(monkeypatch):
         activity_result = {"reachable": True, "agents": {}}
         set_instigation_result = {"ok": True, "running": True, "message": ""}
         set_instigation_calls = None
+        launch_result = {"ok": True, "run_id": "run-abc123", "message": ""}
+        launch_calls = None
 
     stub = Stub()
     stub.set_instigation_calls = []
+    stub.launch_calls = []
 
     async def fake_reload():
         return stub.reload_result
@@ -142,8 +171,13 @@ def dagster_stub(monkeypatch):
         stub.set_instigation_calls.append({"kind": kind, "name": name, "running": running})
         return stub.set_instigation_result
 
+    async def fake_launch(cfg):
+        stub.launch_calls.append(dict(cfg))
+        return stub.launch_result
+
     monkeypatch.setattr(dagster, "reload", fake_reload)
     monkeypatch.setattr(dagster, "status", fake_status)
     monkeypatch.setattr(dagster, "activity", fake_activity)
     monkeypatch.setattr(dagster, "set_instigation", fake_set_instigation)
+    monkeypatch.setattr(dagster, "launch", fake_launch)
     return stub

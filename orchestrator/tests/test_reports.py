@@ -35,12 +35,13 @@ def _materialization_metadata(result):
 
 def test_launch_isolation_preserved_except_pipes_additions(tmp_path, stub_launch, monkeypatch):
     """The launched ``docker run`` argv is byte-for-byte the pre-feature argv EXCEPT
-    for exactly the ``-v <pipes>:/pipes`` mount and the two ``-e DAGSTER_PIPES_*``
-    env vars (contract §4). No prior isolation flag is removed, reordered, or altered.
+    for exactly the ``-v <pipes>:/pipes`` + ``-v <staging>:/staging`` mounts and the two
+    ``-e DAGSTER_PIPES_*`` env vars (contract §4 + spec 012 T010a). No prior isolation
+    flag is removed, reordered, or altered.
     """
     monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
 
-    # spy on the pre-feature argv builder: it produces the launch WITHOUT any Pipes
+    # spy on the pre-feature argv builder: it produces the launch WITHOUT any capture
     # additions (those are layered on by the op).
     captured = {}
     orig = factory._build_agent_cmd
@@ -58,29 +59,94 @@ def test_launch_isolation_preserved_except_pipes_additions(tmp_path, stub_launch
     base = captured["base"]
     launched = stub_launch.cmd
 
-    # the pre-feature argv carries none of the Pipes additions
+    # the pre-feature argv carries none of the capture additions
     assert not any(":/pipes" in a for a in base)
+    assert not any(":/staging" in a for a in base)
     assert not any("DAGSTER_PIPES" in a for a in base)
 
-    # the three additions, taken from the launched argv
+    # the four additions, taken from the launched argv (spec 012 adds the staging mount)
     pipes_flags = [
         "-v", next(a for a in launched if a.endswith(":/pipes")),
+        "-v", next(a for a in launched if a.endswith(":/staging")),
         "-e", next(a for a in launched if a.startswith("DAGSTER_PIPES_CONTEXT=")),
         "-e", next(a for a in launched if a.startswith("DAGSTER_PIPES_MESSAGES=")),
     ]
 
-    # the launched argv is EXACTLY the base with those three additions inserted
-    # immediately before the image name — nothing else differs.
+    # the launched argv is EXACTLY the base with those additions inserted immediately
+    # before the image name — nothing else differs.
     img_idx = next(i for i, a in enumerate(base) if a.startswith("agentbox/"))
     assert launched == base[:img_idx] + pipes_flags + base[img_idx:]
-    assert len(launched) == len(base) + 6  # one mount + two env vars
+    assert len(launched) == len(base) + 8  # two mounts + two env vars
 
-    # the Pipes messages mount is distinct from the immutable /output mount (Constitution V)
+    # the capture mounts are distinct from the immutable /output mount (Constitution V)
     assert f"{cfg['output_dir']}:/output" in launched
     assert not any(a.endswith(":/output") and ":/pipes" in a for a in launched)
+    assert not any(a.endswith(":/output") and ":/staging" in a for a in launched)
+    # T010a invariant: the staging source resolves under $AGENTBOX_DATA (STAGING_ROOT), never /tmp
+    staging_mount = next(a for a in launched if a.endswith(":/staging"))
+    staging_src = staging_mount[: -len(":/staging")]
+    # under STAGING_ROOT (which resolves under $AGENTBOX_DATA in production, not container /tmp —
+    # paths.STAGING_ROOT is pinned under DATA_ROOT by the paths tests; here it is redirected to tmp).
+    assert staging_src.startswith(factory.STAGING_ROOT + "/")
     # a representative sample of preserved isolation flags
     for flag in ("--rm", "--name", "--network", "--memory", "--cpus"):
         assert flag in launched
+
+
+def test_staging_dir_removed_after_run(tmp_path, stub_launch, monkeypatch):
+    """The per-run staging dir is --rm-cleaned: nothing survives under STAGING_ROOT (T010a)."""
+    import os
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    cfg = _api_cfg(tmp_path)
+    assert materialize([factory.build_asset(cfg)], partition_key="2026-09-09").success
+    leftover = []
+    if os.path.isdir(factory.STAGING_ROOT):
+        leftover = os.listdir(factory.STAGING_ROOT)
+    assert leftover == [], f"staging dirs survived the run: {leftover}"
+
+
+def test_run_directory_written_with_four_files_metadata_link(tmp_path, stub_launch, monkeypatch):
+    """A successful run writes the run directory and links it in metadata (spec 012 FR-001/002)."""
+    import json
+    import os
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    cfg = _api_cfg(tmp_path)
+    os.makedirs(cfg["output_dir"], exist_ok=True)
+    result = materialize([factory.build_asset(cfg)], partition_key="2026-09-09")
+    md = _materialization_metadata(result)
+    assert "run_dir" in md
+    run_dir = str(md["run_dir"].value)
+    assert os.path.isdir(run_dir)
+    # context.json + report.json are always written; transcript.jsonl was streamed.
+    assert os.path.isfile(os.path.join(run_dir, "context.json"))
+    assert os.path.isfile(os.path.join(run_dir, "report.json"))
+    assert os.path.isfile(os.path.join(run_dir, "transcript.jsonl"))
+    # context.json is schema-shaped and records the harness + image ref
+    ctx = json.load(open(os.path.join(run_dir, "context.json")))
+    assert ctx["harness"]["harness"] == "api"
+    assert ctx["runtime"]["env_names"]  # names captured, values never
+    # the report co-located in the run dir carries the run's transcript path
+    rep = json.load(open(os.path.join(run_dir, "report.json")))
+    assert rep["status"] == "ok"
+    assert rep["transcript_path"].endswith("transcript.jsonl")
+
+
+def test_timeout_still_writes_context_and_report(tmp_path, stub_launch, monkeypatch):
+    """On a timeout the orchestrator authors the report and the run dir still has context+report
+    (spec 012 FR-001; the failed/timed-out asset run is recorded, not thrown away)."""
+    import json
+    import os
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    stub_launch.timeout = True
+    cfg = _api_cfg(tmp_path)
+    result, obs, _instance = _materialize_expecting_failure(cfg)
+    assert not result.success
+    assert obs, "no asset observation for the timed-out run"
+    md = obs[0].metadata
+    run_dir = str(md["run_dir"].value)
+    assert os.path.isfile(os.path.join(run_dir, "context.json"))
+    rep = json.load(open(os.path.join(run_dir, "report.json")))
+    assert rep["status"] == "timeout"
 
 
 # --- FR-004/FR-005: the metadata union (T014) -------------------------------

@@ -116,3 +116,34 @@ def assert_report_valid(report: dict) -> None:
 def report_validator():
     """Expose :func:`assert_report_valid` as a fixture for parser tests."""
     return assert_report_valid
+
+
+# contracts/normalized-event.schema.json (spec 012) — for the per-harness to_events() tests.
+EVENT_SCHEMA_PATH = (
+    IMAGES_DIR.parent
+    / "specs" / "012-run-transparency" / "contracts" / "normalized-event.schema.json"
+)
+
+
+def assert_event_valid(evt: dict) -> None:
+    """Validate one normalized event against normalized-event.schema.json (required keys, the
+    kind enum, per-kind conditionals, numeric null-not-bool). Dependency-free."""
+    schema = json.load(open(EVENT_SCHEMA_PATH))
+    for req in schema["required"]:
+        assert req in evt, f"missing required key {req}"
+    assert evt["kind"] in schema["properties"]["kind"]["enum"], evt["kind"]
+    assert isinstance(evt["turn"], int) and evt["turn"] >= 0
+    assert isinstance(evt["ts"], str) and evt["ts"]
+    if evt["kind"] == "tool_call":
+        assert "tool" in evt and isinstance(evt.get("args"), dict)
+    if evt["kind"] in ("system", "user", "assistant", "final", "error"):
+        assert isinstance(evt.get("text"), str)
+    for k in ("tokens_in", "tokens_out"):
+        if evt.get(k) is not None:
+            assert isinstance(evt[k], int) and not isinstance(evt[k], bool)
+
+
+@pytest.fixture
+def event_validator():
+    """Expose :func:`assert_event_valid` as a fixture for to_events() tests."""
+    return assert_event_valid

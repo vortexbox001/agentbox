@@ -90,8 +90,8 @@ owner-only (`chmod 700`).
 
 | Subpath | Holds |
 |---|---|
-| `runs/<agent>/<YYYY-MM-DD>/<run-id>.jsonl` | Container stdout for every run: the full Claude Code event stream for `claude-code` runs, a one-line JSON status for `api` runs (empty if the runner failed before printing it; see compute logs) |
-| `outputs/<agent>/` | Files agents write (mounted as `/output`), named `<YYYY-MM-DD_HH-MM>_<descriptive_name>_<session_id>.md`; the default `output_dir` |
+| `runs/<agent>/<YYYY-MM-DD>/<run-id>/` | One directory per run (spec 012), holding `transcript.jsonl` (native container stdout — the full Claude Code event stream, a one-line JSON status for `api`), `events.jsonl` (the harness-agnostic normalized event stream the viewer's Conversation tab renders), `context.json` (the frozen launch snapshot), and `report.json` (the spec-007 run report). Secrets are redacted from all three captured files; env values never touch disk. A pre-012 flat `<run-id>.jsonl` is still read as a transcript-only run |
+| `outputs/<agent>/` | Files agents write (mounted as `/output`), named `<YYYY-MM-DD_HH-MM>_<descriptive_name>_<session_id>.md`; the default `output_dir`. Never pruned by retention |
 | `workspaces/<agent>/` | Persistent scratch dir for `claude-code`, `pi`, and `codex` agents (mounted as `/workspace`); the default `workspace` |
 | `credentials/claude/` | Optional `.claude.json` (CLI settings) and, only without `CLAUDE_CODE_OAUTH_TOKEN`, a copied `.credentials.json` |
 | `credentials/codex/` | `CODEX_HOME` for the `codex` harness: `auth.json` from a dedicated ChatGPT login, plus codex config and sessions. Mounted read-write |
@@ -490,16 +490,26 @@ Given a Dagster run id:
   ```
 - **Full transcript** for `claude-code` runs, one JSON event per line (`system`, `assistant`, `user`,
   final `result`; for `pi` runs the events are pi's own, ending in `agent_end`; for `codex` runs they are
-  codex's `thread.*`, `turn.*`, and `item.*` events). Transcripts live under the data root's `runs/`
-  (a migrated box also keeps a `$DAGSTER_HOME/agent-logs` symlink pointing here):
+  codex's `thread.*`, `turn.*`, and `item.*` events). Each run is a **directory** under the data
+  root's `runs/` (spec 012); the transcript is the `transcript.jsonl` inside it, alongside
+  `events.jsonl`, `context.json`, and `report.json` (a migrated box also keeps a
+  `$DAGSTER_HOME/agent-logs` symlink pointing at `runs/`):
   ```bash
   # whole transcript
-  cat "$AGENTBOX_DATA"/runs/<agent>/<YYYY-MM-DD>/<run-id>.jsonl
+  cat "$AGENTBOX_DATA"/runs/<agent>/<YYYY-MM-DD>/<run-id>/transcript.jsonl
   # just the final event, pretty-printed
-  tail -n 1 "$AGENTBOX_DATA"/runs/<agent>/<YYYY-MM-DD>/<run-id>.jsonl | python3 -m json.tool
+  tail -n 1 "$AGENTBOX_DATA"/runs/<agent>/<YYYY-MM-DD>/<run-id>/transcript.jsonl | python3 -m json.tool
   ```
-  The Dagster log itself shows only the final event plus the transcript path.
-- **GraphQL** at `http://<host>:3000/graphql` for status and events, or the run page in the UI.
+  The Dagster log itself streams every stdout line live and logs a one-line result summary.
+- **GraphQL** at `http://<host>:3000/graphql` for status and events, or the run page in the UI
+  (`/runs` lists runs from disk; `/runs/<run-id>` opens the Conversation / Context / Report / Files
+  tabs — see Run retention below).
+- **Run retention.** By default every run is kept forever. The **Settings** page has a Retention
+  section (keep forever / prune after N days) persisted to `$AGENTBOX_CONFIG/settings.yaml`; a
+  nightly Dagster schedule (`sched_prune_runs`) then removes only `events.jsonl` +
+  `transcript.jsonl` from run directories past the horizon. `report.json`, `context.json`, and the
+  run's `/output` artifacts are **always kept**, so a pruned run still opens (its Conversation tab
+  shows a "conversation pruned" note).
 
 ## Repository layout
 

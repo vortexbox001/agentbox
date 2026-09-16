@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+
+{% block content %}
+{% if not a_found or not b_found %}
+<div class="ax-cmp-empty">
+  Provide two runs to compare, e.g. <code class="ax-inline-code">/runs/compare?a=&lt;run-a&gt;&amp;b=&lt;run-b&gt;</code>.
+  {% if a_id and not a_found %}<br>Run <code class="ax-inline-code">{{ a_id }}</code> was not found.{% endif %}
+  {% if b_id and not b_found %}<br>Run <code class="ax-inline-code">{{ b_id }}</code> was not found.{% endif %}
+</div>
+{% else %}
+<div class="ax-cmp">
+  <div class="ax-cmp-head">
+    <span>Field</span>
+    <span>{{ a_id[:8] }}</span>
+    <span>{{ b_id[:8] }}</span>
+  </div>
+  {% if not rows %}
+  <div class="ax-cmp-empty">No differences — the two context snapshots are identical.</div>
+  {% else %}
+  {% for r in rows %}{{ ui.compare_row(path=r.path, a=r.a, b=r.b, state=r.state) }}{% endfor %}
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

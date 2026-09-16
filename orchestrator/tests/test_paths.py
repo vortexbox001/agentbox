@@ -125,6 +125,34 @@ def test_relocated_roots_land_every_derived_path_under_its_root(monkeypatch):
         assert os.path.join(p.PRODUCT_ROOT, "config") not in d, d
 
 
+# --- Run-directory helpers (spec 012, contracts/run-directory.md) ------------
+
+def test_run_dir_is_agent_date_runid_under_runs_root(monkeypatch):
+    p = reload_paths(monkeypatch, AGENTBOX_DATA="/mnt/state")
+    d = p.run_dir("hello", "2026-09-15", "abc-123")
+    assert d == "/mnt/state/runs/hello/2026-09-15/abc-123"
+    assert d.startswith(p.RUNS_ROOT + os.sep)
+
+
+def test_run_file_composes_each_of_the_four_files(monkeypatch):
+    p = reload_paths(monkeypatch, AGENTBOX_DATA="/mnt/state")
+    base = p.run_dir("hello", "2026-09-15", "abc-123")
+    assert p.RUN_TRANSCRIPT == "transcript.jsonl"
+    assert p.RUN_EVENTS == "events.jsonl"
+    assert p.RUN_CONTEXT == "context.json"
+    assert p.RUN_REPORT == "report.json"
+    for fn in (p.RUN_TRANSCRIPT, p.RUN_EVENTS, p.RUN_CONTEXT, p.RUN_REPORT):
+        assert p.run_file("hello", "2026-09-15", "abc-123", fn) == os.path.join(base, fn)
+
+
+def test_legacy_transcript_is_the_flat_form(monkeypatch):
+    # Backward compat: the pre-012 flat transcript is a sibling .jsonl, not a directory (R1).
+    p = reload_paths(monkeypatch, AGENTBOX_DATA="/mnt/state")
+    legacy = p.legacy_transcript("hello", "2026-09-15", "abc-123")
+    assert legacy == "/mnt/state/runs/hello/2026-09-15/abc-123.jsonl"
+    assert legacy == p.run_dir("hello", "2026-09-15", "abc-123") + ".jsonl"
+
+
 # --- host-path bridge (contract §2, R-PR-4 support) --------------------------
 
 def test_host_path_rewrites_product_tree_only(monkeypatch):

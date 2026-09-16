@@ -9,6 +9,9 @@
 
 {% block actions %}
   {% if mode == "edit" %}
+  {{ ui.button(label=("Materialize" if dagster_kind == "asset" else "Launch run"),
+               intent="dagster", icon="refresh",
+               attrs={"id": "ax-launch-btn", "data-stem": stem}) }}
   {{ ui.button(label="Dagster " ~ dagster_kind, intent="ghost", icon="external",
                href="" ~ dagster_url ~ dagster_path,
                attrs={"target": "_blank", "rel": "noopener", "id": "ax-job-link"}) }}

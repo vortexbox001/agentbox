@@ -17,9 +17,10 @@
 #}
 
 {# ── Button (Button.d.ts) ─────────────────────────────────
-   intent maps to ax-btn--{intent}: primary (default), ghost, danger, success, warning.
-   `loading` renders the spinner; `icon`/`right_icon` are icons.svg sprite names. An `href`
-   renders the anchor variant (styled identically) for link-as-button; otherwise a native button. #}
+   intent maps to ax-btn--{intent}: primary (default), ghost, danger, success, warning, and
+   dagster (the outlined indigo action that opens Dagster — spec 012 R9). `loading` renders the
+   spinner; `icon`/`right_icon` are icons.svg sprite names. An `href` renders the anchor variant
+   (styled identically) for link-as-button; otherwise a native button. #}
 {% macro button(label="", intent="primary", outlined=false, disabled=false, loading=false,
                 icon=none, right_icon=none, type="button", href=none, attrs={}) -%}
 {%- set inner %}
@@ -181,4 +182,110 @@
     <span class="ax-toggle-track" aria-hidden="true"></span>
   </label>
 </span>
+{%- endmacro %}
+
+{# ── timeline / timeline_entry (spec 012, Conversation tab) ──
+   A chat-style transcript. `timeline` wraps entries; `timeline_entry` is one turn: a gutter dot
+   (state error → red) + a label (role + meta) and the body (message + tool cards) via {% call %}. #}
+{% macro timeline(attrs={}) -%}
+<div class="ax-timeline"{{ attrs|xmlattr }}>{% if caller %}{{ caller() }}{% endif %}</div>
+{%- endmacro %}
+
+{% macro timeline_entry(role="", meta=none, state=none, attrs={}) -%}
+<div class="ax-entry" data-entry{{ attrs|xmlattr }}>
+  <div class="ax-entry-gutter"><span class="ax-entry-dot"{% if state %} data-state="{{ state }}"{% endif %}></span><span class="ax-entry-line"></span></div>
+  <div class="ax-entry-body">
+    <div class="ax-entry-label"><b>{{ role }}</b>{% if meta %}<span class="ax-entry-meta">· {{ meta }}</span>{% endif %}</div>
+    {% if caller %}{{ caller() }}{% endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{# ── tool_call (collapsible) ──────────────────────────────
+   A tool invocation card: a clickable head (dot + name + arg summary + optional exit tag) and a
+   body (result / diff) via {% call %}. run-detail.js toggles `.is-collapsed` on click. `missing`
+   marks a result the harness could not produce faithfully (FR-008/FR-021). #}
+{% macro tool_call(tool="", arg=none, exit=none, state=none, missing=false, collapsed=false, attrs={}) -%}
+<div class="ax-tool{% if collapsed %} is-collapsed{% endif %}" data-tool{{ attrs|xmlattr }}>
+  <div class="ax-tool-head" data-tool-toggle role="button" tabindex="0" aria-expanded="{{ 'false' if collapsed else 'true' }}">
+    <span class="ax-tool-dot"{% if state %} data-state="{{ state }}"{% endif %}></span>
+    <span class="ax-tool-name">{{ tool }}</span>
+    {%- if arg %}<span class="ax-tool-arg">{{ arg }}</span>{% endif %}
+    {%- if exit is not none %}<span class="ax-tool-exit">exit {{ exit }}</span>{% endif %}
+  </div>
+  {%- if missing %}<div class="ax-tool-missing">result not captured — recorded as missing (FR-021)</div>{% endif %}
+  {%- if caller %}{{ caller() }}{% endif %}
+</div>
+{%- endmacro %}
+
+{# ── diff_block ───────────────────────────────────────────
+   Renders unified-diff text with +/- lines coloured (FR-020). `fail` tints a failed tool result. #}
+{% macro diff_block(diff, fail=false) -%}
+<div class="ax-tool-out{% if fail %} ax-tool-out--fail{% endif %}">{% for line in diff.split("\n") %}{% if line.startswith("+") %}<span class="ax-diff-add">{{ line }}</span>{% elif line.startswith("-") %}<span class="ax-diff-del">{{ line }}</span>{% else %}<span>{{ line }}</span>{% endif %}
+{% endfor %}</div>
+{%- endmacro %}
+
+{# ── tool_out ─────────────────────────────────────────────  a plain (non-diff) tool result body. #}
+{% macro tool_out(text, fail=false) -%}
+<div class="ax-tool-out{% if fail %} ax-tool-out--fail{% endif %}">{{ text }}</div>
+{%- endmacro %}
+
+{# ── context_section / context_kv / env_pill (spec 012, Context tab) ──
+   context_section groups key/value rows under a heading (optional right-aligned note); context_kv
+   is one key/value row (mono/dim modifiers; a None value renders the em-dash placeholder);
+   env_pill is an environment-variable NAME chip (values are never captured — FR-015), tinted when
+   the name looks secret-like. #}
+{% macro context_section(title="", note=none, attrs={}) -%}
+<div class="ax-run-section"{{ attrs|xmlattr }}>
+  <div class="ax-run-section-title">{{ title }}{% if note %}<span class="ax-run-section-note">{{ note }}</span>{% endif %}</div>
+  {% if caller %}{{ caller() }}{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro context_kv(key="", value=none, mono=false, dim=false) -%}
+<div class="ax-run-kv"><span class="ax-run-kv-key">{{ key }}</span><span class="ax-run-kv-val{% if mono %} ax-mono{% endif %}{% if dim %} ax-dim{% endif %}">{{ value if (value is not none and value != "") else "—" }}</span></div>
+{%- endmacro %}
+
+{% macro env_pill(name="", secret=false) -%}
+<span class="ax-env-pill"{% if secret %} data-secret{% endif %}>{{ name }}</span>
+{%- endmacro %}
+
+{# ── file_row (spec 012, Files tab) ──────────────────────
+   One output artifact: name + size + preview/download actions. `previewable` shows Preview
+   (text artifacts open in-browser); Download always serves the raw file (FR-019a). #}
+{% macro file_row(name="", size=none, href=none, previewable=false, attrs={}) -%}
+<div class="ax-file-row"{{ attrs|xmlattr }}>
+  <span class="ax-file-name">{{ name }}</span>
+  <span class="ax-file-size">{{ size if size is not none else "" }}</span>
+  <span class="ax-file-actions">
+    {%- if previewable and href %}{{ button(label="Preview", intent="ghost", outlined=true, icon="eye", href=href, attrs={"target": "_blank", "rel": "noopener"}) }}{% endif %}
+    {%- if href %}{{ button(label="Download", intent="ghost", outlined=true, href=href ~ "?download=1", attrs={"download": name}) }}{% endif %}
+  </span>
+</div>
+{%- endmacro %}
+
+{# ── compare_row (spec 012, Compare view) ────────────────
+   One field-by-field diff row: the field path + its value on each side, coloured by state
+   (removed→a red, added→b green, changed→both). A missing side renders the em-dash. #}
+{% macro compare_row(path="", a=none, b=none, state="changed", attrs={}) -%}
+<div class="ax-cmp-row"{{ attrs|xmlattr }}>
+  <span class="ax-cmp-path">{{ path }}</span>
+  <span class="ax-cmp-val{% if state in ('changed', 'removed') %} ax-cmp-val--a{% endif %}">{{ a if a is not none else "—" }}</span>
+  <span class="ax-cmp-val{% if state in ('changed', 'added') %} ax-cmp-val--b{% endif %}">{{ b if b is not none else "—" }}</span>
+</div>
+{%- endmacro %}
+
+{# ── run_stat_strip (spec 012, run-detail) ───────────────
+   The horizontal stat strip on the run-detail header. `stats`: list of {label, value, sub?} —
+   `sub` renders as a dimmed suffix (e.g. "5 / 40"). A None value renders the em-dash placeholder
+   so a null numeric stays distinct from 0. #}
+{% macro run_stat_strip(stats=[], attrs={}) -%}
+<div class="ax-run-stats"{{ attrs|xmlattr }}>
+{%- for s in stats %}
+  <div class="ax-run-stat">
+    <span class="ax-run-stat-label">{{ s.label }}</span>
+    <span class="ax-run-stat-value">{{ s.value if s.value is not none else "—" }}{% if s.sub %} <span class="ax-dim">{{ s.sub }}</span>{% endif %}</span>
+  </div>
+{%- endfor %}
+</div>
 {%- endmacro %}

@@ -96,9 +96,59 @@ export function openSettings() {
   return close;
 }
 
+// Retention section on the /settings page (spec 012 US5). Toggles the days field with the mode,
+// and saves via POST /api/settings/retention (the page also works without JS via a full submit).
+function initRetention() {
+  const form = document.getElementById("ax-retention-form");
+  if (!form) return;
+  const mode = form.querySelector("#ax-retention-mode");
+  const daysField = document.getElementById("ax-retention-days-field");
+  const daysInput = form.querySelector("#ax-retention-days");
+  const status = document.getElementById("ax-retention-status");
+
+  if (mode) enhanceSelect(mode);
+  function syncDays() {
+    if (daysField) daysField.hidden = mode.value !== "prune_after_days";
+  }
+  if (mode) {
+    mode.addEventListener("change", syncDays);
+    syncDays();
+  }
+
+  function setStatus(msg, error) {
+    if (!status) return;
+    status.textContent = msg;
+    if (error) status.setAttribute("data-state", "error");
+    else status.removeAttribute("data-state");
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = { mode: mode ? mode.value : "keep_forever" };
+    if (payload.mode === "prune_after_days") payload.days = Number(daysInput && daysInput.value);
+    setStatus("Saving…", false);
+    try {
+      const resp = await fetch("/api/settings/retention", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setStatus(data.message || "Could not save", true);
+        return;
+      }
+      setStatus("Saved.", false);
+    } catch (err) {
+      setStatus("Could not reach the server", true);
+    }
+  });
+}
+
 function init() {
   const link = document.getElementById("ax-settings-link");
   if (link) link.addEventListener("click", openSettings);
+  initRetention();
 }
 
 if (document.readyState === "loading") {

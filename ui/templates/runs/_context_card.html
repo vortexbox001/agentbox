@@ -1,0 +1,38 @@
+{# "Context given to the agent" card (spec 012): the prompt, appended system prompt, and every
+   loaded instruction file (full contents) — each collapsible, expanded by clicking the row. Sits
+   at the top of the Readable view; the rest of context.json is in the configuration rail. #}
+<div class="ax-context">
+  <div class="ax-context-head">
+    <span class="ax-context-title">
+      <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#eye"></use></svg>
+      Context given to the agent
+    </span>
+    <span class="ax-context-meta">{{ context.instruction_files|length }} instruction file(s)</span>
+  </div>
+
+  {% if context.prompt and context.prompt.prompt_text %}
+  <div class="ax-context-row" data-ctx-toggle role="button" tabindex="0" aria-expanded="false">
+    <span class="ax-context-tag">prompt</span>
+    <span class="ax-context-desc">The effective prompt text sent to the agent</span>
+  </div>
+  {# Same block style as the appended prompt below (.ax-tool-out: pre-wrap) so the prompt's
+     original line breaks and indentation are preserved, not collapsed to a single paragraph. #}
+  <div class="ax-tool-out" data-ctx-body hidden>{{ context.prompt.prompt_text }}</div>
+  {% endif %}
+
+  {% if context.prompt and context.prompt.append_system_prompt %}
+  <div class="ax-context-row" data-ctx-toggle role="button" tabindex="0" aria-expanded="false">
+    <span class="ax-context-tag">appended</span>
+    <span class="ax-context-desc">Appended system prompt (incl. the output convention)</span>
+  </div>
+  <div class="ax-tool-out" data-ctx-body hidden>{{ context.prompt.append_system_prompt }}</div>
+  {% endif %}
+
+  {% for f in context.instruction_files %}
+  <div class="ax-context-row" data-ctx-toggle role="button" tabindex="0" aria-expanded="false">
+    <span class="ax-context-tag">file</span>
+    <span class="ax-context-desc"><span class="ax-inline-code">{{ f.path }}</span></span>
+  </div>
+  <div class="ax-tool-out" data-ctx-body hidden>{{ f.contents }}</div>
+  {% endfor %}
+</div>
