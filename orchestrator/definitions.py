@@ -39,7 +39,7 @@ import paths
 from factory import (
     build_job, build_schedule, build_asset, build_materializing_job,
     build_asset_automation_sensor, validate_asset_key, validate_checks,
-    partition_on_cron_supported, RejectAgent,
+    partition_on_cron_supported, build_prune_job, build_prune_schedule, RejectAgent,
 )
 
 log = logging.getLogger("agentbox.definitions")
@@ -165,6 +165,12 @@ jobs = _discovered["jobs"]
 schedules = _discovered["schedules"]
 assets = _discovered["assets"]
 sensors = _discovered["sensors"]
+
+# Nightly run-retention prune job (spec 012 US5): generic infrastructure, not per-agent code.
+# A no-op under the default keep_forever policy; the Settings page's retention block drives it.
+_prune_job = build_prune_job()
+jobs.append(_prune_job)
+schedules.append(build_prune_schedule(_prune_job))
 
 # --- Manual job definitions ---
 # You can define non-agent Dagster jobs here alongside the auto-discovered ones.

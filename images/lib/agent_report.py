@@ -143,7 +143,9 @@ def tee_run(cli_argv: List[str], out=None) -> Tuple[int, List[str]]:
     return proc.returncode, lines
 
 
-def run_wrapper(cli_argv: List[str], parse: "Callable[[List[str]], RunReport]") -> None:
+def run_wrapper(cli_argv: List[str], parse: "Callable[[List[str]], RunReport]",
+                to_events: "Optional[Callable[[List[str]], list]]" = None,
+                context_fragment: "Optional[Callable[[], dict]]" = None) -> None:
     """The standard CLI-harness wrapper flow (claude-code, codex, pi).
 
     Snapshot ``/output``; spawn ``cli_argv`` teeing its native events to stdout;
@@ -152,9 +154,18 @@ def run_wrapper(cli_argv: List[str], parse: "Callable[[List[str]], RunReport]") 
     exit with a code matching the outcome — non-zero iff the run failed (FR-008). If
     the CLI exits non-zero but its events did not record a failure, the report is
     downgraded to ``failed`` so the two never disagree.
+
+    When ``to_events`` is given (spec 012), the same teed ``lines`` are translated into the
+    normalized event stream and written to the staging mount as ``events.jsonl``; when
+    ``context_fragment`` is given, its dict is written as the harness context fragment. Both are
+    best-effort — a capture failure never changes the run's report or exit code.
     """
     before = snapshot_output()
     returncode, lines = tee_run(cli_argv)
+    if to_events is not None:
+        _write_events_safe(to_events, lines)
+    if context_fragment is not None:
+        _write_fragment_safe(context_fragment, lines)
     report = parse(lines)
     report.files_written = count_written(before)
     if returncode != 0 and report.status == "ok":
@@ -162,3 +173,24 @@ def run_wrapper(cli_argv: List[str], parse: "Callable[[List[str]], RunReport]") 
         report.error = report.error or f"{cli_argv[0]} exited {returncode}"
     emit(report)
     sys.exit(0 if report.status == "ok" and returncode == 0 else (returncode or 1))
+
+
+def _write_events_safe(to_events, lines) -> None:
+    """Translate + write events.jsonl to staging; never let a capture error fail the run."""
+    try:
+        from lib.agent_events import write_events
+        write_events(to_events(lines))
+    except Exception as e:  # noqa: BLE001 — capture is strictly best-effort (spec 012)
+        print(f"agentbox: event capture failed: {e}", file=sys.stderr)
+
+
+def _write_fragment_safe(context_fragment, lines) -> None:
+    """Write the harness context fragment to staging; best-effort (spec 012 US2).
+
+    ``context_fragment(lines)`` receives the teed native events so it can read harness-disclosed
+    facts (e.g. the MCP tools a claude-code ``system`` init lists)."""
+    try:
+        from lib.agent_events import write_context_fragment
+        write_context_fragment(context_fragment(lines))
+    except Exception as e:  # noqa: BLE001
+        print(f"agentbox: context fragment capture failed: {e}", file=sys.stderr)

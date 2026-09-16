@@ -13,7 +13,7 @@
 ### Session 2026-09-15
 
 - Q: Should the native transcript also be redacted so grepping the whole run directory finds no secret? → A: Yes — redact `transcript.jsonl` as well; the entire run directory is secret-free.
-- Q: What should the run page's Files tab display? → A: The run's output artifacts (files the run wrote to its output location), browsable with preview/download.
+- Q: What should the run page's Files section display? → A: The run's output artifacts (files the run wrote to its output location), browsable with preview/download.
 - Q: When a run is pruned, are its output artifacts deleted too? → A: No — pruning removes only `events.jsonl` + `transcript.jsonl`; report, context, and output artifacts are all kept.
 - Q: Which dimensions must the Runs list filter by? → A: Agent, status, and date range.
 - Q: Can Compare diff any two runs, or only same-agent runs? → A: Any two runs; same-agent reruns are the primary use.
@@ -124,9 +124,12 @@ runs from disk, filters work, and clicking a run opens its detail page.
    **Then** the list narrows to matching runs.
 3. **Given** the orchestrator is stopped, **When** the operator opens the Runs area and a run
    page, **Then** both render from disk without the orchestrator running.
-4. **Given** a run, **When** the operator opens it, **Then** the page presents Conversation,
-   Context, Report, and Files as distinct tabs, and the run's materialization/run metadata
-   links to its run directory.
+4. **Given** a run, **When** the operator opens it, **Then** the page presents the run's
+   conversation, its context snapshot, its report, and its output artifacts on one page — a
+   transcript timeline (with a Readable/Raw-log toggle) beside a configuration rail that carries
+   the context, report, and output artifacts — and the run's materialization/run metadata links
+   to its run directory. (Amended: the design-system run-detail specimen composes these as a
+   single scrolling page, not four tabs.)
 
 ---
 
@@ -261,7 +264,12 @@ the run page renders with a "conversation pruned" note.
   model, cost, and attempts, filterable by agent, status, and date range.
 - **FR-018**: The run list and run pages MUST be built from run directories on disk and MUST
   function while the orchestrator is stopped.
-- **FR-019**: A run page MUST present Conversation, Context, Report, and Files as tabs.
+- **FR-019**: A run page MUST present the run's conversation, context snapshot, report, and output
+  files together on a **single scrolling page** — a transcript timeline (with a Readable/Raw-log
+  toggle) beside a configuration rail carrying the context, report, and output artifacts — rather
+  than as four separate tabs. (Amended to match the adopted design-system run-detail specimen and
+  US3 acceptance scenario 4; the "Conversation/Context/Report/Files" names below denote these
+  regions of the one page, not tabbed panels.)
 - **FR-019a**: The Files tab MUST show the output artifacts the run wrote to its output
   location, browsable with in-viewer preview and download.
 - **FR-020**: The Conversation tab MUST render a threaded, chat-style history with collapsible

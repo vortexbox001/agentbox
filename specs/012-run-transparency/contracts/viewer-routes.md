@@ -23,7 +23,7 @@ reachable — never as a precondition.
 | Method | Path | Renders | Notes |
 |--------|------|---------|-------|
 | GET | `/runs` | `runs/list.html` | filterable list; FR-017. New nav item (reserved slot in `base.html`). |
-| GET | `/runs/{run_id}` | `runs/detail.html` | tabs: Conversation, Context, Report, Files; FR-019. |
+| GET | `/runs/{run_id}` | `runs/detail.html` | single page (design-system run-detail specimen): a transcript timeline with a Readable/Raw-log toggle beside a configuration rail carrying context, report, and output artifacts; FR-019. |
 | GET | `/runs/compare?a=&b=` | `runs/compare.html` | field-by-field context diff of any two runs; FR-023. |
 | GET | `/api/runs` | JSON | list rows for client-side filter/refresh. |
 | GET | `/api/runs/{run_id}/events` | JSON | normalized events for the Conversation tab. |
@@ -31,17 +31,23 @@ reachable — never as a precondition.
 
 Path params run through the existing `_unsafe_name()` traversal guard.
 
-## Tabs (FR-019, FR-019a, FR-020, FR-021, FR-022)
+## Sections (FR-019, FR-019a, FR-020, FR-021, FR-022)
 
-- **Conversation** — threaded, chat-style history rendered from `events.jsonl`: turns in order,
-  collapsible tool calls + results, file edits as rendered diffs, per-turn tokens + cost, in-page
-  search. **Identical shape for every harness** (SC-002). Missing tool results are marked as
-  missing, not hidden (FR-021). Absent `events.jsonl` → "conversation pruned"/"conversation only"
-  note (FR-028).
-- **Context** — the full `context.json`: all fields, full instruction-file contents, and the
-  completeness statement (FR-022, SC-008).
-- **Report** — the spec-007 `report.json` fields + `notes` markdown.
-- **Files** — the run's output artifacts, browsable with preview + download (FR-019a).
+Composed as ONE page per the design-system run-detail specimen (amended from the original
+four-tab shape): a transcript timeline in the main column with a Readable/Raw-log segmented
+toggle, beside a configuration rail. The four concerns map onto that single page:
+
+- **Conversation** (main column, Readable view) — threaded, chat-style history rendered from
+  `events.jsonl`: turns in order, collapsible tool calls + results, file edits as rendered diffs,
+  per-turn tokens + cost, in-page search. **Identical shape for every harness** (SC-002). Missing
+  tool results are marked as missing, not hidden (FR-021). Absent `events.jsonl` → "conversation
+  pruned"/"conversation only" note (FR-028). The Raw-log view shows the native `transcript.jsonl`.
+- **Context** — a "context given to the agent" card at the top of the main column (prompt +
+  instruction-file contents, collapsible) plus the configuration rail (harness/model/tools/MCP,
+  container image + digest, mounts, env-var names, completeness statement) — the full `context.json`
+  (FR-022, SC-008).
+- **Report** — the spec-007 `report.json` fields (a Usage section in the rail) + `notes`/`error`.
+- **Files** — the run's output artifacts in the rail, browsable with preview + download (FR-019a).
 
 ## Read-only (FR-024)
 

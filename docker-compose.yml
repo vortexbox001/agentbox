@@ -96,7 +96,8 @@ services:
       DAGSTER_LOCATION: ${DAGSTER_LOCATION:-definitions.py}
       TZ: ${TZ:-UTC}
       # The three roots. The UI reads agents/prompts under the config root and writes them there
-      # (FR-007); DATA_ROOT is used only as a string for schema path validation (no data mount).
+      # (FR-007); it also reads run directories under the data root read-only (spec 012, the run
+      # viewer's disk source — runs_store reads runs/ through the mount below).
       AGENTBOX_CONFIG: ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}
       AGENTBOX_DATA: ${AGENTBOX_DATA:-/data/agentbox}
       DAGSTER_HOME: ${DAGSTER_HOME:-/data/dagster}
@@ -105,6 +106,10 @@ services:
       - ${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}:/opt/agentbox:ro
       # Config root — writable: the UI edits agents/ and creates prompt files here.
       - ${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}:${AGENTBOX_CONFIG:-${AGENTBOX_HOST_REPO:-/home/vortex/GitHub/agentbox}/config}
+      # State root — READ-ONLY: the run viewer (spec 012) reads run directories from disk so it
+      # renders with the orchestrator stopped (FR-018/SC-007). host==container so the DATA_ROOT
+      # paths runs_store composes resolve identically inside the container.
+      - ${AGENTBOX_DATA:-/data/agentbox}:${AGENTBOX_DATA:-/data/agentbox}:ro
     ports:
       - "8080:8080"
     networks: [agentnet]

@@ -6,7 +6,7 @@ from dagster import (
     AssetKey, AssetMaterialization, AssetObservation, AssetsDefinition, DailyPartitionsDefinition,
     MetadataValue,
     AutomationCondition, AutomationConditionSensorDefinition, AssetSelection,
-    DefaultSensorStatus, define_asset_job,
+    DefaultSensorStatus, DefaultScheduleStatus, define_asset_job,
     Out, Nothing,
     AssetSpec, AssetCheckSpec, AssetCheckResult, AssetCheckSeverity, MaterializeResult,
     open_pipes_session, PipesEnvContextInjector, PipesFileMessageReader,
@@ -17,9 +17,31 @@ from dagster_pipes import (
 )
 
 import paths
+import run_capture
 
 # Every state/config path derives from the single resolution point (orchestrator/paths.py,
 # FR-002/SC-009): no literal /data or /opt/agentbox appears in this module.
+
+
+def _image_digest(ref: str) -> str:
+    """The launched image's identity for the context snapshot (spec 012, R10).
+
+    Prefer the first RepoDigest; fall back to the local image ``Id`` (a ``:latest`` built on
+    the box has no RepoDigest). Returns "" if docker can't be reached — the snapshot still
+    records the ref, and a missing digest never fails a run.
+    """
+    for fmt in ("{{index .RepoDigests 0}}", "{{.Id}}"):
+        try:
+            p = subprocess.run(
+                ["docker", "image", "inspect", "--format", fmt, ref],
+                capture_output=True, text=True, timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        out = (p.stdout or "").strip()
+        if p.returncode == 0 and out and out != "<no value>":
+            return out
+    return ""
 
 
 def _output_dir(cfg: dict) -> str:
@@ -158,6 +180,9 @@ RUNS_ROOT = paths.RUNS_ROOT
 # source against the HOST filesystem. /tmp is container-private and does not cross that
 # boundary; the Dagster home is mounted host==container, so PIPES stays there (FR-010/FR-012).
 PIPES_ROOT = paths.PIPES_ROOT
+# per-run ephemeral staging the images write events.jsonl + the context fragment to (spec 012).
+# Under $AGENTBOX_DATA (host==container), bind-mounted at /staging; `--rm`-cleaned per run (T010a).
+STAGING_ROOT = paths.STAGING_ROOT
 # harnesses that mount /workspace; `workspace` and `wipe_workspace` are ignored for the rest
 WORKSPACE_HARNESSES = {"claude-code", "pi", "codex"}
 # harnesses whose runner reads /config/prompt.md; the others get the prompt on the command line
@@ -244,13 +269,19 @@ def _extract_report(session, is_asset: bool) -> dict | None:
     return None
 
 
-def _stream_output(stream, transcript_file, forward) -> None:
-    """Drain ``stream`` line by line (US3/R5): append each line to the transcript so
-    the byte stream is unchanged (FR-006) and forward it live via ``forward`` (e.g.
-    ``context.log.info``) so it appears in the Dagster run log while the run is still
-    in flight (FR-003), rather than in one dump after the container exits.
+def _stream_output(stream, transcript_file, forward, redact_line=None) -> None:
+    """Drain ``stream`` line by line (US3/R5): redact each line, append it to the transcript,
+    and forward it live via ``forward`` (e.g. ``context.log.info``) so it appears in the Dagster
+    run log while the run is still in flight (FR-003), rather than in one dump after the
+    container exits.
+
+    ``redact_line`` (spec 012, FR-013) is applied to every line before it is written OR forwarded,
+    so no secret reaches the transcript file or the live Dagster log. When omitted, lines pass
+    through unchanged.
     """
     for line in stream:
+        if redact_line is not None:
+            line = redact_line(line)
         transcript_file.write(line)
         forward(line.rstrip("\n"))
 
@@ -286,13 +317,15 @@ def _numeric_md(value):
 
 
 def build_metadata(cfg: dict, report: dict, output_files: list[str], log_path: str,
-                   stamp: str, session_id: str, context: OpExecutionContext) -> dict:
+                   stamp: str, session_id: str, context: OpExecutionContext,
+                   run_dir: str | None = None) -> dict:
     """The metadata union attached to a run/materialization (contract metadata.md).
 
     The union of the run-report fields and the run-context fields recorded today.
     ``transcript_path`` from the report maps onto the existing ``transcript`` key
     (same host path) rather than a second key. Null numerics render distinct from 0
-    and a null ``notes`` is omitted (never ``MetadataValue.md(None)``).
+    and a null ``notes`` is omitted (never ``MetadataValue.md(None)``). ``run_dir`` (spec 012
+    FR-002) links the run/materialization to its on-disk run directory when given.
     """
     metadata = {
         # existing run-context fields (superset rule: every one of these stays present)
@@ -310,6 +343,9 @@ def build_metadata(cfg: dict, report: dict, output_files: list[str], log_path: s
         "cost_usd": _numeric_md(report.get("cost_usd")),
         "files_written": MetadataValue.int(int(report.get("files_written") or 0)),
     }
+    if run_dir is not None:
+        # spec 012 FR-002: a link back to the run's on-disk directory (the viewer's source).
+        metadata["run_dir"] = MetadataValue.path(run_dir)
     if report.get("error") is not None:
         metadata["error"] = MetadataValue.text(str(report["error"]))
     if report.get("notes") is not None:
@@ -318,6 +354,97 @@ def build_metadata(cfg: dict, report: dict, output_files: list[str], log_path: s
     if context.has_partition_key:
         metadata["partition"] = context.partition_key
     return metadata
+
+
+def _launch_env_names(cfg: dict, runtime_env: dict) -> list[str]:
+    """The environment-variable NAMES the launched container receives (FR-015: names only).
+
+    Assembled from the launch config the orchestrator builds — never any value. Mirrors the
+    ``-e`` flags ``_build_agent_cmd`` emits, so the snapshot names exactly what the container got.
+    """
+    names = set(cfg.get("env", {}).keys()) | set(runtime_env.keys())
+    names |= {"AGENTBOX_RUN_STAMP", "AGENTBOX_SESSION_ID"}
+    if os.environ.get("TZ"):
+        names.add("TZ")
+    harness = cfg["harness"]
+    if harness == "api":
+        names |= {"AGENT_MODEL", "AGENT_MAX_TOKENS", "LITELLM_KEY"}
+    elif harness == "claude-code":
+        names.add("CLAUDE_CONFIG_DIR")
+        if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            names.add("CLAUDE_CODE_OAUTH_TOKEN")
+    elif harness == "pi":
+        names.add("LITELLM_MASTER_KEY")
+    return sorted(names)
+
+
+def _launch_mounts(cfg: dict, ws: str) -> list[dict]:
+    """The agent-facing bind mounts of the launch, as ``[{source, target, mode}]`` (FR-009).
+
+    Records the data mounts the agent sees (/output, /workspace, and the api prompt mount) —
+    not the ephemeral capture plumbing (/pipes, /staging), which is not agent-facing config.
+    """
+    mounts = [{"source": _output_dir(cfg), "target": "/output", "mode": "rw"}]
+    if cfg["harness"] in WORKSPACE_HARNESSES:
+        mounts.append({"source": ws, "target": "/workspace", "mode": "rw"})
+    if cfg["harness"] in PROMPT_MOUNT_HARNESSES:
+        mounts.append({
+            "source": f"{paths.PROMPTS_DIR}/{cfg.get('prompt_file', '')}",
+            "target": "/config/prompt.md", "mode": "ro",
+        })
+    return mounts
+
+
+def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_id: str,
+                    ws: str, runtime_env: dict, is_asset: bool) -> dict:
+    """Build the context snapshot from the launch config (spec 012, R3 orchestrator side).
+
+    The instruction files, MCP exposed tools, and completeness statement are the image
+    fragment's job — merged later (T044). Everything here is first-hand launch config.
+    """
+    prompt_text = ""
+    try:
+        with open(os.path.join(paths.PROMPTS_DIR, cfg["prompt_file"])) as f:
+            prompt_text = f.read()
+    except (OSError, KeyError):
+        pass
+    append_system_prompt = None
+    if cfg["harness"] in ("claude-code", "codex", "pi"):
+        append_system_prompt = output_convention(stamp, session_id)
+        if cfg.get("append_system_prompt"):
+            append_system_prompt += " " + cfg["append_system_prompt"]
+    image_ref = HARNESS_IMAGE.get(cfg["harness"], "")
+    asset = None
+    if is_asset:
+        produces = cfg.get("produces") or {}
+        asset = {
+            "asset_key": str(produces.get("asset") or ""),
+            "partition_key": context.partition_key if context.has_partition_key else None,
+            "variant": produces.get("variant"),
+            # Handoff inputs from the triggering run (op config), captured verbatim; None when
+            # nothing was handed off, so "no upstream inputs" is distinct from "not captured".
+            "upstream_inputs": ((context.op_config or {}).get("inputs") or None),
+            "attempt": int(getattr(context, "retry_number", 0) or 0) + 1,
+        }
+    return run_capture.build_context(
+        cfg,
+        prompt_text=prompt_text,
+        append_system_prompt=append_system_prompt,
+        image_ref=image_ref,
+        image_digest=_image_digest(image_ref) if image_ref else "",
+        env_names=_launch_env_names(cfg, runtime_env),
+        mounts=_launch_mounts(cfg, ws),
+        network=cfg.get("network", "agentnet"),
+        working_dir="/workspace" if cfg["harness"] in WORKSPACE_HARNESSES else None,
+        workspace_dir=ws if cfg["harness"] in WORKSPACE_HARNESSES else None,
+        output_dir=_output_dir(cfg),
+        memory=str(cfg.get("memory", "1g")),
+        cpus=str(cfg.get("cpus", "1.5")),
+        asset=asset,
+        run_id=context.run_id,
+        session_id=session_id,
+        stamp=stamp,
+    )
 
 
 def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
@@ -469,18 +596,21 @@ _ProducerResult = namedtuple(
 
 def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str],
                   pipes_dir: str, msg_path: str, stamp: str, session_id: str,
-                  is_asset: bool) -> "_ProducerResult":
+                  is_asset: bool, capture: run_capture.RunCapture, staging_dir: str,
+                  launch_context: dict) -> "_ProducerResult":
     """Launch the producing container and hand back its report + metadata union.
 
     The shared launch+report core (spec 008 FR-013), extracted from ``make_run_op`` so both the
     checkless ``from_op`` op and the check-bearing ``@multi_asset`` op launch the producer the
     exact same way. Runs INSIDE an already-open Dagster Pipes ``session`` with ``cmd`` already
-    built by ``_build_agent_cmd``: it layers the Pipes flags onto the launch, snapshots ``/output``,
-    Popens and streams stdout live while draining stderr, enforces the agent ``timeout_seconds``
-    (killing the container by name on expiry), recovers the spec-007 report over Pipes (data
-    channel only — never re-emitted) or authors a fallback on timeout/missing report, and builds
-    the metadata union. Emission and the per-run pipes-dir cleanup stay with the caller (checks
-    must run before the dir is removed)."""
+    built by ``_build_agent_cmd``: it layers the Pipes + staging mounts onto the launch, snapshots
+    ``/output``, Popens and streams stdout live (redacting every line, spec 012 FR-013) while
+    draining stderr, enforces the agent ``timeout_seconds`` (killing the container by name on
+    expiry), recovers the spec-007 report over Pipes (data channel only — never re-emitted) or
+    authors a fallback on timeout/missing report, and writes the run directory (transcript already
+    streamed; events ingested + redacted from staging; the image context fragment merged into
+    ``context.json``; ``report.json`` co-located). Emission and the per-run dir cleanups stay with
+    the caller (checks must run before the pipes dir is removed)."""
     name = cfg["name"]
     # PipesFileMessageReader.read_messages() has already created `msg_path` root-owned
     # 0644 (synchronously, before the session yielded); a non-root container cannot append to
@@ -493,6 +623,8 @@ def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str
     msg_params["path"] = "/pipes/messages"
     pipes_flags = [
         "-v", f"{pipes_dir}:/pipes",
+        # the image writes events.jsonl + context-harness.json here; --rm-cleaned per run (T010a).
+        "-v", f"{staging_dir}:/staging",
         "-e", f"{DAGSTER_PIPES_CONTEXT_ENV_VAR}={boot[DAGSTER_PIPES_CONTEXT_ENV_VAR]}",
         "-e", f"{DAGSTER_PIPES_MESSAGES_ENV_VAR}={encode_env_var(msg_params)}",
     ]
@@ -509,21 +641,21 @@ def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str
     context.log.info(f"launching: {' '.join(cmd[:12])} ...")
     timeout_seconds = cfg.get("timeout_seconds", 900)
     container = f"agent-{name}-{context.run_id[:8]}"
-    log_dir = os.path.join(RUNS_ROOT, name, stamp[:10])
-    os.makedirs(log_dir, exist_ok=True)
-    log_path = os.path.join(log_dir, f"{context.run_id}.jsonl")
+    # the run directory + context.json were written at launch by the caller; the transcript is
+    # streamed (and redacted) into it here (contracts/run-directory.md ownership).
+    log_path = capture.transcript_path
 
-    # Popen + line-by-line draining: each stdout line streams live into the
-    # Dagster run log (FR-003) while being written to the transcript unchanged
-    # (FR-006). stderr drains on a second thread so a chatty run cannot deadlock
-    # on a full stderr pipe buffer (R5).
+    # Popen + line-by-line draining: each stdout line is redacted (FR-013), streamed live into
+    # the Dagster run log (FR-003), and written to transcript.jsonl. stderr drains on a second
+    # thread so a chatty run cannot deadlock on a full stderr pipe buffer (R5).
     timed_out = False
     stderr_chunks: list[str] = []
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             text=True, bufsize=1)
     with open(log_path, "w") as tf:
         stdout_thread = threading.Thread(
-            target=_stream_output, args=(proc.stdout, tf, context.log.info),
+            target=_stream_output,
+            args=(proc.stdout, tf, context.log.info, run_capture.RunCapture.redact_line),
             daemon=True,
         )
         stderr_thread = threading.Thread(
@@ -544,6 +676,8 @@ def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str
         stderr_thread.join()
     returncode = proc.returncode
     stderr = "".join(stderr_chunks)
+    from run_capture import _chmod as _fchmod  # apply the run-dir file mode to the streamed file
+    _fchmod(log_path, 0o644)
     context.log.info(f"transcript: {log_path}")
 
     output_files = _changed_files(output_before, _snapshot_dir(_output_dir(cfg)))
@@ -572,7 +706,23 @@ def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str
     # null); it surfaces through the existing `transcript` metadata key.
     report["transcript_path"] = log_path
 
-    metadata = build_metadata(cfg, report, output_files, log_path, stamp, session_id, context)
+    # Complete the run directory (spec 012): ingest+redact events from staging, merge the image
+    # context fragment into context.json, and co-locate report.json. Each is best-effort — a
+    # missing file (crash-before-first-event, or a harness that emitted none) never fails the run.
+    try:
+        capture.ingest_events(os.path.join(staging_dir, "events.jsonl"))
+    except OSError as e:
+        context.log.warning(f"events capture failed: {e}")
+    fragment = _read_json(os.path.join(staging_dir, "context-harness.json"))
+    if fragment:
+        capture.write_context(run_capture.merge_fragment(launch_context, fragment))
+    try:
+        capture.write_report(report)
+    except OSError as e:
+        context.log.warning(f"report capture failed: {e}")
+
+    metadata = build_metadata(cfg, report, output_files, log_path, stamp, session_id, context,
+                              run_dir=capture.dir)
     context.log.info(
         f"result: status={report.get('status')} turns={report.get('turns')}"
         f" tokens_in/out={report.get('tokens_in')}/{report.get('tokens_out')}"
@@ -581,6 +731,16 @@ def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str
     if report.get("notes"):
         context.log.info(str(report["notes"])[:4000])
     return _ProducerResult(report, metadata, returncode, timed_out, stderr, log_path)
+
+
+def _read_json(path: str) -> dict | None:
+    """Read a small JSON file, or None if absent/unreadable/malformed (staging fragment)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
 
 
 def _check_argv(cfg: dict, context: OpExecutionContext, check: dict, image: str,
@@ -707,7 +867,12 @@ def run_checks(cfg: dict, context: OpExecutionContext, checks: list, pipes_dir: 
 def make_run_op(cfg: dict):
     @op(
         name=f"run_{cfg['name'].replace('-', '_')}",
-        config_schema={"env": Field(Permissive(), default_value={}, is_required=False)},
+        config_schema={
+            "env": Field(Permissive(), default_value={}, is_required=False),
+            # Upstream handoff inputs a triggering run passes to this asset; captured into the
+            # context snapshot as asset.upstream_inputs (FR-011). Empty when nothing is handed off.
+            "inputs": Field(Permissive(), default_value={}, is_required=False),
+        },
     )
     def run_agent(context: OpExecutionContext):
         name = cfg["name"]
@@ -741,6 +906,20 @@ def make_run_op(cfg: dict):
         # matching channel back. Both agree with cfg's produces block.
         is_asset = bool((cfg.get("produces") or {}).get("asset"))
 
+        # Assemble + write the run directory's context.json FIRST (spec 012, contracts/run-directory.md):
+        # so the audit record exists even for a crash before the first event. The image context
+        # fragment (instruction files, MCP tools, completeness) is merged in after the run (T044).
+        capture = run_capture.RunCapture(name, stamp[:10], context.run_id)
+        capture.create()
+        launch_context = _launch_context(cfg, context, stamp, session_id, ws, runtime_env, is_asset)
+        capture.write_context(launch_context)
+        # Per-run ephemeral staging the image writes events.jsonl + the context fragment to,
+        # bind-mounted at /staging (spec 012, T010a). Under STAGING_ROOT ($AGENTBOX_DATA,
+        # host==container), never /tmp; 0777 so the non-root container writes it; rmtree'd below.
+        os.makedirs(STAGING_ROOT, exist_ok=True)
+        staging_dir = tempfile.mkdtemp(prefix=f"agentbox-staging-{context.run_id[:8]}-", dir=STAGING_ROOT)
+        os.chmod(staging_dir, 0o777)
+
         # Per-run Pipes messages file on a host temp dir, bind-mounted read-write at /pipes
         # (never /output — Constitution V). Layer Dagster Pipes over the existing docker run:
         # the launch argv is preserved verbatim except the /pipes mount and the two
@@ -763,7 +942,8 @@ def make_run_op(cfg: dict):
                 message_reader=PipesFileMessageReader(path=msg_path),
             ) as session:
                 pr = _run_producer(
-                    context, cfg, session, cmd, pipes_dir, msg_path, stamp, session_id, is_asset
+                    context, cfg, session, cmd, pipes_dir, msg_path, stamp, session_id, is_asset,
+                    capture, staging_dir, launch_context,
                 )
 
                 if not pr.timed_out and pr.report.get("status") == "ok" and pr.returncode == 0:
@@ -800,6 +980,7 @@ def make_run_op(cfg: dict):
                 )
         finally:
             shutil.rmtree(pipes_dir, ignore_errors=True)
+            shutil.rmtree(staging_dir, ignore_errors=True)  # --rm-cleaned staging (T010a)
     return run_agent
 
 def build_asset(cfg: dict, file: str | None = None, cron: str | None = None):
@@ -878,7 +1059,12 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
     @op(
         name=f"run_{name.replace('-', '_')}",
         out=outs,
-        config_schema={"env": Field(Permissive(), default_value={}, is_required=False)},
+        config_schema={
+            "env": Field(Permissive(), default_value={}, is_required=False),
+            # Upstream handoff inputs a triggering run passes to this asset; captured into the
+            # context snapshot as asset.upstream_inputs (FR-011). Empty when nothing is handed off.
+            "inputs": Field(Permissive(), default_value={}, is_required=False),
+        },
     )
     def run_agent_checked(context: OpExecutionContext):
         runtime_env = context.op_config.get("env", {})
@@ -900,6 +1086,15 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
             context.log.info(f"wiped workspace {ws}")
         cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, runtime_env)
 
+        # Run directory + context.json first (spec 012); the image fragment is merged after the run.
+        capture = run_capture.RunCapture(name, stamp[:10], context.run_id)
+        capture.create()
+        launch_context = _launch_context(cfg, context, stamp, session_id, ws, runtime_env, True)
+        capture.write_context(launch_context)
+        os.makedirs(STAGING_ROOT, exist_ok=True)
+        staging_dir = tempfile.mkdtemp(prefix=f"agentbox-staging-{context.run_id[:8]}-", dir=STAGING_ROOT)
+        os.chmod(staging_dir, 0o777)
+
         os.makedirs(PIPES_ROOT, exist_ok=True)
         pipes_dir = tempfile.mkdtemp(prefix=f"agentbox-pipes-{context.run_id[:8]}-", dir=PIPES_ROOT)
         msg_path = os.path.join(pipes_dir, "messages")
@@ -912,7 +1107,7 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
             ) as session:
                 pr = _run_producer(
                     context, cfg, session, cmd, pipes_dir, msg_path, stamp, session_id,
-                    is_asset=True,
+                    True, capture, staging_dir, launch_context,
                 )
                 # Write the report where the checks can read it: a per-run file under PIPES_ROOT
                 # (host==container shared), bind-mounted read-only at /report.json (R5). 0644 so a
@@ -955,6 +1150,7 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, cron: str | N
                 )
         finally:
             shutil.rmtree(pipes_dir, ignore_errors=True)
+            shutil.rmtree(staging_dir, ignore_errors=True)  # --rm-cleaned staging (T010a)
 
     return AssetsDefinition.dagster_internal_init(
         keys_by_input_name={},
@@ -1032,6 +1228,43 @@ def partition_on_cron_supported() -> bool:
     Automation page's ``fallback`` marker agrees with what the orchestrator wired (research R6).
     """
     return os.environ.get("AGENTBOX_PARTITION_FALLBACK", "").lower() not in ("1", "true", "yes")
+
+
+def build_prune_job():
+    """The nightly run-retention job ``prune_runs`` (spec 012 US5, FR-026/FR-027).
+
+    A single op that reads the retention policy from ``settings.yaml`` and removes only
+    ``events.jsonl`` + ``transcript.jsonl`` from run directories past the horizon (report,
+    context, and ``/output`` are always kept). A ``keep_forever`` policy makes it a no-op.
+    """
+    @op(name="prune_runs_op")
+    def prune_runs_op(context: OpExecutionContext):
+        import prune
+        policy = prune.load_retention()
+        result = prune.prune_runs(policy)
+        context.log.info(f"prune: policy={policy} result={result}")
+        return result
+
+    @job(name="prune_runs")
+    def prune_runs_job():
+        prune_runs_op()
+
+    return prune_runs_job
+
+
+def build_prune_schedule(job_def, cron: str = "0 3 * * *"):
+    """A nightly schedule for the prune job (FR-026), running in the box timezone.
+
+    Default RUNNING: it is generic maintenance and a no-op under the default ``keep_forever``
+    policy, so retention "just works" once an operator sets it on the Settings page.
+    """
+    return ScheduleDefinition(
+        job=job_def,
+        cron_schedule=cron,
+        name="sched_prune_runs",
+        execution_timezone=cron_timezone(),
+        default_status=DefaultScheduleStatus.RUNNING,
+    )
 
 
 def build_schedule(job_def, cron: str):

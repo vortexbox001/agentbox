@@ -14,7 +14,7 @@ from urllib.parse import urlparse, urlunparse
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -24,8 +24,10 @@ import config
 import cron_text
 import dagster
 import prompts_store
+import runs_store
 import schema
 import secret_scan
+import settings_store
 from agents_store import StorageError
 from prompts_store import PromptValidationError
 
@@ -274,6 +276,216 @@ async def _agents_edit_page(request: Request, name: str):
     )
 
 
+# --- Settings (spec 012 US5) ---------------------------------------------
+@app.get("/settings")
+async def _settings_page(request: Request):
+    # The server-backed Settings page: the Retention section (keep forever / prune after N days),
+    # persisted to settings.yaml. The theme picker stays in the sidebar modal.
+    return templates.TemplateResponse(
+        request, "settings/page.html",
+        _shell_context(request, title="Settings", retention=settings_store.read_retention(),
+                       modes=list(settings_store.MODES)),
+    )
+
+
+@app.post("/api/settings/retention")
+async def _api_settings_retention(request: Request):
+    # Validate + persist the retention policy (contracts/settings.md). 400 on an invalid policy.
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    mode = str((body or {}).get("mode") or "")
+    days = (body or {}).get("days")
+    if isinstance(days, str) and days.strip().isdigit():
+        days = int(days)
+    try:
+        policy = settings_store.write_retention(mode, days if isinstance(days, int) else None)
+    except settings_store.RetentionError as e:
+        return JSONResponse({"error": "validation", "message": str(e)}, status_code=400)
+    logger.info("event=retention_updated mode=%s days=%s", policy["mode"], policy["days"])
+    return JSONResponse({"retention": policy})
+
+
+# --- Runs viewer (spec 012) ----------------------------------------------
+# Status → (run_status_tag intent, header-pill data-state, human label). Keeps a null/unknown
+# status legible without inventing a colour.
+_RUN_STATUS_VIEW = {
+    "ok": ("success", "success", "ok"),
+    "failed": ("failure", "error", "failed"),
+    "timeout": ("error", "error", "timeout"),
+    "running": ("running", "running", "running"),
+    "unknown": ("queued", "idle", "unknown"),
+}
+
+def _run_status_view(status: str) -> dict:
+    intent, state, label = _RUN_STATUS_VIEW.get(status or "unknown", _RUN_STATUS_VIEW["unknown"])
+    return {"intent": intent, "state": state, "label": label}
+
+
+def _fmt_int(v):
+    """A thousands-separated integer, or the em-dash placeholder for a null (distinct from 0)."""
+    return f"{v:,}" if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _fmt_cost(v):
+    """A dollar cost, or None (→ em-dash) for a null cost (subscription harness / not reported)."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return f"${v:.4f}"
+    return None
+
+
+def _run_stats(detail: dict) -> list[dict]:
+    """The header stat strip for a run, from its report + context (disk-only)."""
+    report = detail.get("report") or {}
+    context = detail.get("context") or {}
+    model = ((context.get("model") or {}).get("model")) or report.get("model") or "—"
+    harness = (context.get("harness") or {}).get("harness") or "—"
+    return [
+        {"label": "Status", "value": (report.get("status") or "unknown")},
+        {"label": "Harness", "value": harness},
+        {"label": "Model", "value": model},
+        {"label": "Turns", "value": _fmt_int(report.get("turns"))},
+        {"label": "Tokens in", "value": _fmt_int(report.get("tokens_in"))},
+        {"label": "Cost", "value": _fmt_cost(report.get("cost_usd"))},
+    ]
+
+
+_RUN_STATUSES = ["ok", "failed", "timeout", "running", "unknown"]
+
+
+def _run_filters(request: Request) -> dict:
+    qp = request.query_params
+    return {
+        "agent": qp.get("agent") or None,
+        "status": qp.get("status") or None,
+        "date_from": qp.get("date_from") or None,
+        "date_to": qp.get("date_to") or None,
+    }
+
+
+@app.get("/runs")
+async def _runs_list_page(request: Request):
+    # The Runs list, built entirely from disk so it renders with the orchestrator stopped
+    # (FR-017/FR-018/SC-007). Filters (agent / status / date range) are applied server-side for
+    # first paint; runs-list.js refreshes them client-side against /api/runs.
+    filters = _run_filters(request)
+    rows = runs_store.list_runs(**filters)
+    agents = sorted({r["agent"] for r in runs_store.list_runs()})
+    return templates.TemplateResponse(
+        request,
+        "runs/list.html",
+        _shell_context(
+            request, title="Runs", runs=rows, agents=agents, statuses=_RUN_STATUSES,
+            filters=filters,
+        ),
+    )
+
+
+@app.get("/api/runs")
+async def _api_runs(request: Request):
+    # List rows as JSON for client-side filter/refresh (disk-only).
+    return JSONResponse({"runs": runs_store.list_runs(**_run_filters(request))})
+
+
+@app.get("/api/runs/{run_id}/files/{path:path}")
+async def _api_run_file(run_id: str, path: str, request: Request):
+    # Preview/download one output artifact (FR-019a). Path-safe: the name is validated and matched
+    # against the run's own artifact whitelist, so traversal / unrelated files can never be served.
+    if _unsafe_name(run_id) or _unsafe_name(path):
+        return JSONResponse({"error": "not_found", "message": "no such artifact"}, status_code=404)
+    abs_path, previewable = runs_store.read_output_file(run_id, path)
+    if not abs_path or not os.path.isfile(abs_path):
+        return JSONResponse({"error": "not_found", "message": "no such artifact"}, status_code=404)
+    download = request.query_params.get("download")
+    if download or not previewable:
+        return FileResponse(abs_path, filename=path)  # attachment
+    try:
+        with open(abs_path, encoding="utf-8") as f:
+            return PlainTextResponse(f.read())  # inline preview for text artifacts
+    except (OSError, UnicodeDecodeError):
+        return FileResponse(abs_path, filename=path)
+
+
+@app.get("/runs/compare")
+async def _runs_compare_page(request: Request):
+    # Field-by-field diff of two runs' context snapshots (FR-023). Registered BEFORE /runs/{run_id}
+    # so "compare" is never captured as a run id. Any two runs are allowed.
+    a_id = request.query_params.get("a") or ""
+    b_id = request.query_params.get("b") or ""
+    a = runs_store.read_run(a_id) if a_id and not _unsafe_name(a_id) else None
+    b = runs_store.read_run(b_id) if b_id and not _unsafe_name(b_id) else None
+    rows = []
+    if a and b:
+        rows = runs_store.compare_contexts(a.get("context") or {}, b.get("context") or {})
+    return templates.TemplateResponse(
+        request,
+        "runs/compare.html",
+        _shell_context(
+            request, title="Compare runs", a_id=a_id, b_id=b_id,
+            a_found=a is not None, b_found=b is not None, rows=rows,
+        ),
+    )
+
+
+@app.get("/runs/{run_id}")
+async def _run_detail_page(request: Request, run_id: str):
+    # The run-detail page (Conversation / Context / Report / Files), read entirely from disk so it
+    # renders with the orchestrator stopped (FR-018/SC-007). An unsafe id is "no such run" (404).
+    if _unsafe_name(run_id):
+        return templates.TemplateResponse(
+            request, "404.html",
+            _shell_context(request, title="Not found", breadcrumb_leaf="Not found", missing=run_id),
+            status_code=404,
+        )
+    detail = runs_store.read_run(run_id)
+    if detail is None:
+        return templates.TemplateResponse(
+            request, "404.html",
+            _shell_context(request, title="Not found", breadcrumb_leaf="Not found", missing=run_id),
+            status_code=404,
+        )
+    report = detail.get("report") or {}
+    context = detail.get("context") or {}
+    # Flag env NAMES that look secret-like (values are never captured — FR-015) so the Context tab
+    # can tint them; is_secret_like(name, None) is a pure name-pattern check.
+    env_names = ((context.get("runtime") or {}).get("env_names")) or []
+    secret_env_names = {n for n in env_names if secret_scan.is_secret_like(n, None)}
+    status_view = _run_status_view(report.get("status") or "unknown")
+    dagster_base = public_dagster_url(request)
+    raw_transcript, raw_truncated = runs_store.read_transcript(run_id)
+    return templates.TemplateResponse(
+        request,
+        "runs/detail.html",
+        _shell_context(
+            request,
+            title=f"Run {run_id[:8]}",
+            run=detail,
+            report=report,
+            context=context,
+            secret_env_names=secret_env_names,
+            status_view=status_view,
+            stats=_run_stats(detail),
+            entries=(runs_store.conversation_entries(runs_store.read_events(run_id))
+                     if detail.get("conversation_available") else []),
+            raw_transcript=raw_transcript,
+            raw_truncated=raw_truncated,
+            output_files=runs_store.read_output_files(run_id),
+            dagster_run_url=f"{dagster_base}/runs/{run_id}",
+        ),
+    )
+
+
+@app.get("/api/runs/{run_id}/events")
+async def _api_run_events(run_id: str):
+    # The normalized events for the Conversation tab (spec 012, disk-only). 404 for an unknown or
+    # unsafe run id; an empty list when the run has no events (pruned / legacy / never captured).
+    if _unsafe_name(run_id) or runs_store.read_run(run_id) is None:
+        return JSONResponse({"error": "not_found", "message": f"run {run_id} does not exist"},
+                            status_code=404)
+    return JSONResponse({"events": runs_store.read_events(run_id)})
+
+
 # --- API ------------------------------------------------------------------
 @app.get("/api/agents")
 async def _api_agents():
@@ -512,6 +724,33 @@ async def _api_delete_agent(name: str, request: Request):
     logger.info("event=agent_deleted stem=%s reload_ok=%s", name, reload_result["ok"])
 
     return JSONResponse({"deleted": deleted, "reload": reload_result})
+
+
+@app.post("/api/agents/{name}/launch")
+async def _api_launch_agent(name: str, request: Request):
+    # Launch a run for this agent (materialize its asset / run its job) via Dagster, and hand back
+    # the browser-facing run URL so the UI can navigate to the kicked-off run. Always 200 — the
+    # outcome (ok/run_id/message) is data, mirroring reload/toggle.
+    if _unsafe_name(name):
+        return JSONResponse({"ok": False, "run_id": None, "run_url": None,
+                             "message": "no such agent"}, status_code=404)
+    try:
+        info = agents_store.read_agent(name)
+    except FileNotFoundError:
+        return JSONResponse({"ok": False, "run_id": None, "run_url": None,
+                             "message": "no such agent"}, status_code=404)
+    cfg = dict(info.get("agent") or {})
+    cfg.setdefault("name", name)
+    outcome = await dagster.launch(cfg)
+    run_url = None
+    if outcome.get("ok") and outcome.get("run_id"):
+        run_url = f"{public_dagster_url(request)}/runs/{outcome['run_id']}"
+    logger.info("event=agent_launched stem=%s ok=%s run_id=%s",
+                name, outcome.get("ok"), outcome.get("run_id"))
+    return JSONResponse({
+        "ok": outcome.get("ok"), "run_id": outcome.get("run_id"),
+        "run_url": run_url, "message": outcome.get("message"),
+    })
 
 
 @app.post("/api/agents/preview")

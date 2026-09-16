@@ -16,10 +16,19 @@ redactor for defense-in-depth. The two copies are pinned by a shared-fixture **p
 ## Kinds
 
 Derived from the matched detector (`<kind>` values): `api_key`, `token`, `password`,
-`private_key`, `credential`, `secret`, `high_entropy`. A name-based match uses the name's kind; a
-value-prefix match uses the format's kind (e.g. `sk-ant-` → `api_key`, `ghp_`/`github_pat_` →
-`token`, `-----BEGIN` → `private_key`); a high-entropy value with no clearer signal →
-`high_entropy`.
+`private_key`, `credential`, `secret`. A name-based match uses the name's kind; a value-prefix
+match uses the format's kind (e.g. `sk-ant-` → `api_key`, `ghp_`/`github_pat_` → `token`,
+`-----BEGIN` → `private_key`).
+
+**Amendment (dropped `high_entropy` from free-text redaction).** The original design also ran a
+blanket high-entropy pass and emitted `[REDACTED:high_entropy]`. In practice, on a code-agent
+transcript that was almost entirely false positives — claude-code's own message / request /
+tool_use ids and "thinking" signatures are high-entropy but not secrets — so it is **not** applied
+to `transcript.jsonl` / `events.jsonl` / `context.json`. The reliable detectors (prefixes,
+`NAME=value`, PEM) remain, and env values — the primary secret vector — are never written to disk
+at all (FR-015), so real credentials are still covered. The high-entropy rule is retained only for
+env-value classification (`redact.secret_kind_for`), pinned to `ui/secret_scan.is_secret_like` so
+the UI's authoring-time secret confirmation is unchanged.
 
 ## Single pass, orchestrator-owned (FR-013)
 

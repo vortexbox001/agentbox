@@ -1024,7 +1024,7 @@ a.ax-latest-run:hover { color: var(--color-accent-teal); }
 .ax-tool-head { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-3); font: var(--type-body-sm); flex-wrap: wrap; }
 .ax-tool-dot { width: var(--space-3); height: var(--space-3); border-radius: var(--radius-round); background: var(--color-accent-green); flex: none; }
 .ax-tool-dot[data-state="error"] { background: var(--color-accent-red); }
-.ax-tool-name { font-weight: 600; color: var(--color-text-default); font-family: var(--font-mono); }
+.ax-tool-name { font: var(--type-mono-sm); font-weight: 600; color: var(--color-text-default); }
 .ax-tool-arg { font: var(--type-mono-sm); color: var(--color-text-light); }
 .ax-tool-exit { padding: 0 var(--space-3); border-radius: var(--radius-sm); background: var(--color-background-red); color: var(--color-text-red); font: var(--type-mono-xs); }
 .ax-tool-out { margin: 0; padding: var(--space-3) 0 var(--space-3) var(--space-6); border-left: var(--border-width-thick) solid var(--color-keyline-default); font: var(--type-mono-sm); line-height: 1.6; color: var(--color-text-light); white-space: pre-wrap; overflow-x: auto; }
@@ -1116,3 +1116,62 @@ a.ax-latest-run:hover { color: var(--color-accent-teal); }
   .ax-automation-schedule > .ax-dropdown,
   .ax-automation-schedule > .ax-automation-cron-wrap { grid-area: auto; }
 }
+
+/* ── Run viewer additions (spec 012) ──────────────────
+   Single-page detail (design-system run-detail specimen): a transcript timeline with a
+   Readable/Raw-log segmented toggle beside a configuration rail. The Raw-log view shows the
+   native transcript; [data-view-panel] visibility is toggled by run-detail.js. */
+.ax-raw-log { margin: 0; padding: var(--space-6) var(--space-7); border: thin solid var(--color-border-default); border-radius: var(--radius-md); background: var(--color-background-light); font: var(--type-mono-sm); line-height: 1.6; color: var(--color-text-light); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ax-context-row[data-ctx-toggle] { cursor: pointer; }
+.ax-context-row[data-ctx-toggle]:hover .ax-context-desc { color: var(--color-text-default); }
+
+/* Conversation search + collapse controls */
+.ax-conv-toolbar { display: flex; align-items: center; gap: var(--space-5); margin-bottom: var(--space-8); flex-wrap: wrap; }
+.ax-conv-toolbar .ax-input { max-width: 22rem; }
+.ax-conv-count { font: var(--type-body-sm); color: var(--color-text-lighter); }
+.ax-tool.is-collapsed .ax-tool-out, .ax-tool.is-collapsed .ax-tool-note { display: none; }
+.ax-tool-toggle { background: none; border: none; padding: 0; cursor: pointer; color: var(--color-text-lighter); display: inline-flex; align-items: center; }
+.ax-tool-head[data-tool-toggle] { cursor: pointer; }
+.ax-entry.is-hidden, .ax-tool.is-hidden { display: none; }
+mark.ax-hit { background: var(--color-background-yellow); color: var(--color-text-yellow); border-radius: var(--radius-sm); }
+
+/* Missing / pruned notes in the conversation */
+.ax-tool-missing { font: var(--type-body-sm); font-style: italic; color: var(--color-text-yellow); padding-left: var(--space-6); }
+.ax-conv-empty { padding: var(--space-10) var(--space-9); text-align: center; color: var(--color-text-lighter); font: var(--type-body-md); }
+
+/* Files tab — output artifact rows (spec 012 US3) */
+.ax-file-list { display: flex; flex-direction: column; }
+.ax-file-row { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-5) 0; border-bottom: thin solid var(--color-keyline-default); }
+.ax-file-row:last-child { border-bottom: 0; }
+.ax-file-name { flex: 1; min-width: 0; font: var(--type-mono-sm); color: var(--color-text-default); overflow-wrap: anywhere; }
+.ax-file-size { flex: none; font: var(--type-mono-sm); color: var(--color-text-lighter); }
+.ax-file-actions { flex: none; display: flex; gap: var(--space-4); }
+
+/* Report tab — notes block + runs-list filter toolbar (spec 012 US3) */
+.ax-report-notes { margin-top: var(--space-6); padding: var(--space-6) var(--space-7); border: thin solid var(--color-border-default); border-radius: var(--radius-md); background: var(--color-background-light); font: var(--type-body-sm); line-height: 1.6; color: var(--color-text-default); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ax-runs-filters { display: flex; align-items: flex-end; gap: var(--space-6); flex-wrap: wrap; }
+.ax-runs-filter { display: flex; flex-direction: column; gap: var(--space-3); }
+.ax-runs-filter-label { font: var(--type-label-sm); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-light); }
+.ax-runs-empty { padding: var(--space-10) var(--space-9); text-align: center; color: var(--color-text-lighter); font: var(--type-body-md); }
+
+/* Compare view — field-by-field context diff (spec 012 US4) */
+.ax-cmp { display: flex; flex-direction: column; }
+.ax-cmp-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-6); padding: var(--space-6) 0; border-bottom: thin solid var(--color-keyline-default); font: var(--type-label-sm); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-light); }
+.ax-cmp-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-6); padding: var(--space-5) 0; border-bottom: thin solid var(--color-keyline-default); font: var(--type-mono-sm); }
+.ax-cmp-row:last-child { border-bottom: 0; }
+.ax-cmp-path { color: var(--color-text-light); overflow-wrap: anywhere; }
+.ax-cmp-val { color: var(--color-text-default); overflow-wrap: anywhere; }
+.ax-cmp-val--a { color: var(--color-text-red); }
+.ax-cmp-val--b { color: var(--color-text-green); }
+.ax-cmp-empty { padding: var(--space-10) var(--space-9); text-align: center; color: var(--color-text-lighter); font: var(--type-body-md); }
+
+/* Settings page — server-backed retention section (spec 012 US5) */
+.ax-settings-page { max-width: 44rem; display: flex; flex-direction: column; gap: var(--space-9); }
+.ax-settings-card { border: thin solid var(--color-border-default); border-radius: var(--radius-lg); padding: var(--space-8) var(--space-9); display: flex; flex-direction: column; gap: var(--space-6); }
+.ax-settings-card h2 { margin: 0; font: var(--type-display-md); color: var(--color-text-default); }
+.ax-settings-desc { margin: 0; font: var(--type-body-sm); color: var(--color-text-light); }
+.ax-settings-field { display: flex; flex-direction: column; gap: var(--space-3); }
+.ax-settings-field-label { font: var(--type-label-sm); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-light); }
+.ax-settings-actions { display: flex; align-items: center; gap: var(--space-6); }
+.ax-settings-status { font: var(--type-body-sm); color: var(--color-text-green); }
+.ax-settings-status[data-state="error"] { color: var(--color-text-red); }

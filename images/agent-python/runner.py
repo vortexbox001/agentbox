@@ -5,8 +5,9 @@ prints its native event to stdout unchanged (as it did before this feature), so 
 orchestrator's ``.jsonl`` transcript for api runs is byte-for-byte what it was — the
 Pipes report travels over ``/pipes/messages``, not in place of stdout (FR-006).
 """
-import os, sys, json, uuid, datetime, urllib.request
+import os, sys, json, uuid, datetime, platform, urllib.request
 
+from lib.agent_events import NormalizedEvent, write_context_fragment, write_events
 from lib.agent_report import RunReport, emit, snapshot_output, count_written
 
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://litellm:4000/v1/chat/completions")
@@ -40,6 +41,35 @@ def report_from_response(data: dict, cost_header, files_written: int, text: str)
         error=None,
         notes=text or None,
     )
+
+
+def context_fragment() -> dict:
+    """The api runner's context fragment (spec 012 US2): no instruction files, complete."""
+    return {
+        "instruction_files": [],
+        # The api runner has no external CLI; its harness runtime is the Python it runs on (FR-009).
+        "harness_version": f"python {platform.python_version()}",
+        "completeness": {
+            "complete": True, "undisclosed": [],
+            "statement": ("Complete — the api runner sends only the prompt shown to the model; "
+                          "no instruction files or hidden system prompt are added."),
+        },
+    }
+
+
+def synth_events(prompt: str, text: str, report: RunReport) -> list:
+    """The api runner's synthesized normalized events (spec 012): it has no CLI stream, so the
+    single request/response becomes system + user(prompt) + assistant(reply) + final."""
+    return [
+        NormalizedEvent(kind="system", turn=0, text=f"api runner · model {MODEL}"),
+        NormalizedEvent(kind="user", turn=0, text=prompt),
+        NormalizedEvent(kind="assistant", turn=1, text=text or "",
+                        tokens_in=report.tokens_in, tokens_out=report.tokens_out,
+                        cost_usd=report.cost_usd),
+        NormalizedEvent(kind="final", turn=1, text=text or "",
+                        tokens_in=report.tokens_in, tokens_out=report.tokens_out,
+                        cost_usd=report.cost_usd),
+    ]
 
 
 def main() -> None:
@@ -76,6 +106,17 @@ def main() -> None:
     print(json.dumps({"status": "ok", "output": out_path, "chars": len(text)}))
 
     report = report_from_response(data, cost_header, count_written(before, path=OUT_DIR), text)
+
+    # Synthesize the normalized event stream (spec 012): the api runner has no CLI stream, so the
+    # single request/response becomes system + user(prompt) + assistant(reply) + final. Best-effort
+    # — an event-capture error never changes the run's report.
+    try:
+        write_events(synth_events(prompt, text, report))
+        # The api runner loads no instruction files and adds no hidden prompt → complete (US2).
+        write_context_fragment(context_fragment())
+    except Exception as e:  # noqa: BLE001
+        print(f"agentbox: capture failed: {e}", file=sys.stderr)
+
     emit(report)
 
 

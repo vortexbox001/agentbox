@@ -7,6 +7,8 @@ Dagster: the file operation always succeeds or fails on its own.
 """
 from __future__ import annotations
 
+import datetime
+
 import httpx
 
 import config
@@ -41,6 +43,72 @@ async def reload() -> dict:
         return {"ok": False, "message": data["errors"][0].get("message", "unknown GraphQL error")}
     # A bare successful reload with an unrecognised (but non-error) typename.
     return {"ok": True, "message": "Workspace reloaded"}
+
+
+_LAUNCH_ARMS = (
+    " __typename "
+    "... on LaunchRunSuccess { run { runId } } "
+    "... on PythonError { message } "
+    "... on RunConfigValidationInvalid { errors { message } } "
+    "... on PipelineNotFoundError { message } "
+    "... on InvalidSubsetError { message } "
+    "... on ConflictingExecutionParamsError { message } "
+    "... on PresetNotFoundError { message } "
+    "... on UnauthorizedError { message } "
+)
+
+
+async def launch(cfg: dict) -> dict:
+    """Launch a run for an agent (materialize its asset, or run its job). Returns
+    ``{"ok": bool, "run_id": str|None, "message": str}`` — Dagster/transport failures are plain data.
+
+    A job (``job: true``, incl. both-kind whose ``agent_<name>`` job materializes the asset) is
+    launched by job name; an asset-only agent is materialized through the implicit ``__ASSET_JOB``
+    with an asset selection (a daily-partitioned asset targets today's partition, as ``on_cron``
+    does).
+    """
+    location = config.DAGSTER_LOCATION
+    repo_sel = f'repositoryLocationName: {_q(location)}, repositoryName: "__repository__"'
+    name = cfg.get("name")
+    asset = cfg.get("asset")
+    asset = asset.strip() if isinstance(asset, str) else ""
+    partition = cfg.get("partition") or "none"
+    exec_meta = ""
+    if cfg.get("job") is True:
+        job = "agent_" + str(name).replace("-", "_")
+        selector = f"{{{repo_sel}, jobName: {_q(job)}}}"
+    elif asset:
+        path = ", ".join(_q(s) for s in asset.split("/"))
+        selector = f"{{{repo_sel}, jobName: \"__ASSET_JOB\", assetSelection: [{{path: [{path}]}}]}}"
+        if partition == "daily":
+            day = datetime.datetime.now().strftime("%Y-%m-%d")
+            exec_meta = f', executionMetadata: {{tags: [{{key: "dagster/partition", value: {_q(day)}}}]}}'
+    else:
+        return {"ok": False, "run_id": None, "message": "agent is neither a job nor an asset"}
+
+    mutation = (
+        f"mutation {{ launchRun(executionParams: {{ selector: {selector}, "
+        f'mode: "default", runConfigData: "{{}}"{exec_meta} }}) {{{_LAUNCH_ARMS}}} }}'
+    )
+    url = f"{config.DAGSTER_URL}/graphql"
+    try:
+        async with httpx.AsyncClient(timeout=config.RELOAD_TIMEOUT_S) as client:
+            resp = await client.post(url, json={"query": mutation})
+            resp.raise_for_status()
+            payload = resp.json()
+    except (httpx.HTTPError, ValueError) as e:
+        return {"ok": False, "run_id": None, "message": f"Dagster unreachable: {e}"}
+
+    if payload.get("errors"):
+        return {"ok": False, "run_id": None,
+                "message": payload["errors"][0].get("message", "unknown GraphQL error")}
+    node = (payload.get("data") or {}).get("launchRun") or {}
+    if node.get("__typename") == "LaunchRunSuccess":
+        return {"ok": True, "run_id": (node.get("run") or {}).get("runId"), "message": ""}
+    msg = node.get("message")
+    if not msg and node.get("errors"):
+        msg = "; ".join(e.get("message", "") for e in node["errors"])
+    return {"ok": False, "run_id": None, "message": msg or f"launch failed ({node.get('__typename')})"}
 
 
 async def status() -> dict:

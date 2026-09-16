@@ -31,9 +31,9 @@ Single tree, three service roots: `images/`, `orchestrator/`, `ui/`. Paths are r
 
 **Purpose**: Wiring the viewer and settings need before any capture or read work begins.
 
-- [ ] T001 Add a read-only `$AGENTBOX_DATA` bind mount into the `ui` service in `docker-compose.yml` (the ui service has none today; runs_store reads run directories through it).
-- [ ] T002 [P] Add the `retention` placeholder block (`mode: keep_forever`) to `examples/config/settings.yaml` so the shipped example documents the new schema.
-- [ ] T003 [P] Add `DATA_ROOT` runs-path and `$AGENTBOX_CONFIG/settings.yaml` accessors to `ui/config.py` (mirrors the existing path helpers; consumed by runs_store and settings_store).
+- [X] T001 Add a read-only `$AGENTBOX_DATA` bind mount into the `ui` service in `docker-compose.yml` (the ui service has none today; runs_store reads run directories through it).
+- [X] T002 [P] Add the `retention` placeholder block (`mode: keep_forever`) to `examples/config/settings.yaml` so the shipped example documents the new schema.
+- [X] T003 [P] Add `DATA_ROOT` runs-path and `$AGENTBOX_CONFIG/settings.yaml` accessors to `ui/config.py` (mirrors the existing path helpers; consumed by runs_store and settings_store).
 
 ---
 
@@ -46,29 +46,29 @@ renders into this shell and reads from these files, so all of Phase 2 blocks Pha
 
 **Capture pipeline**
 
-- [ ] T004 Add run-directory path helpers to `orchestrator/paths.py` — `run_dir(agent, date, run_id)` and the four filenames (`transcript.jsonl`, `events.jsonl`, `context.json`, `report.json`), keeping the legacy flat-file helper for backward compat (contracts/run-directory.md, R1).
-- [ ] T005 [P] Extend `orchestrator/tests/test_paths.py` and `orchestrator/tests/test_paths_parity.py` for the new run-directory helpers.
-- [ ] T006 Create `images/lib/agent_events.py` — the `NormalizedEvent` dataclass (seven kinds, `ts`/`turn`/`tokens_in`/`tokens_out`/`cost_usd` with null≠0), the JSONL writer, and **generic** instruction-file walk/read primitives, per `contracts/normalized-event.schema.json` (R5). Note: this lib provides only generic file-tree walk/read helpers; per-harness instruction-file *discovery* (CLAUDE.md hierarchy vs AGENTS.md) lives in each wrapper's context fragment (T040–T043).
-- [ ] T007 [P] Add `images/tests/test_agent_events.py` — schema round-trip, kind coverage, and the null-vs-0 numeric rule for `agent_events.py`.
-- [ ] T008 Create `orchestrator/redact.py` — `redact(text) -> text` over the `ui/secret_scan.py` heuristic, replacing matches with `[REDACTED:<kind>]`, idempotent (contracts/redaction.md, R4).
-- [ ] T009 [P] Add `orchestrator/tests/test_redact.py` — per-kind coverage + idempotence; a shared-fixture parity test pinning `redact.py` against `ui/secret_scan.py`; **and** an end-to-end capture test that writes a fixture run directory seeded with a fake secret, `grep -r`'s the whole directory, and asserts no cleartext hit while the value survives only as `[REDACTED:<kind>]` (FR-016 / SC-004).
-- [ ] T010 Create `orchestrator/run_capture.py` — run-dir writer (create dir; write `context.json` first for crash-before-first-event; stream+redact transcript lines; redact+move `events.jsonl` from staging; co-locate `report.json`) plus the context-snapshot builder scaffold (contracts/run-directory.md ownership table).
-- [ ] T010a Wire the ephemeral **staging mount** the images write `events.jsonl` + the context fragment (`context-harness.json`) to, in `orchestrator/factory.py` (reuse/adjacent to the existing `/pipes` dir). The mount source MUST resolve on the **host** filesystem under `$AGENTBOX_DATA` (never container-private `/tmp` — Docker-outside-of-Docker, see the pipes-dir pitfall), be `--rm`-cleaned per run, and grant no new network or credential reach; it is not `/output` (Constitution I, plan Constitution Check). Add an `orchestrator/tests` assertion pinning the staging path under `$AGENTBOX_DATA` and the `--rm`/no-new-mount invariants.
-- [ ] T011 Wire capture into `orchestrator/factory.py` — run-directory assembly at launch, the single redaction pass, image-digest inspect (R10), and the `run_dir` link in `build_metadata`, including the timeout path that authors context+report itself.
-- [ ] T012 [P] Extend `orchestrator/tests/test_factory.py` and `orchestrator/tests/test_reports.py` — run-dir assembly, `run_dir` metadata link, and timeout still writing context+report.
+- [X] T004 Add run-directory path helpers to `orchestrator/paths.py` — `run_dir(agent, date, run_id)` and the four filenames (`transcript.jsonl`, `events.jsonl`, `context.json`, `report.json`), keeping the legacy flat-file helper for backward compat (contracts/run-directory.md, R1).
+- [X] T005 [P] Extend `orchestrator/tests/test_paths.py` and `orchestrator/tests/test_paths_parity.py` for the new run-directory helpers.
+- [X] T006 Create `images/lib/agent_events.py` — the `NormalizedEvent` dataclass (seven kinds, `ts`/`turn`/`tokens_in`/`tokens_out`/`cost_usd` with null≠0), the JSONL writer, and **generic** instruction-file walk/read primitives, per `contracts/normalized-event.schema.json` (R5). Note: this lib provides only generic file-tree walk/read helpers; per-harness instruction-file *discovery* (CLAUDE.md hierarchy vs AGENTS.md) lives in each wrapper's context fragment (T040–T043).
+- [X] T007 [P] Add `images/tests/test_agent_events.py` — schema round-trip, kind coverage, and the null-vs-0 numeric rule for `agent_events.py`.
+- [X] T008 Create `orchestrator/redact.py` — `redact(text) -> text` over the `ui/secret_scan.py` heuristic, replacing matches with `[REDACTED:<kind>]`, idempotent (contracts/redaction.md, R4).
+- [X] T009 [P] Add `orchestrator/tests/test_redact.py` — per-kind coverage + idempotence; a shared-fixture parity test pinning `redact.py` against `ui/secret_scan.py`; **and** an end-to-end capture test that writes a fixture run directory seeded with a fake secret, `grep -r`'s the whole directory, and asserts no cleartext hit while the value survives only as `[REDACTED:<kind>]` (FR-016 / SC-004).
+- [X] T010 Create `orchestrator/run_capture.py` — run-dir writer (create dir; write `context.json` first for crash-before-first-event; stream+redact transcript lines; redact+move `events.jsonl` from staging; co-locate `report.json`) plus the context-snapshot builder scaffold (contracts/run-directory.md ownership table).
+- [X] T010a Wire the ephemeral **staging mount** the images write `events.jsonl` + the context fragment (`context-harness.json`) to, in `orchestrator/factory.py` (reuse/adjacent to the existing `/pipes` dir). The mount source MUST resolve on the **host** filesystem under `$AGENTBOX_DATA` (never container-private `/tmp` — Docker-outside-of-Docker, see the pipes-dir pitfall), be `--rm`-cleaned per run, and grant no new network or credential reach; it is not `/output` (Constitution I, plan Constitution Check). Add an `orchestrator/tests` assertion pinning the staging path under `$AGENTBOX_DATA` and the `--rm`/no-new-mount invariants.
+- [X] T011 Wire capture into `orchestrator/factory.py` — run-directory assembly at launch, the single redaction pass, image-digest inspect (R10), and the `run_dir` link in `build_metadata`, including the timeout path that authors context+report itself.
+- [X] T012 [P] Extend `orchestrator/tests/test_factory.py` and `orchestrator/tests/test_reports.py` — run-dir assembly, `run_dir` metadata link, and timeout still writing context+report.
 
 **Disk reader**
 
-- [ ] T013 Create `ui/runs_store.py` — `list_runs(agent, status, date_from, date_to)` (report.json+context.json headers only) and `read_run(run_id)` (tolerant four-file load, sets `conversation_available`), per contracts/viewer-routes.md.
-- [ ] T014 [P] Add `ui/tests/test_runs_store.py` — list/read against a temp run tree, filter application, and missing-file tolerance (partial write / legacy flat run).
+- [X] T013 Create `ui/runs_store.py` — `list_runs(agent, status, date_from, date_to)` (report.json+context.json headers only) and `read_run(run_id)` (tolerant four-file load, sets `conversation_available`), per contracts/viewer-routes.md.
+- [X] T014 [P] Add `ui/tests/test_runs_store.py` — list/read against a temp run tree, filter application, and missing-file tolerance (partial write / legacy flat run).
 
 **Design-system shell + detail page container**
 
-- [ ] T015 Finish the `ax-btn--dagster` variant and add the `tab-panel` behaviour + `run_stat_strip` component to the specimen and master CSS in `ui/design-system/templates/run-detail/RunDetail.dc.html` and `ui/design-system/static/app.css` (R9 step 1–2).
-- [ ] T016 Sync the `ax-btn--dagster`, `tab-panel`, and `run_stat_strip` CSS byte-for-byte into `ui/static/app.css` (R9 step 3; `test_design_system_sync.py`).
-- [ ] T017 Add the `run_stat_strip` macro and the dagster button intent to `ui/templates/components/macros.html`, and add the Runs + Settings nav slots to `ui/templates/base.html` (R9 step 4).
-- [ ] T018 Create `ui/static/run-detail.js` with the tab-panel switching skeleton across the four tabs (Conversation / Context / Report / Files).
-- [ ] T019 Add the `GET /runs/{run_id}` route to `ui/main.py` and create the shell template `ui/templates/runs/detail.html` (tab container + stat strip via `read_run`, path param through `_unsafe_name()`).
+- [X] T015 Finish the `ax-btn--dagster` variant and add the `tab-panel` behaviour + `run_stat_strip` component to the specimen and master CSS in `ui/design-system/templates/run-detail/RunDetail.dc.html` and `ui/design-system/static/app.css` (R9 step 1–2).
+- [X] T016 Sync the `ax-btn--dagster`, `tab-panel`, and `run_stat_strip` CSS byte-for-byte into `ui/static/app.css` (R9 step 3; `test_design_system_sync.py`).
+- [X] T017 Add the `run_stat_strip` macro and the dagster button intent to `ui/templates/components/macros.html`, and add the Runs + Settings nav slots to `ui/templates/base.html` (R9 step 4).
+- [X] T018 Create `ui/static/run-detail.js` with the tab-panel switching skeleton across the four tabs (Conversation / Context / Report / Files).
+- [X] T019 Add the `GET /runs/{run_id}` route to `ui/main.py` and create the shell template `ui/templates/runs/detail.html` (tab container + stat strip via `read_run`, path param through `_unsafe_name()`).
 
 **Checkpoint**: A run writes a full run directory; the detail page opens from disk with empty tabs.
 
@@ -85,25 +85,25 @@ diffs in faithful order.
 
 ### Tests for User Story 1 ⚠️ (write first, ensure they fail)
 
-- [ ] T020 [P] [US1] `images/tests/test_claude_events.py` — `to_events()` for the claude-code native stream asserts kinds/order/diff.
-- [ ] T021 [P] [US1] `images/tests/test_codex_events.py` — `to_events()` for the codex native stream asserts kinds/order/error/final.
-- [ ] T022 [P] [US1] `images/tests/test_pi_events.py` — `to_events()` for the pi native stream (message + agent_end blocks, per-message usage).
-- [ ] T023 [P] [US1] `images/tests/test_api_events.py` — synthesised events for the python runner (system + user + assistant + final).
-- [ ] T024 [P] [US1] `ui/tests/test_runs.py` — Conversation tab renders the same components for a fixture run of each harness, and marks a missing tool result as missing.
+- [X] T020 [P] [US1] `images/tests/test_claude_events.py` — `to_events()` for the claude-code native stream asserts kinds/order/diff.
+- [X] T021 [P] [US1] `images/tests/test_codex_events.py` — `to_events()` for the codex native stream asserts kinds/order/error/final.
+- [X] T022 [P] [US1] `images/tests/test_pi_events.py` — `to_events()` for the pi native stream (message + agent_end blocks, per-message usage).
+- [X] T023 [P] [US1] `images/tests/test_api_events.py` — synthesised events for the python runner (system + user + assistant + final).
+- [X] T024 [P] [US1] `ui/tests/test_runs.py` — Conversation tab renders the same components for a fixture run of each harness, and marks a missing tool result as missing.
 
 ### Implementation for User Story 1
 
-- [ ] T025 [P] [US1] Add `to_events(lines)` to `images/agent-claude/wrapper.py` (system init → system; assistant blocks → assistant/tool_call; user tool_result → tool_result; result → final).
-- [ ] T026 [P] [US1] Add `to_events(lines)` to `images/agent-codex/wrapper.py` (turn/item events → assistant/tool_*; error → error; terminal → final).
-- [ ] T027 [P] [US1] Add `to_events(lines)` to `images/agent-pi/wrapper.py` (message events + agent_end messages[] → stream; usage per assistant message).
-- [ ] T028 [P] [US1] Synthesise events in `images/agent-python/runner.py` (no CLI stream) and write `events.jsonl` to the staging mount.
-- [ ] T029 [US1] Extend `run_wrapper` in `images/lib/agent_report.py` so the CLI harnesses call both `parse` and `to_events` on the teed lines and write `events.jsonl` to the staging mount (depends on T025–T027).
-- [ ] T030 [US1] Add the `timeline` + `timeline_entry`, `tool_call` (collapsible), and `diff_block` (`ax-diff-add`/`ax-diff-del`) components to the specimen and master CSS in `ui/design-system/templates/run-detail/RunDetail.dc.html` and `ui/design-system/static/app.css`.
-- [ ] T031 [US1] Sync the timeline / tool_call / diff CSS byte-for-byte into `ui/static/app.css`.
-- [ ] T032 [US1] Add the `timeline`, `timeline_entry`, `tool_call`, and `diff_block` macros to `ui/templates/components/macros.html`.
-- [ ] T033 [US1] Add `GET /api/runs/{run_id}/events` to `ui/main.py`, returning normalized events from `runs_store` for the Conversation tab.
-- [ ] T034 [US1] Build the Conversation tab in `ui/templates/runs/detail.html` — threaded history via the new macros, per-turn tokens/cost, missing-result markers, and the "conversation only/pruned" fallback when `events.jsonl` is absent.
-- [ ] T035 [US1] Add conversation collapse + in-page search to `ui/static/run-detail.js`.
+- [X] T025 [P] [US1] Add `to_events(lines)` to `images/agent-claude/wrapper.py` (system init → system; assistant blocks → assistant/tool_call; user tool_result → tool_result; result → final).
+- [X] T026 [P] [US1] Add `to_events(lines)` to `images/agent-codex/wrapper.py` (turn/item events → assistant/tool_*; error → error; terminal → final).
+- [X] T027 [P] [US1] Add `to_events(lines)` to `images/agent-pi/wrapper.py` (message events + agent_end messages[] → stream; usage per assistant message).
+- [X] T028 [P] [US1] Synthesise events in `images/agent-python/runner.py` (no CLI stream) and write `events.jsonl` to the staging mount.
+- [X] T029 [US1] Extend `run_wrapper` in `images/lib/agent_report.py` so the CLI harnesses call both `parse` and `to_events` on the teed lines and write `events.jsonl` to the staging mount (depends on T025–T027).
+- [X] T030 [US1] Add the `timeline` + `timeline_entry`, `tool_call` (collapsible), and `diff_block` (`ax-diff-add`/`ax-diff-del`) components to the specimen and master CSS in `ui/design-system/templates/run-detail/RunDetail.dc.html` and `ui/design-system/static/app.css`.
+- [X] T031 [US1] Sync the timeline / tool_call / diff CSS byte-for-byte into `ui/static/app.css`.
+- [X] T032 [US1] Add the `timeline`, `timeline_entry`, `tool_call`, and `diff_block` macros to `ui/templates/components/macros.html`.
+- [X] T033 [US1] Add `GET /api/runs/{run_id}/events` to `ui/main.py`, returning normalized events from `runs_store` for the Conversation tab.
+- [X] T034 [US1] Build the Conversation tab in `ui/templates/runs/detail.html` — threaded history via the new macros, per-turn tokens/cost, missing-result markers, and the "conversation only/pruned" fallback when `events.jsonl` is absent.
+- [X] T035 [US1] Add conversation collapse + in-page search to `ui/static/run-detail.js`.
 
 **Checkpoint**: Conversation view renders identically across all four harnesses — MVP is usable.
 
@@ -121,22 +121,22 @@ complete).
 
 ### Tests for User Story 2 ⚠️ (write first, ensure they fail)
 
-- [ ] T036 [P] [US2] `orchestrator/tests/test_run_capture.py` — the context builder produces every FR-009/010/011 field, captures the image digest, and never writes an env value.
-- [ ] T037 [P] [US2] `images/tests/test_context_fragment.py` — per-harness fragment (instruction-file contents, MCP exposed tools, completeness) for claude/codex/pi/api.
-- [ ] T038 [P] [US2] Extend `ui/tests/test_runs.py` — Context tab renders instruction-file contents, the completeness statement, and env names only.
+- [X] T036 [P] [US2] `orchestrator/tests/test_run_capture.py` — the context builder produces every FR-009/010/011 field, captures the image digest, and never writes an env value.
+- [X] T037 [P] [US2] `images/tests/test_context_fragment.py` — per-harness fragment (instruction-file contents, MCP exposed tools, completeness) for claude/codex/pi/api.
+- [X] T038 [P] [US2] Extend `ui/tests/test_runs.py` — Context tab renders instruction-file contents, the completeness statement, and env names only.
 
 ### Implementation for User Story 2
 
-- [ ] T039 [US2] Implement the full context-snapshot builder in `orchestrator/run_capture.py` — all FR-009 fields, workspace/output file trees (FR-010), and asset-run fields (FR-011), per `contracts/context-snapshot.schema.json`.
-- [ ] T040 [P] [US2] Add the context fragment to `images/agent-claude/wrapper.py` (CLAUDE.md hierarchy contents + MCP exposed tools + completeness: vendor base prompt undisclosed).
-- [ ] T041 [P] [US2] Add the context fragment to `images/agent-codex/wrapper.py` (AGENTS.md contents + completeness: vendor base prompt undisclosed).
-- [ ] T042 [P] [US2] Add the context fragment to `images/agent-pi/wrapper.py` (instruction files + completeness: complete).
-- [ ] T043 [P] [US2] Add the context fragment to `images/agent-python/runner.py` (no instruction files + completeness: complete).
-- [ ] T044 [US2] Merge the image fragment into `context.json` and run it through redaction in `orchestrator/run_capture.py` (depends on T039–T043).
-- [ ] T045 [US2] Add the `context_kv`, `context_section`, and `env_pill` components to the specimen and master CSS in `ui/design-system/templates/run-detail/RunDetail.dc.html` and `ui/design-system/static/app.css`.
-- [ ] T046 [US2] Sync the context CSS byte-for-byte into `ui/static/app.css`.
-- [ ] T047 [US2] Add the `context_kv`, `context_section`, and `env_pill` macros to `ui/templates/components/macros.html`.
-- [ ] T048 [US2] Build the Context tab in `ui/templates/runs/detail.html` — full snapshot, instruction-file contents, completeness statement, asset-run fields, env pills.
+- [X] T039 [US2] Implement the full context-snapshot builder in `orchestrator/run_capture.py` — all FR-009 fields, workspace/output file trees (FR-010), and asset-run fields (FR-011), per `contracts/context-snapshot.schema.json`.
+- [X] T040 [P] [US2] Add the context fragment to `images/agent-claude/wrapper.py` (CLAUDE.md hierarchy contents + MCP exposed tools + completeness: vendor base prompt undisclosed).
+- [X] T041 [P] [US2] Add the context fragment to `images/agent-codex/wrapper.py` (AGENTS.md contents + completeness: vendor base prompt undisclosed).
+- [X] T042 [P] [US2] Add the context fragment to `images/agent-pi/wrapper.py` (instruction files + completeness: complete).
+- [X] T043 [P] [US2] Add the context fragment to `images/agent-python/runner.py` (no instruction files + completeness: complete).
+- [X] T044 [US2] Merge the image fragment into `context.json` and run it through redaction in `orchestrator/run_capture.py` (depends on T039–T043).
+- [X] T045 [US2] Add the `context_kv`, `context_section`, and `env_pill` components to the specimen and master CSS in `ui/design-system/templates/run-detail/RunDetail.dc.html` and `ui/design-system/static/app.css`.
+- [X] T046 [US2] Sync the context CSS byte-for-byte into `ui/static/app.css`.
+- [X] T047 [US2] Add the `context_kv`, `context_section`, and `env_pill` macros to `ui/templates/components/macros.html`.
+- [X] T048 [US2] Build the Context tab in `ui/templates/runs/detail.html` — full snapshot, instruction-file contents, completeness statement, asset-run fields, env pills.
 
 **Checkpoint**: Context view renders the full snapshot with correct per-harness completeness.
 
@@ -152,20 +152,20 @@ filters (agent/status/date range) work, and clicking a run opens its detail page
 
 ### Tests for User Story 3 ⚠️ (write first, ensure they fail)
 
-- [ ] T049 [P] [US3] Extend `ui/tests/test_runs.py` — `/runs` list renders from disk with no Dagster reachable; filters by agent/status/date range narrow the list.
-- [ ] T050 [P] [US3] Add `ui/tests/test_run_files.py` — Files tab lists output artifacts; the file API is path-safe (traversal rejected) and previews/downloads; Report tab renders report.json + notes.
-- [ ] T050a [P] [US3] Add `ui/tests/test_viewer_readonly.py` — assert the viewer is read-only (FR-024): every run/viewer route is GET-only, there is no route that mutates run data, and no live-streaming endpoint exists.
+- [X] T049 [P] [US3] Extend `ui/tests/test_runs.py` — `/runs` list renders from disk with no Dagster reachable; filters by agent/status/date range narrow the list.
+- [X] T050 [P] [US3] Add `ui/tests/test_run_files.py` — Files tab lists output artifacts; the file API is path-safe (traversal rejected) and previews/downloads; Report tab renders report.json + notes.
+- [X] T050a [P] [US3] Add `ui/tests/test_viewer_readonly.py` — assert the viewer is read-only (FR-024): every run/viewer route is GET-only, there is no route that mutates run data, and no live-streaming endpoint exists.
 
 ### Implementation for User Story 3
 
-- [ ] T051 [US3] Add `read_output_files(run_id)` to `ui/runs_store.py` for the Files tab (lists the run's `/output` artifacts).
-- [ ] T052 [US3] Add the runs-list page (reusing the `tabbed-list` pattern) and the `file_row` component to the specimen and master CSS in `ui/design-system/templates/tabbed-list/` and `ui/design-system/static/app.css`.
-- [ ] T053 [US3] Sync the list + `file_row` CSS byte-for-byte into `ui/static/app.css`.
-- [ ] T054 [US3] Add the `file_row` macro to `ui/templates/components/macros.html`.
-- [ ] T055 [US3] Add `GET /runs`, `GET /api/runs`, and `GET /api/runs/{run_id}/files/{path}` (path-safe via `_unsafe_name()`) to `ui/main.py`, with best-effort Dagster status enrichment that never blocks disk reads.
-- [ ] T056 [US3] Create `ui/templates/runs/list.html` — filterable list (agent, status, date range) via design-system macros.
-- [ ] T057 [US3] Create `ui/static/runs-list.js` — client-side filter/refresh against `/api/runs`.
-- [ ] T058 [US3] Add the Report tab (report.json fields + notes markdown) and the Files tab (file_row list, preview/download) to `ui/templates/runs/detail.html`.
+- [X] T051 [US3] Add `read_output_files(run_id)` to `ui/runs_store.py` for the Files tab (lists the run's `/output` artifacts).
+- [X] T052 [US3] Add the runs-list page (reusing the `tabbed-list` pattern) and the `file_row` component to the specimen and master CSS in `ui/design-system/templates/tabbed-list/` and `ui/design-system/static/app.css`.
+- [X] T053 [US3] Sync the list + `file_row` CSS byte-for-byte into `ui/static/app.css`.
+- [X] T054 [US3] Add the `file_row` macro to `ui/templates/components/macros.html`.
+- [X] T055 [US3] Add `GET /runs`, `GET /api/runs`, and `GET /api/runs/{run_id}/files/{path}` (path-safe via `_unsafe_name()`) to `ui/main.py`, with best-effort Dagster status enrichment that never blocks disk reads.
+- [X] T056 [US3] Create `ui/templates/runs/list.html` — filterable list (agent, status, date range) via design-system macros.
+- [X] T057 [US3] Create `ui/static/runs-list.js` — client-side filter/refresh against `/api/runs`.
+- [X] T058 [US3] Add the Report tab (report.json fields + notes markdown) and the Files tab (file_row list, preview/download) to `ui/templates/runs/detail.html`.
 
 **Checkpoint**: Full browse → open flow works from disk with the orchestrator stopped.
 
@@ -181,14 +181,14 @@ confirm exactly one difference is shown.
 
 ### Tests for User Story 4 ⚠️ (write first, ensure they fail)
 
-- [ ] T059 [P] [US4] Add `ui/tests/test_compare.py` — two fixture `context.json` differing by one field yield a single diff row; harness-specific fields present on only one side are shown as present-on-one, not equated.
+- [X] T059 [P] [US4] Add `ui/tests/test_compare.py` — two fixture `context.json` differing by one field yield a single diff row; harness-specific fields present on only one side are shown as present-on-one, not equated.
 
 ### Implementation for User Story 4
 
-- [ ] T060 [US4] Add the context field-by-field diff logic (added/removed/changed) to `ui/runs_store.py`.
-- [ ] T061 [US4] Add the compare diff-row component to the specimen + master CSS, sync into `ui/static/app.css`, and add its macro to `ui/templates/components/macros.html`.
-- [ ] T062 [US4] Add `GET /runs/compare?a=&b=` to `ui/main.py` (any two runs; path params through `_unsafe_name()`).
-- [ ] T063 [US4] Create `ui/templates/runs/compare.html` — field-by-field diff render.
+- [X] T060 [US4] Add the context field-by-field diff logic (added/removed/changed) to `ui/runs_store.py`.
+- [X] T061 [US4] Add the compare diff-row component to the specimen + master CSS, sync into `ui/static/app.css`, and add its macro to `ui/templates/components/macros.html`.
+- [X] T062 [US4] Add `GET /runs/compare?a=&b=` to `ui/main.py` (any two runs; path params through `_unsafe_name()`).
+- [X] T063 [US4] Create `ui/templates/runs/compare.html` — field-by-field diff render.
 
 **Checkpoint**: Compare surfaces exactly the changed fields between two snapshots.
 
@@ -205,19 +205,19 @@ events+transcript are gone while report+context+outputs remain and the run opens
 
 ### Tests for User Story 5 ⚠️ (write first, ensure they fail)
 
-- [ ] T064 [P] [US5] Add `orchestrator/tests/test_prune.py` — a back-dated fixture run: prune removes only `events.jsonl`+`transcript.jsonl`, keeps report/context/outputs; `keep_forever` is a no-op.
-- [ ] T065 [P] [US5] Add `ui/tests/test_settings.py` — `settings_store` read/write preserves unknown keys; the Settings page renders; a pruned run renders the "conversation pruned" note.
+- [X] T064 [P] [US5] Add `orchestrator/tests/test_prune.py` — a back-dated fixture run: prune removes only `events.jsonl`+`transcript.jsonl`, keeps report/context/outputs; `keep_forever` is a no-op.
+- [X] T065 [P] [US5] Add `ui/tests/test_settings.py` — `settings_store` read/write preserves unknown keys; the Settings page renders; a pruned run renders the "conversation pruned" note.
 
 ### Implementation for User Story 5
 
-- [ ] T066 [US5] Create `ui/settings_store.py` — read/write the `retention` block in `settings.yaml`, preserving unknown keys (contracts/settings.md).
-- [ ] T067 [US5] Create `orchestrator/prune.py` — for each run dir older than `days`, remove only `events.jsonl` + `transcript.jsonl`; never touch report/context/`/output`; `keep_forever` → no-op.
-- [ ] T068 [US5] Register the nightly `sched_prune_runs` Dagster schedule (in `cron_timezone()`) in `orchestrator/factory.py` and expose it via `orchestrator/definitions.py`.
-- [ ] T069 [US5] Add the Settings retention-section components to the specimen + master CSS, sync into `ui/static/app.css`, and add any new macros to `ui/templates/components/macros.html`.
-- [ ] T070 [US5] Add `GET /settings` and `POST /api/settings/retention` (validate + persist) to `ui/main.py`, keeping the existing theme picker.
-- [ ] T071 [US5] Create `ui/templates/settings/page.html` — Retention section (keep forever / prune after N days).
-- [ ] T072 [US5] Add the retention form handling to `ui/static/settings.js`.
-- [ ] T073 [US5] Render the "conversation pruned" note in `ui/templates/runs/detail.html` when `conversation_available` is false (distinct from a live run), driven by `runs_store`.
+- [X] T066 [US5] Create `ui/settings_store.py` — read/write the `retention` block in `settings.yaml`, preserving unknown keys (contracts/settings.md).
+- [X] T067 [US5] Create `orchestrator/prune.py` — for each run dir older than `days`, remove only `events.jsonl` + `transcript.jsonl`; never touch report/context/`/output`; `keep_forever` → no-op.
+- [X] T068 [US5] Register the nightly `sched_prune_runs` Dagster schedule (in `cron_timezone()`) in `orchestrator/factory.py` and expose it via `orchestrator/definitions.py`.
+- [X] T069 [US5] Add the Settings retention-section components to the specimen + master CSS, sync into `ui/static/app.css`, and add any new macros to `ui/templates/components/macros.html`.
+- [X] T070 [US5] Add `GET /settings` and `POST /api/settings/retention` (validate + persist) to `ui/main.py`, keeping the existing theme picker.
+- [X] T071 [US5] Create `ui/templates/settings/page.html` — Retention section (keep forever / prune after N days).
+- [X] T072 [US5] Add the retention form handling to `ui/static/settings.js`.
+- [X] T073 [US5] Render the "conversation pruned" note in `ui/templates/runs/detail.html` when `conversation_available` is false (distinct from a live run), driven by `runs_store`.
 
 **Checkpoint**: Retention persists, the nightly job prunes correctly, pruned runs still open.
 
@@ -225,10 +225,10 @@ events+transcript are gone while report+context+outputs remain and the run opens
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T074 [P] Add the Retention section and update the Layout run-directory description in `README.md` (FR-029), including the debugging examples (README ~L93, L493-499) whose transcript path changes from flat `runs/<agent>/<date>/<run-id>.jsonl` to `runs/<agent>/<date>/<run-id>/transcript.jsonl`. The `agent-logs -> runs` compat symlink is unaffected (it points at the `runs/` root) — no bootstrap change needed.
-- [ ] T075 [P] Update the debugging runbook in `CLAUDE.local.md` for the new run-directory layout (transcript/events/context/report).
-- [ ] T076 Run the design-system hygiene gates (`ui/tests/test_conformance.py`, `test_ui_consistency.py`, `test_design_system_sync.py`) and fix any literal-color/inline-style/CSS-sync violations across the new templates.
-- [ ] T077 Execute the `quickstart.md` scenarios end-to-end (all five stories + the redaction guarantee) and confirm SC-001..SC-008.
+- [X] T074 [P] Add the Retention section and update the Layout run-directory description in `README.md` (FR-029), including the debugging examples (README ~L93, L493-499) whose transcript path changes from flat `runs/<agent>/<date>/<run-id>.jsonl` to `runs/<agent>/<date>/<run-id>/transcript.jsonl`. The `agent-logs -> runs` compat symlink is unaffected (it points at the `runs/` root) — no bootstrap change needed.
+- [X] T075 [P] Update the debugging runbook in `CLAUDE.local.md` for the new run-directory layout (transcript/events/context/report).
+- [X] T076 Run the design-system hygiene gates (`ui/tests/test_conformance.py`, `test_ui_consistency.py`, `test_design_system_sync.py`) and fix any literal-color/inline-style/CSS-sync violations across the new templates.
+- [X] T077 Execute the `quickstart.md` scenarios end-to-end (all five stories + the redaction guarantee) and confirm SC-001..SC-008.
 
 ---
 
@@ -306,5 +306,19 @@ Task: "synthesised events in images/agent-python/runner.py"
 - The viewer is strictly read-only and disk-only; Dagster enrichment is best-effort, never a precondition.
 - Env variable values are never captured to disk anywhere (FR-015) — by construction, not by redaction.
 - Commit after each task or logical group; stop at any checkpoint to validate a story independently.
+
+---
+
+## Phase 9: Convergence
+
+**Purpose**: Close gaps found assessing the implementation against spec.md/plan.md. All are
+`partial` — the capture/read substrate exists but some FR fields are not yet fully surfaced or
+are harness-limited. Ordered HIGH severity first. No constitution MUST violations were found.
+
+- [X] T078 [US3] Render the required `attempts` count and a time-of-day (not just the date) in the runs list — add the columns to `ui/templates/runs/list.html` and `ui/static/runs-list.js` (both values are already on the `runs_store` list row) per FR-017 (partial).
+- [X] T079 [US2] Populate `asset.upstream_inputs` in `orchestrator/factory.py` (currently hardcoded `None` at ~L424) from the op/asset's upstream handoff data, and extend `orchestrator/tests/test_run_capture.py` to assert it per FR-011 (partial).
+- [X] T080 [US1] Synthesize unified file-edit diffs for the pi harness in `images/agent-pi/wrapper.py` and handle codex `apply_patch` edits in `images/agent-codex/wrapper.py`, so a file-edit tool-result carries a diff on every harness (not only claude) per FR-006 (partial).
+- [X] T081 [US2] Emit `mcp_servers` + the tools each exposed from the codex and pi context fragments (`images/agent-codex/wrapper.py`, `images/agent-pi/wrapper.py`) so MCP disclosure is not claude-only per FR-009 (partial).
+- [X] T082 [US2] Report the harness CLI version as `harness_version` from each wrapper/runner context fragment (`images/agent-claude/wrapper.py`, `images/agent-codex/wrapper.py`, `images/agent-pi/wrapper.py`, `images/agent-python/runner.py`) so `context.json` `harness.harness_version` is populated instead of null per FR-009 (partial).
 </content>
 </invoke>

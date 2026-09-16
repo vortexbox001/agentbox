@@ -60,6 +60,25 @@ def test_shared_config_subpaths_agree(both):
     # the config-tree subpath names must be identical in both modules
     assert p.AGENTS_DIR == c.AGENTS_DIR
     assert p.PROMPTS_DIR == c.PROMPTS_DIR
+    # the settings file the UI writes and the orchestrator's prune job reads must be the same path
+    assert p.SETTINGS_FILE == c.SETTINGS_FILE
+
+
+def test_runs_root_agrees_across_both_modules(both):
+    # The writer (paths.RUNS_ROOT) and reader (config.RUNS_DIR) must name the same tree, or the
+    # viewer reads a directory the orchestrator never writes (spec 012).
+    p, c = both
+    assert p.RUNS_ROOT == c.RUNS_DIR == "/mnt/state/runs"
+
+
+def test_run_filenames_agree_across_both_modules(both):
+    # The four per-run filenames are duplicated (writer in paths, reader in config); pin them
+    # so a rename in one (say events.jsonl -> events.log) can never desync the two (spec 012).
+    p, c = both
+    assert p.RUN_TRANSCRIPT == c.RUN_TRANSCRIPT == "transcript.jsonl"
+    assert p.RUN_EVENTS == c.RUN_EVENTS == "events.jsonl"
+    assert p.RUN_CONTEXT == c.RUN_CONTEXT == "context.json"
+    assert p.RUN_REPORT == c.RUN_REPORT == "report.json"
 
 
 def test_default_state_and_dagster_roots_agree_when_unset(monkeypatch):

@@ -1,9 +1,16 @@
 # Instance settings (config/settings.yaml).
 #
-# Deliberately minimal (research R5): nothing in the current stack reads a settings
-# file yet, so this is a reserved, mostly-empty placeholder seeded into a fresh box.
-# Richer instance settings are owned by later briefs. The fresh-install copies this to
-# config/settings.yaml; the migration moves an existing orchestrator/settings.yaml here
-# only if one exists (on the current box, none does).
+# Seeded into a fresh box; the UI's Settings page reads and writes it (spec 012). Unknown
+# keys are preserved on write, so future settings sections extend this same file. The
+# fresh-install copies this to config/settings.yaml.
 
 # schema_version: 1   # reserved — settings schema is defined by a future brief
+
+# Run retention (spec 012, FR-025..029). Governs the nightly prune job (sched_prune_runs).
+#   mode: keep_forever  — nothing is ever pruned (the default; prune job is a no-op).
+#   mode: prune_after_days — remove events.jsonl + transcript.jsonl from run directories
+#                            older than `days`; report.json, context.json, and /output
+#                            artifacts are ALWAYS kept, so pruned runs still open.
+retention:
+  mode: keep_forever
+  # days: 30   # required (int >= 1) when mode is prune_after_days

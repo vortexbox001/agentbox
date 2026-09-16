@@ -30,6 +30,24 @@ AGENTS_DIR = os.environ.get("AGENTS_DIR") or os.path.join(CONFIG_ROOT, "agents")
 # Directory of prompt markdown files the UI lists and creates — under the config root.
 PROMPTS_DIR = os.environ.get("PROMPTS_DIR") or os.path.join(CONFIG_ROOT, "prompts")
 
+# Run directories the viewer reads from disk (spec 012): $AGENTBOX_DATA/runs/<agent>/<date>/<run-id>/.
+# Mirrors orchestrator/paths.RUNS_ROOT (the two run in separate containers with no shared import);
+# the data root is mounted read-only into the ui service (docker-compose.yml). Consumed by
+# runs_store. Explicit env override wins so tests can point it at a temp run tree.
+RUNS_DIR = os.environ.get("RUNS_DIR") or os.path.join(DATA_ROOT, "runs")
+
+# The four per-run filenames, mirrored from orchestrator/paths.py (the writer). The two run in
+# separate containers with no shared import, so the reader duplicates these names; a shared-fixture
+# parity test pins them in agreement (contracts/run-directory.md, spec 012).
+RUN_TRANSCRIPT = "transcript.jsonl"   # native harness stream (pruned by retention)
+RUN_EVENTS = "events.jsonl"           # normalized events     (pruned by retention)
+RUN_CONTEXT = "context.json"          # frozen launch snapshot (ALWAYS kept)
+RUN_REPORT = "report.json"            # spec-007 run report    (ALWAYS kept)
+
+# Instance settings file the Settings page reads and writes (spec 012, contracts/settings.md).
+# Under the config root (writable by the ui service); settings_store preserves unknown keys.
+SETTINGS_FILE = os.environ.get("SETTINGS_FILE") or os.path.join(CONFIG_ROOT, "settings.yaml")
+
 # Product-owned sample trees (read-only). The template picker sources starters from here, not
 # from the instance agents dir (FR-008); TEMPLATES_DIR is the agents subtree of the examples.
 EXAMPLES_DIR = os.environ.get("EXAMPLES_DIR") or os.path.join(PRODUCT_ROOT, "examples", "config")

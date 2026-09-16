@@ -47,14 +47,22 @@
         <img class="ax-brand-lockup ax-brand-lockup--light" src="/design-system/assets/logo-light.svg" alt="agentbox">
         <img class="ax-brand-lockup ax-brand-lockup--dark" src="/design-system/assets/logo-dark.svg" alt="agentbox">
       </div>
-      {# Primary nav links only to pages that exist: Agents (contract shell-and-modal §A,
-         FR-001). The .ax-nav-divider keyline is retained so the group lands where the mock
-         places it; Overview/Runs return when 012/023 ship those pages. #}
+      {# Primary nav links only to pages that exist: Agents + Runs (contract shell-and-modal §A,
+         FR-001; the Runs viewer ships in spec 012). The .ax-nav-divider keyline is retained so
+         the group lands where the mock places it. #}
       <nav class="ax-nav" aria-label="Primary">
         <div class="ax-nav-divider" aria-hidden="true"></div>
         <a class="ax-nav-item" href="/agents" data-nav="/agents">
           <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#agents"></use></svg>
           <span class="ax-nav-label">Agents</span>
+        </a>
+        <a class="ax-nav-item" href="/runs" data-nav="/runs">
+          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#runs"></use></svg>
+          <span class="ax-nav-label">Runs</span>
+        </a>
+        <a class="ax-nav-item" href="/settings" data-nav="/settings">
+          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#settings"></use></svg>
+          <span class="ax-nav-label">Settings</span>
         </a>
       </nav>
       {# Foot (contract §B, FR-002/003/004): Dagster status block (indigo, a Dagster

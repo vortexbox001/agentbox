@@ -1,0 +1,77 @@
+{# Configuration rail (spec 012): the rest of context.json + the report's usage + output artifacts.
+   Composed from design-system macros over the specimen's rail sections. #}
+{% import "components/macros.html" as ui %}
+{% set model = context.model or {} %}
+{% set harness = context.harness or {} %}
+{% set tools = context.tools or {} %}
+{% set runtime = context.runtime or {} %}
+{% set cost = report.get("cost_usd") %}
+
+{% call ui.context_section(title="Configuration") %}
+  {{ ui.context_kv(key="Harness", value=harness.harness, mono=true) }}
+  {{ ui.context_kv(key="Model", value=model.model, mono=true) }}
+  {{ ui.context_kv(key="Effort", value=model.effort, mono=true, dim=(not model.effort)) }}
+  {{ ui.context_kv(key="Fallback model", value=model.fallback_model, mono=true, dim=(not model.fallback_model)) }}
+  {{ ui.context_kv(key="Permission mode", value=tools.permission_mode, mono=true, dim=(not tools.permission_mode)) }}
+  {{ ui.context_kv(key="Allowed tools", value=(tools.allowed_tools|join(", ") if tools.allowed_tools else none), mono=true, dim=(not tools.allowed_tools)) }}
+  {{ ui.context_kv(key="Disallowed tools", value=(tools.disallowed_tools|join(", ") if tools.disallowed_tools else none), mono=true, dim=(not tools.disallowed_tools)) }}
+  {% for s in tools.mcp_servers or [] %}
+  {{ ui.context_kv(key="MCP · " ~ s.name, value=(s.tools|join(", ") if s.tools else "no tools"), mono=true) }}
+  {% endfor %}
+{% endcall %}
+
+{% call ui.context_section(title="Container") %}
+  {{ ui.context_kv(key="Image", value=harness.image_ref, mono=true) }}
+  {{ ui.context_kv(key="Image digest", value=harness.image_digest, mono=true, dim=(not harness.image_digest)) }}
+  {{ ui.context_kv(key="CPU / memory", value=((runtime.cpus ~ " vCPU · " ~ runtime.memory) if (runtime.cpus or runtime.memory) else none), dim=(not (runtime.cpus or runtime.memory))) }}
+  {{ ui.context_kv(key="Network", value=runtime.network, mono=true) }}
+  {{ ui.context_kv(key="Working dir", value=runtime.working_dir, mono=true, dim=(not runtime.working_dir)) }}
+{% endcall %}
+
+{% call ui.context_section(title="Inputs") %}
+  {% for m in runtime.mounts or [] %}
+  <span class="ax-mount"><span class="ax-mount-path">{{ m.target }}</span><span class="ax-mount-mode">{{ m.source }} · {{ m.mode }}</span></span>
+  {% endfor %}
+  <div class="ax-run-kv-key">Environment · {{ runtime.env_names|length }} vars (names only)</div>
+  <div class="ax-env-pills">
+    {% for n in runtime.env_names or [] %}{{ ui.env_pill(name=n, secret=(n in secret_env_names)) }}{% endfor %}
+  </div>
+{% endcall %}
+
+{% if context.completeness %}
+{% call ui.context_section(title="Completeness") %}
+  <p class="ax-context-prompt">{{ context.completeness.statement or "—" }}</p>
+  {% if context.completeness.undisclosed %}{{ ui.context_kv(key="Undisclosed", value=context.completeness.undisclosed|join(", ")) }}{% endif %}
+{% endcall %}
+{% endif %}
+
+{% if context.asset %}
+{% call ui.context_section(title="Asset run") %}
+  {{ ui.context_kv(key="Asset", value=context.asset.asset_key, mono=true) }}
+  {{ ui.context_kv(key="Partition", value=context.asset.partition_key, mono=true, dim=(not context.asset.partition_key)) }}
+  {{ ui.context_kv(key="Attempt", value=context.asset.attempt, mono=true) }}
+{% endcall %}
+{% endif %}
+
+{% call ui.context_section(title="Output artifacts", note=(output_files|length ~ " file(s)")) %}
+  {% if not output_files %}
+  <div class="ax-run-kv-val ax-dim">No output artifacts.</div>
+  {% else %}
+  <div class="ax-file-list">
+    {% for f in output_files %}
+    {{ ui.file_row(name=f.name, size=(f.size ~ " B"), previewable=f.previewable,
+                   href="/api/runs/" ~ run.run_id ~ "/files/" ~ f.name) }}
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endcall %}
+
+{% call ui.context_section(title="Usage") %}
+  {{ ui.context_kv(key="Input tokens", value=report.get("tokens_in"), mono=true, dim=(report.get("tokens_in") is none)) }}
+  {{ ui.context_kv(key="Output tokens", value=report.get("tokens_out"), mono=true, dim=(report.get("tokens_out") is none)) }}
+  {{ ui.context_kv(key="Turns", value=report.get("turns"), mono=true, dim=(report.get("turns") is none)) }}
+  {{ ui.context_kv(key="Files written", value=report.get("files_written"), mono=true, dim=(report.get("files_written") is none)) }}
+  <div class="ax-run-kv ax-run-total"><span class="ax-run-kv-key">Total cost</span><span class="ax-run-kv-val ax-mono">{{ ("$%.4f"|format(cost)) if cost is not none else "—" }}</span></div>
+  {% if report.get("error") %}<div class="ax-tool-out ax-tool-out--fail">{{ report.error }}</div>{% endif %}
+  {% if report.get("notes") %}<div class="ax-report-notes">{{ report.notes }}</div>{% endif %}
+{% endcall %}

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+
+{% block page_header %}{% endblock %}
+{% block content_class %}ax-content--flush{% endblock %}
+
+{% block content %}
+<div class="ax-list-view" id="ax-runs-list">
+  <div class="ax-list-toolbar">
+    <form class="ax-runs-filters" method="get" action="/runs" id="ax-runs-filters">
+      <div class="ax-runs-filter">
+        <span class="ax-runs-filter-label">Agent</span>
+        {{ ui.select(name="agent", value=filters.agent or "", id="ax-runs-agent",
+                     options=[{"value": "", "label": "All agents"}] + agents,
+                     attrs={"data-runs-filter": "agent"}) }}
+      </div>
+      <div class="ax-runs-filter">
+        <span class="ax-runs-filter-label">Status</span>
+        {{ ui.select(name="status", value=filters.status or "", id="ax-runs-status",
+                     options=[{"value": "", "label": "All"}] + statuses,
+                     attrs={"data-runs-filter": "status"}) }}
+      </div>
+      <div class="ax-runs-filter">
+        <span class="ax-runs-filter-label">From</span>
+        {{ ui.text_input(name="date_from", value=filters.date_from or "", placeholder="YYYY-MM-DD",
+                         id="ax-runs-from", attrs={"data-runs-filter": "date_from"}) }}
+      </div>
+      <div class="ax-runs-filter">
+        <span class="ax-runs-filter-label">To</span>
+        {{ ui.text_input(name="date_to", value=filters.date_to or "", placeholder="YYYY-MM-DD",
+                         id="ax-runs-to", attrs={"data-runs-filter": "date_to"}) }}
+      </div>
+      {{ ui.button(label="Apply", intent="primary", type="submit") }}
+    </form>
+  </div>
+
+  {% if runs %}
+  <table class="ax-table ax-table--full-bleed" id="ax-runs-table">
+    <thead><tr>
+      <th scope="col">Run</th><th scope="col">Agent</th><th scope="col">Date</th>
+      <th scope="col">Time</th><th scope="col">Status</th><th scope="col">Model</th>
+      <th scope="col">Cost</th><th scope="col">Attempts</th>
+    </tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr data-run-row>
+        <td><a href="/runs/{{ r.run_id }}" class="ax-run-link">{{ r.run_id[:8] }}</a></td>
+        <td>{{ r.agent }}</td>
+        <td>{{ r.date }}</td>
+        <td>{{ r.started_time or "—" }}</td>
+        <td>{{ ui.run_status_tag(status=({"ok": "success", "failed": "failure", "timeout": "error", "running": "running"}.get(r.status, "queued")), label=r.status) }}</td>
+        <td>{{ r.model or "—" }}</td>
+        <td>{% if r.cost_usd is not none %}${{ "%.4f"|format(r.cost_usd) }}{% else %}—{% endif %}</td>
+        <td>{% if r.attempts is not none %}{{ r.attempts }}{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="ax-runs-empty">No runs found{% if filters.agent or filters.status or filters.date_from or filters.date_to %} for these filters{% endif %}.</div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/runs-list.js"></script>
+{% endblock %}

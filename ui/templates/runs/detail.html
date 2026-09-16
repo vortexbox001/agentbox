@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+
+{# Full-bleed run-detail page (spec 012, composed as the design-system run-detail specimen): the
+   run-view is the sole scroller with its own header + stat strip, then a two-column body — the
+   transcript timeline (Readable / Raw-log toggle) beside a configuration rail. #}
+{% block content_class %}ax-content--flush{% endblock %}
+{% block page_header %}{% endblock %}
+
+{% block content %}
+<div class="ax-run-view">
+  <div class="ax-run-header">
+    <div class="ax-run-headline">
+      <span class="ax-run-crumb">
+        <a href="/runs">Runs</a>
+        <span class="ax-run-crumb-sep">/</span>
+        <span class="ax-run-crumb-id">{{ run.run_id[:8] }}</span>
+      </span>
+      {{ ui.run_status_tag(status=status_view.intent, label=status_view.label,
+                           attrs={"data-state": status_view.state}) }}
+      <span class="ax-run-meta-chip">
+        <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#agents"></use></svg>{{ run.agent }}
+      </span>
+      <span class="ax-run-meta-chip">
+        <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#clock"></use></svg>{{ run.date }}
+      </span>
+      {% if run.legacy %}<span class="ax-run-meta-chip">legacy transcript</span>{% endif %}
+    </div>
+    <div class="ax-run-actions">
+      {{ ui.button(label="View in Dagster", intent="dagster", icon="external",
+                   href=dagster_run_url, attrs={"target": "_blank", "rel": "noopener"}) }}
+    </div>
+  </div>
+
+  {{ ui.run_stat_strip(stats=stats) }}
+
+  <div class="ax-run-body{% if not context %} ax-run-body--solo{% endif %}">
+    <div class="ax-run-main">
+      <div class="ax-transcript-head">
+        <h2>Conversation</h2>
+        <div class="ax-segmented" role="tablist" aria-label="Transcript view" data-segmented>
+          <button type="button" class="ax-btn ax-seg is-active" role="tab" data-view="readable">Readable</button>
+          <button type="button" class="ax-btn ax-seg" role="tab" data-view="raw">Raw log</button>
+        </div>
+      </div>
+
+      {# Readable view: an optional "context given to the agent" card, then the threaded timeline. #}
+      <div data-view-panel="readable">
+        {% if context and ((context.prompt and context.prompt.prompt_text) or context.instruction_files) %}
+        {% include "runs/_context_card.html" %}
+        {% endif %}
+
+        {% if run.conversation_available %}
+        <div class="ax-conv-toolbar">
+          {{ ui.text_input(name="conv-search", placeholder="Search this conversation…", id="ax-conv-search") }}
+          <span class="ax-conv-count" data-conv-count></span>
+        </div>
+        {% call ui.timeline(attrs={"data-conversation": true}) %}
+          {%- for entry in entries %}
+          {% call ui.timeline_entry(role=entry.role, meta=entry.meta, state=entry.state) %}
+            {%- if entry.text %}<p class="ax-entry-msg">{{ entry.text }}</p>{% endif %}
+            {%- for t in entry.tools %}
+            {% call ui.tool_call(tool=t.tool, arg=t.arg, exit=t.exit, state=t.state, missing=t.missing) %}
+              {%- if t.diff %}{{ ui.diff_block(t.diff, fail=(t.state == "error")) }}
+              {%- elif t.result %}{{ ui.tool_out(t.result, fail=(t.state == "error")) }}{% endif %}
+            {% endcall %}
+            {%- endfor %}
+          {% endcall %}
+          {%- endfor %}
+        {% endcall %}
+        {% else %}
+        <div class="ax-conv-empty">
+          {% if run.legacy or run.transcript_available %}Conversation only — this run predates event capture, so there is no threaded history (context unavailable).
+          {% else %}Conversation pruned — the event stream was removed by retention; the context and report remain.{% endif %}
+        </div>
+        {% endif %}
+
+        <div class="ax-run-foot">
+          {{ (report.get("status") or "unknown") }}
+          {%- if report.get("turns") is not none %} · {{ report.turns }} turns{% endif %}
+          {%- if report.get("files_written") is not none %} · {{ report.files_written }} files written{% endif %}
+        </div>
+      </div>
+
+      {# Raw-log view: the native transcript.jsonl, already redacted on disk. #}
+      <div data-view-panel="raw" hidden>
+        {% if raw_transcript %}
+        <pre class="ax-raw-log">{{ raw_transcript }}</pre>
+        {% if raw_truncated %}<div class="ax-conv-empty">Transcript truncated for display — see the file on disk for the full stream.</div>{% endif %}
+        {% else %}
+        <div class="ax-conv-empty">Native transcript not available (pruned or not captured).</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if context %}
+    <aside class="ax-run-aside">
+      {% include "runs/_rail.html" %}
+    </aside>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/run-detail.js"></script>
+{% endblock %}

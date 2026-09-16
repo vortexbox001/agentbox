@@ -1378,6 +1378,44 @@ function wireDelete() {
   });
 }
 
+// ── Launch / Materialize a run ──────────────────────────
+// Kick off a Dagster run for this agent, then navigate to that run in Dagster. Works with or
+// without an editable form (the button carries its own data-stem).
+async function doLaunch(stem, btn) {
+  let resp;
+  try {
+    resp = await fetch(`/api/agents/${encodeURIComponent(stem)}/launch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+  } catch (e) {
+    toast("Could not reach the agentbox server", { tone: "error" });
+    return;
+  }
+  let data = {};
+  try { data = await resp.json(); } catch (e) { /* non-JSON */ }
+  if (resp.status === 404) { toast("This agent no longer exists.", { tone: "error" }); return; }
+  if (data && data.ok && data.run_url) {
+    flashStatus({ message: "Run launched — opening it in Dagster…", ok: true });
+    window.location.href = data.run_url;   // go over to the kicked-off run
+    return;
+  }
+  toast((data && data.message) || "Could not launch a run", { tone: "error" });
+}
+
+function wireLaunch() {
+  const btn = document.getElementById("ax-launch-btn");
+  if (!btn) return;
+  const target = (btn.dataset.stem || (form && form.dataset.stem) || "").trim();
+  btn.addEventListener("click", async () => {
+    if (!target) return;
+    btn.disabled = true;
+    await doLaunch(target, btn);
+    btn.disabled = false;
+  });
+}
+
 // ── Start from template ─────────────────────────────────
 async function prefillFromTemplate(stem) {
   let resp;
@@ -1468,6 +1506,7 @@ async function populateTemplates() {
 
 async function boot() {
   wireDelete();        // the Delete action works with or without an editable form
+  wireLaunch();        // the Launch/Materialize action likewise carries its own data-stem
   if (!form) return;   // uneditable file: the page renders no form to drive
   mode = form.dataset.mode || "create";
   stem = (form.dataset.stem || "").trim();
