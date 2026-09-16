@@ -4,7 +4,7 @@
   "title": "Upstream handoff record",
   "description": "The read-only JSON file referenced by AGENTBOX_UPSTREAM_<KEY>, one per declared upstream, describing that upstream's latest materialization for the downstream's matching partition (FR-011/FR-012/FR-012a). Always present, even when there is no matching-partition materialization.",
   "type": "object",
-  "required": ["asset_key", "partition", "materialized", "output_files", "report", "materialized_at"],
+  "required": ["asset_key", "partition", "materialized", "output_files", "report", "materialized_at", "chain_depth", "automated"],
   "additionalProperties": false,
   "properties": {
     "asset_key": {

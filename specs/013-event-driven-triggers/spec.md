@@ -17,6 +17,8 @@
 - Q: When a downstream fires but one of its declared upstreams has no materialization for the matching partition, what does that upstream's `AGENTBOX_UPSTREAM_<KEY>` provide? → A: The variable is still present and points at a handoff file whose fields are null/empty, marking "no materialization" for that partition.
 - Q: What `chain_depth` does a root automated run (schedule- or `on_missing`-initiated, or fired by a manual upstream) carry? → A: Root automated run is `chain_depth` 1; each downstream run carries parent's depth + 1.
 - Q: Does an automated run refused by a governor consume a `max_runs_per_hour` slot? → A: No — only runs that actually launch count toward the per-hour cap; refused runs are skipped without consuming a slot.
+- Q: When a `depends_on` graph has a cycle or a dangling reference, does the whole reload fail, or only the offending assets? → A: Only the offending assets are rejected — skip-and-log (per the existing resilient loader, spec 006 FR-010 / research R5): the offending assets are skipped and named in the daemon log, get no sensor, and every unrelated agent still loads. Hard-aborting the whole `Definitions` load would take down every unrelated agent on one bad edge, violating Agent Isolation. US4's narrative/Independent Test/Acceptance #1 & #3 were reworded from "reload fails" to this reconciled skip-and-log behavior; the observable intent (the mistake is named, no automation runs on the bad graph) is preserved. (Resolves analysis finding F1.)
+- Q: FR-020 names an "Automation view" — is there a distinct Automation page? → A: No. The UI surfaces are `agents/list`, `settings/page`, and `runs/*`; the new trigger kinds appear as pills in the agents list's schedules/sensors column (plan.md / tasks.md T018/T027). "Automation view" in FR-020 means that column, not a separate page; FR-020 was reworded to name the actual surface. (Resolves analysis finding F3.)
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -114,24 +116,28 @@ does not re-fire once the partition exists.
 
 An operator who accidentally wires a loop into the dependency graph is told immediately. If an
 asset ends up depending on itself directly or transitively (e.g. B depends on C which depends on
-B), reloading fails and the error names the assets in the cycle, so the mistake is fixed before any
-automation runs.
+B), the offending assets are rejected at load — named in the daemon log — while every unrelated
+agent still loads (skip-and-log, per the resilient loader). A rejected asset gets no sensor, so the
+mistake is caught before any automation runs against a bad graph.
 
 **Why this priority**: A cycle would let automated runs trigger each other endlessly; catching it
 at load — with a message that names the offending assets — is essential for safety but builds on
 the dependency declaration, so it follows the core trigger and handoff.
 
 **Independent Test**: Declare B → C → B (B depends on C, C depends on B), reload, and confirm the
-reload fails with an error that names the assets forming the cycle.
+offending assets are rejected (skip-and-log) with a daemon-log error that names the assets forming
+the cycle, while every unrelated agent still loads.
 
 **Acceptance Scenarios**:
 
 1. **Given** `depends_on` edges that form a cycle (direct or transitive), **When** the
-   configuration is loaded, **Then** the load fails and the error names the assets in the cycle.
+   configuration is loaded, **Then** the assets in the cycle are rejected (skipped, given no sensor)
+   and a daemon-log error names them, while unrelated agents still load.
 2. **Given** an acyclic dependency graph, **When** the configuration is loaded, **Then** it loads
    successfully.
 3. **Given** a `depends_on` entry naming an asset key that does not exist, **When** the
-   configuration is loaded, **Then** the load fails naming the missing asset key.
+   configuration is loaded, **Then** that agent's asset is rejected (skip-and-log) and the daemon
+   log names the missing asset key, while unrelated agents still load.
 
 ---
 
@@ -264,8 +270,9 @@ hour, and confirm the third is refused and logged. Separately, chain A → B →
 
 - **FR-019**: The create/edit agent form MUST present a "Depends-on" card for declaring
   `produces.depends_on`.
-- **FR-020**: The Automation view MUST present the two new asset trigger kinds (`on_upstream`,
-  `on_missing`) alongside the existing `asset_schedule`.
+- **FR-020**: The agents list's schedules/sensors column (the "Automation" surface — there is no
+  separate Automation page) MUST present the two new asset trigger kinds (`on_upstream`,
+  `on_missing`) as pills alongside the existing `asset_schedule`.
 - **FR-021**: The README MUST document `depends_on`, the two new trigger kinds, the upstream handoff
   env var and file, and the two governors.
 

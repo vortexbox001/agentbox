@@ -1,5 +1,4 @@
 ---
-
 description: "Task list for Event-Driven Triggers — Asset Dependency Graph"
 ---
 
@@ -75,16 +74,16 @@ manual action against B, and does not fire while the sensor is off or while A's 
 
 ### Tests for User Story 1 ⚠️ (write first, ensure they fail)
 
-- [ ] T010 [P] [US1] Extend `orchestrator/tests/test_factory.py` — `depends_on` → asset `deps` (checkless `from_op` deps + checked `AssetSpec` deps with identity daily→daily `TimeWindowPartitionMapping`); `compose_automation_condition` yields `on_cron | any_deps_updated() & ~in_progress()` for an `on_upstream` asset; `build_asset_automation_sensor` is created (STOPPED, unchanged name) for an `on_upstream`-only asset; the `partition_upstream_supported()==False` fallback drops a daily asset's upstream condition and logs a warning naming the asset — all against `DagsterInstance.ephemeral()`.
+- [ ] T010 [P] [US1] Extend `orchestrator/tests/test_factory.py` — `depends_on` → asset `deps` (checkless `from_op` deps + checked `AssetSpec` deps with identity daily→daily `TimeWindowPartitionMapping`); `compose_automation_condition` yields `on_cron | any_deps_updated() & ~in_progress()` for an `on_upstream` asset; `build_asset_automation_sensor` is created (STOPPED, unchanged name) for an `on_upstream`-only asset; the `partition_upstream_supported()==False` fallback drops a daily asset's upstream condition and logs a warning naming the asset; and (FR-006) a blocking-check-failed upstream records an `AssetObservation` rather than an `AssetMaterialization`, so `any_deps_updated()` sees no new materialization and cannot fire the downstream — all against `DagsterInstance.ephemeral()`.
 - [ ] T011 [P] [US1] Extend `ui/tests/test_api.py` — `/api/schema` includes `depends_on` + `on_upstream`; the agent form renders the Depends-on card and the `on_upstream` toggle inside the asset card.
 
 ### Implementation for User Story 1
 
 - [ ] T012 [US1] Add `partition_upstream_supported()` to `orchestrator/factory.py` (returns `True` on Dagster 1.13.21, overridable via `AGENTBOX_UPSTREAM_UNPARTITIONED_ONLY=1`), mirroring the existing `partition_on_cron_supported()` build-time-check lever (research R2).
 - [ ] T013 [US1] Thread a `depends_on` param through `build_asset(cfg, file, cron, depends_on)` and `_build_checked_asset(...)` in `orchestrator/factory.py` and attach one Dagster dep per entry — checkless path `AssetsDefinition.from_op(..., deps=[AssetKey(k.split('/'))])`; checked path `AssetSpec(deps=[AssetDep(AssetKey(k.split('/')), partition_mapping=TimeWindowPartitionMapping())])` — identity daily→daily mapping applied only when `partition_upstream_supported()`; deps are non-arg (op signature unchanged) (contracts/orchestrator-model.md §1).
-- [ ] T014 [US1] Add `compose_automation_condition(cfg, *, cron, on_upstream, on_missing, partitioned)` to `orchestrator/factory.py` OR-composing the enabled contributions — `on_cron(cron, tz)` and (when `on_upstream and (not partitioned or partition_upstream_supported())`) `any_deps_updated()` — then AND `~in_progress()`; return `None` when empty. Attach it where `on_cron` is today (`automation_conditions_by_output_name` on the checkless path, `AssetSpec(automation_condition=…)` on the checked path). (The `on_missing` branch is added in US3/T022.) (contracts/orchestrator-model.md §2, research R1/R4.)
-- [ ] T015 [US1] Make `build_asset_automation_sensor` (`autocond_<name>`, STOPPED, unchanged name) be created whenever ANY asset-kind trigger (`asset_schedule` | `on_upstream` | `on_missing`) is set — update the sensor-creation gate in `orchestrator/factory.py` and its call site so the operator's existing toggle is preserved (research R4).
-- [ ] T016 [US1] In `orchestrator/definitions.py:discover()`, read `produces.depends_on` and `triggers.on_upstream`/`on_missing`, thread them through the `pending_assets` tuple, pass `depends_on` into `build_asset`, and build the sensor for any asset with any asset-kind trigger (contracts/orchestrator-model.md §2).
+- [ ] T014 [US1] Add `compose_automation_condition(cfg, *, cron, on_upstream, on_missing, partitioned)` to `orchestrator/factory.py` OR-composing the enabled contributions — `on_cron(cron, tz)` and (when `on_upstream and (not partitioned or partition_upstream_supported())`) `any_deps_updated()` — then AND `~in_progress()`; return `None` when empty. Attach it where `on_cron` is today (`automation_conditions_by_output_name` on the checkless path, `AssetSpec(automation_condition=…)` on the checked path). (The `on_missing` branch is added in US3/T026.) (contracts/orchestrator-model.md §2, research R1/R4.)
+- [ ] T015 [US1] Make `build_asset_automation_sensor` (`autocond_<name>`, STOPPED, unchanged name) be created whenever ANY asset-kind trigger (`asset_schedule` | `on_upstream` | `on_missing`) is set — `factory.build_asset_automation_sensor` **owns the gate predicate** (the single "any asset-kind trigger set?" check) so it is defined in one place; update it and its call site so the operator's existing toggle is preserved (research R4).
+- [ ] T016 [US1] In `orchestrator/definitions.py:discover()`, read `produces.depends_on` and `triggers.on_upstream`/`on_missing`, thread them through the `pending_assets` tuple, pass `depends_on` into `build_asset`, and only **decide whether to call** `factory.build_asset_automation_sensor` for each asset (it does not re-implement the trigger-check gate — that predicate lives in `factory` per T015) (contracts/orchestrator-model.md §2).
 - [ ] T017 [US1] Add the "Depends-on" list control + the `on_upstream` toggle into the asset-card region in `ui/static/agent-form.js` + `ui/templates/agents/form.html`; add all three new keys to `CARD_SECTIONS` / the asset-card grid and to the removal-on-toggle-off list so `collect()` omits them when the agent is not an asset (contracts/ui-settings-and-form.md §1).
 - [ ] T018 [US1] Show an `on_upstream` pill in the schedules/sensors column and recognize it in the "scheduled" tab narrowing — `ui/templates/agents/list.html` + `ui/static/agents-list.js` (FR-020, contracts/ui-settings-and-form.md §2).
 
@@ -108,7 +107,7 @@ pointing at a `materialized: false` file.
 ### Tests for User Story 2 ⚠️ (write first, ensure they fail)
 
 - [ ] T019 [P] [US2] Extend `orchestrator/tests/test_factory.py` — the handoff builder's env-var naming (`upper_snake`: `notes/daily → AGENTBOX_UPSTREAM_NOTES_DAILY`), matching-partition selection, latest-of-many, and the `materialized: false` null/empty "no materialization" file (FR-012a); the launch snapshot carries the `:ro /upstreams` mount and the `AGENTBOX_UPSTREAM_*` env names — against `DagsterInstance.ephemeral()`, validated against `contracts/upstream-handoff.schema.json`.
-- [ ] T020 [P] [US2] Extend `orchestrator/tests/test_run_capture.py` — `asset.upstream_inputs` in the context snapshot is populated from the handoff data (no longer hardcoded `None`), per R6.
+- [ ] T020 [P] [US2] Extend `orchestrator/tests/test_run_capture.py` — `asset.upstream_inputs` in the context snapshot is populated from the handoff data (currently sourced from op-config `inputs` at `orchestrator/factory.py:426`; now also sourced from the handoff data), per R6.
 
 ### Implementation for User Story 2
 
@@ -118,6 +117,11 @@ pointing at a `materialized: false` file.
 
 **Checkpoint**: A downstream run sees a read-only handoff file per declared upstream and can read
 exactly what each upstream produced — the graph is useful, not merely a firing mechanism.
+
+> **Sequencing note**: the handoff's `chain_depth` and `automated` fields are **null** until US5's
+> T036 records them on the upstream materialization (T021 reads what T036 writes). Until US5 lands,
+> every handoff file's `chain_depth`/`automated` are null by design — validate US2 independently
+> without treating that null as a defect (see Dependencies → Within Each User Story).
 
 ---
 
