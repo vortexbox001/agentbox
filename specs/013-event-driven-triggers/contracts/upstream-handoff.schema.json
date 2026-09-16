@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentbox/contracts/upstream-handoff.schema.json",
+  "title": "Upstream handoff record",
+  "description": "The read-only JSON file referenced by AGENTBOX_UPSTREAM_<KEY>, one per declared upstream, describing that upstream's latest materialization for the downstream's matching partition (FR-011/FR-012/FR-012a). Always present, even when there is no matching-partition materialization.",
+  "type": "object",
+  "required": ["asset_key", "partition", "materialized", "output_files", "report", "materialized_at"],
+  "additionalProperties": false,
+  "properties": {
+    "asset_key": {
+      "type": "string",
+      "description": "The upstream asset key, e.g. \"notes/daily\"."
+    },
+    "partition": {
+      "type": ["string", "null"],
+      "description": "The matching partition (identity daily->daily), or null for an unpartitioned upstream."
+    },
+    "materialized": {
+      "type": "boolean",
+      "description": "true when a matching-partition materialization exists; false marks \"no materialization\" (FR-012a)."
+    },
+    "output_files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The upstream's output file paths for the matching partition; [] when not materialized."
+    },
+    "report": {
+      "type": ["object", "null"],
+      "description": "The spec-007 run report metadata union recorded on the materialization (status, tokens_in, tokens_out, turns, cost_usd, files_written, notes, ...); null when not materialized.",
+      "additionalProperties": true
+    },
+    "materialized_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO-8601 materialization time of the latest matching materialization; null when not materialized."
+    },
+    "chain_depth": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "The producing run's chain_depth, used by the downstream to derive its own (R7); null when not materialized."
+    },
+    "automated": {
+      "type": ["boolean", "null"],
+      "description": "Whether the producing run was automated; a manual upstream contributes 0 to a downstream's chain_depth (R7/FR-015); null when not materialized."
+    }
+  },
+  "examples": [
+    {
+      "asset_key": "notes/daily",
+      "partition": "2026-09-16",
+      "materialized": true,
+      "output_files": ["/data/agentbox/outputs/notes/2026-09-16_09-15_notes_abc.md"],
+      "report": {"status": "ok", "tokens_in": 1200, "tokens_out": 800, "turns": 3, "cost_usd": 0.02, "files_written": 1},
+      "materialized_at": "2026-09-16T09:16:04+00:00",
+      "chain_depth": 1,
+      "automated": true
+    },
+    {
+      "asset_key": "extras/daily",
+      "partition": "2026-09-16",
+      "materialized": false,
+      "output_files": [],
+      "report": null,
+      "materialized_at": null,
+      "chain_depth": null,
+      "automated": null
+    }
+  ]
+}
