@@ -59,6 +59,58 @@ def test_api_retention_rejects_invalid(settings, client):
     assert r.status_code == 400
 
 
+# ── Governors (spec 013 US5, contract ui-settings-and-form §5) ──
+def test_read_governors_default_when_absent(settings):
+    import settings_store
+    assert settings_store.read_governors() == {"max_runs_per_hour": 12, "max_chain_depth": 5}
+
+
+def test_validate_governors_rejects_non_int_non_positive_over_cap(settings):
+    import settings_store
+    with pytest.raises(settings_store.GovernorError):
+        settings_store.validate_governors("lots", 5)
+    with pytest.raises(settings_store.GovernorError):
+        settings_store.validate_governors(0, 5)
+    with pytest.raises(settings_store.GovernorError):
+        settings_store.validate_governors(True, 5)          # bool is not a valid int
+    with pytest.raises(settings_store.GovernorError):
+        settings_store.validate_governors(12, 100000)        # over the sane cap
+
+
+def test_write_governors_preserves_retention_and_unknown_keys(settings, tmp_settings_file):
+    import settings_store
+    import yaml
+    settings_store.write_retention("prune_after_days", 14)
+    tmp_settings_file.write_text(tmp_settings_file.read_text() + "future_section:\n  a: 1\n")
+    settings_store.write_governors(3, 2)
+    doc = yaml.safe_load(tmp_settings_file.read_text())
+    assert doc["governors"] == {"max_runs_per_hour": 3, "max_chain_depth": 2}
+    assert doc["retention"] == {"mode": "prune_after_days", "days": 14}
+    assert doc["future_section"] == {"a": 1}
+    assert settings_store.read_governors() == {"max_runs_per_hour": 3, "max_chain_depth": 2}
+
+
+def test_api_governors_round_trips(settings, client, tmp_settings_file):
+    r = client.post("/api/settings/governors", json={"max_runs_per_hour": 6, "max_chain_depth": 4})
+    assert r.status_code == 200
+    assert r.json()["governors"] == {"max_runs_per_hour": 6, "max_chain_depth": 4}
+    import settings_store
+    assert settings_store.read_governors() == {"max_runs_per_hour": 6, "max_chain_depth": 4}
+
+
+def test_api_governors_rejects_invalid(settings, client):
+    assert client.post("/api/settings/governors",
+                       json={"max_runs_per_hour": 0, "max_chain_depth": 5}).status_code == 400
+    assert client.post("/api/settings/governors",
+                       json={"max_runs_per_hour": 12, "max_chain_depth": "deep"}).status_code == 400
+
+
+def test_settings_page_renders_governors_card(settings, client):
+    html = client.get("/settings").text
+    assert "Run governors" in html
+    assert "ax-governors-card" in html and "ax-governors-form" in html
+
+
 def test_pruned_run_renders_note(settings, tmp_runs, client):
     # a run whose events/transcript were pruned still opens with a "conversation pruned" note (SC-006)
     write_run(tmp_runs, "hello", "2026-09-15", "pruned-run",

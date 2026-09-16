@@ -10,9 +10,11 @@ from dagster import (
     DefaultSensorStatus, DefaultScheduleStatus, define_asset_job,
     Out, Nothing,
     AssetSpec, AssetCheckSpec, AssetCheckResult, AssetCheckSeverity, MaterializeResult,
-    EventRecordsFilter, DagsterEventType,
+    EventRecordsFilter, DagsterEventType, RunsFilter,
     open_pipes_session, PipesEnvContextInjector, PipesFileMessageReader,
 )
+
+import governors
 
 log = logging.getLogger("agentbox.factory")
 from dagster_pipes import (
@@ -347,7 +349,8 @@ def _numeric_md(value):
 
 def build_metadata(cfg: dict, report: dict, output_files: list[str], log_path: str,
                    stamp: str, session_id: str, context: OpExecutionContext,
-                   run_dir: str | None = None) -> dict:
+                   run_dir: str | None = None, chain_depth: int | None = None,
+                   automated: bool | None = None) -> dict:
     """The metadata union attached to a run/materialization (contract metadata.md).
 
     The union of the run-report fields and the run-context fields recorded today.
@@ -382,6 +385,12 @@ def build_metadata(cfg: dict, report: dict, output_files: list[str], log_path: s
         metadata["notes"] = MetadataValue.md(str(report["notes"]))
     if context.has_partition_key:
         metadata["partition"] = context.partition_key
+    # chain_depth + automated (spec 013 US5): recorded so a downstream reads them via the handoff
+    # query (R7). Null until the op derives them (build_metadata is also used by non-graph paths).
+    if chain_depth is not None:
+        metadata["chain_depth"] = MetadataValue.int(chain_depth)
+    if automated is not None:
+        metadata["automated"] = MetadataValue.bool(automated)
     return metadata
 
 
@@ -510,6 +519,121 @@ def _prepare_upstream_handoff(cfg: dict, context: OpExecutionContext) -> tuple[s
     handoff_dir = tempfile.mkdtemp(prefix=f"agentbox-upstreams-{context.run_id[:8]}-", dir=STAGING_ROOT)
     os.chmod(handoff_dir, 0o777)
     return handoff_dir, build_upstream_handoff(cfg, context, handoff_dir)
+
+
+# --- chain_depth + governors (spec 013 US5, contract orchestrator-model §5/§6) --------------
+
+class GovernorRefusal(Exception):
+    """An automated run refused by a governor (rate or chain depth). Raising ends the run without
+    greening the partition; the run is never tagged ``agentbox/launched``, so it consumes no
+    per-hour slot (FR-014/FR-016, R8)."""
+
+
+# The Dagster run tags that mark an automation-launched run (automation-condition sensor / schedule)
+# — their presence classifies a run as automated; their absence is a manual launch (R8).
+_AUTOMATION_TAG_KEYS = ("dagster/auto_materialize", "dagster/sensor_name", "dagster/schedule_name")
+
+
+def _run_tags(context: OpExecutionContext) -> dict:
+    """The current run's tags, or ``{}`` when unavailable (e.g. a directly-invoked op in a test)."""
+    try:
+        return dict(context.run.tags or {})
+    except Exception:
+        return {}
+
+
+def is_automated_run(context: OpExecutionContext) -> bool:
+    """True when this run was launched by Dagster automation (an automation-condition sensor or a
+    schedule), false for a manual launch (launchpad / GraphQL materialize). Governors apply only to
+    automated runs; manual runs bypass them (FR-017, R8)."""
+    tags = _run_tags(context)
+    return any(k in tags for k in _AUTOMATION_TAG_KEYS)
+
+
+def derive_chain_depth(cfg: dict, context: OpExecutionContext) -> int:
+    """This run's ``chain_depth`` (FR-015, R7): ``max`` of the automated upstreams' recorded
+    ``chain_depth`` + 1, or 1 when there is no automated upstream (a root — schedule/on_missing-
+    initiated, or fired by a manual upstream). Reuses the upstream-materialization read the handoff
+    uses; a manual upstream (``automated`` false) is excluded, so its downstream is a root."""
+    depends_on = (cfg.get("produces") or {}).get("depends_on") or []
+    partition = context.partition_key if getattr(context, "has_partition_key", False) else None
+    depths = []
+    for k in depends_on:
+        rec = _read_upstream_materialization(context, AssetKey(k.split("/")), partition)
+        if rec and rec.get("automated") and isinstance(rec.get("chain_depth"), int):
+            depths.append(rec["chain_depth"])
+    return max(depths) + 1 if depths else 1
+
+
+def record_chain_depth(context: OpExecutionContext, chain_depth: int, automated: bool) -> None:
+    """Tag the run with its ``chain_depth`` + ``automated`` flag for inspection (contract §5).
+
+    The same values are recorded in the materialization metadata (``build_metadata``) so downstreams
+    read them via the handoff query. Best-effort — a tag write must never fail the run."""
+    try:
+        context.instance.add_run_tags(context.run_id, {
+            "agentbox/chain_depth": str(chain_depth),
+            "agentbox/automated": "1" if automated else "0",
+        })
+    except Exception as e:  # pragma: no cover - defensive
+        context.log.warning(f"could not record chain_depth tags: {e}")
+
+
+def _refuse(context: OpExecutionContext, cfg: dict, reason: str, is_asset: bool) -> None:
+    """Refuse an automated run: log it, mark the partition red-with-reason (never greened), and
+    raise ``GovernorRefusal``. The run is NOT tagged ``agentbox/launched``, so it consumes no
+    per-hour slot (contract §6, R8)."""
+    context.log.warning(f"{cfg['name']}: automated run refused — {reason} (manual runs bypass)")
+    if is_asset:
+        context.log_event(AssetObservation(
+            asset_key=AssetKey(cfg["produces"]["asset"].split("/")),
+            partition=context.partition_key if context.has_partition_key else None,
+            metadata={"refused": MetadataValue.text(reason)},
+        ))
+    else:
+        context.add_output_metadata({"refused": MetadataValue.text(reason)})
+    raise GovernorRefusal(reason)
+
+
+def governor_refusal_reason(gov: dict, chain_depth: int, launched_count: int) -> str | None:
+    """The pure governor decision: the refusal reason, or ``None`` to allow (contract §6, FR-014/016).
+
+    Refuse when ``chain_depth`` exceeds ``max_chain_depth`` (depth first), or when at least
+    ``max_runs_per_hour`` automated runs already launched in the trailing 60 minutes.
+    """
+    if chain_depth > gov["max_chain_depth"]:
+        return f"chain_depth {chain_depth} > max_chain_depth {gov['max_chain_depth']}"
+    if launched_count >= gov["max_runs_per_hour"]:
+        return f"max_runs_per_hour {gov['max_runs_per_hour']} reached in the last 60m"
+    return None
+
+
+def _count_recent_launched_automated(context: OpExecutionContext) -> int:
+    """The number of automated runs that actually launched in the trailing 60 minutes (the rolling
+    window count — only ``agentbox/launched`` runs count, so refusals consume no slot)."""
+    since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=60)
+    return len(context.instance.get_run_records(RunsFilter(
+        created_after=since,
+        tags={"agentbox/automated": "1", "agentbox/launched": "1"},
+    )))
+
+
+def governor_gate(context: OpExecutionContext, cfg: dict, chain_depth: int, automated: bool,
+                  is_asset: bool) -> None:
+    """Enforce the two governors at op start, after ``record_chain_depth`` (contract §6, R8).
+
+    Manual runs bypass entirely (FR-017). For an automated run: refuse (log + observation/metadata +
+    raise) when ``governor_refusal_reason`` returns a reason; otherwise tag the run
+    ``agentbox/launched`` BEFORE launch so it counts toward the window. A refused run is never so
+    tagged, so it consumes no per-hour slot.
+    """
+    if not automated:
+        return  # manual bypass (FR-017)
+    gov = governors.load_governors()
+    reason = governor_refusal_reason(gov, chain_depth, _count_recent_launched_automated(context))
+    if reason:
+        _refuse(context, cfg, reason, is_asset)
+    context.instance.add_run_tags(context.run_id, {"agentbox/launched": "1"})
 
 
 def _launch_env_names(cfg: dict, runtime_env: dict) -> list[str]:
@@ -764,7 +888,8 @@ _ProducerResult = namedtuple(
 def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str],
                   pipes_dir: str, msg_path: str, stamp: str, session_id: str,
                   is_asset: bool, capture: run_capture.RunCapture, staging_dir: str,
-                  launch_context: dict) -> "_ProducerResult":
+                  launch_context: dict, chain_depth: int | None = None,
+                  automated: bool | None = None) -> "_ProducerResult":
     """Launch the producing container and hand back its report + metadata union.
 
     The shared launch+report core (spec 008 FR-013), extracted from ``make_run_op`` so both the
@@ -889,7 +1014,7 @@ def _run_producer(context: OpExecutionContext, cfg: dict, session, cmd: list[str
         context.log.warning(f"report capture failed: {e}")
 
     metadata = build_metadata(cfg, report, output_files, log_path, stamp, session_id, context,
-                              run_dir=capture.dir)
+                              run_dir=capture.dir, chain_depth=chain_depth, automated=automated)
     context.log.info(
         f"result: status={report.get('status')} turns={report.get('turns')}"
         f" tokens_in/out={report.get('tokens_in')}/{report.get('tokens_out')}"
@@ -1072,6 +1197,15 @@ def make_run_op(cfg: dict):
         # matching channel back. Both agree with cfg's produces block.
         is_asset = bool((cfg.get("produces") or {}).get("asset"))
 
+        # chain_depth + governors (spec 013 US5): classify the run, derive its depth from upstream
+        # materializations, record both, then enforce the governors BEFORE any launch work — a
+        # refused automated run raises GovernorRefusal here, before any run/staging/pipes dir is
+        # created and without a launched tag, so it consumes no slot (R7/R8, contract §5/§6).
+        automated = is_automated_run(context)
+        chain_depth = derive_chain_depth(cfg, context)
+        record_chain_depth(context, chain_depth, automated)
+        governor_gate(context, cfg, chain_depth, automated, is_asset)
+
         # Upstream handoff (spec 013 US2): one read-only /upstreams/<key>.json per declared upstream
         # + the AGENTBOX_UPSTREAM_<KEY> env vars, merged into the launch env (FR-011/012/013).
         handoff_dir, upstream_env = _prepare_upstream_handoff(cfg, context)
@@ -1116,7 +1250,7 @@ def make_run_op(cfg: dict):
             ) as session:
                 pr = _run_producer(
                     context, cfg, session, cmd, pipes_dir, msg_path, stamp, session_id, is_asset,
-                    capture, staging_dir, launch_context,
+                    capture, staging_dir, launch_context, chain_depth=chain_depth, automated=automated,
                 )
 
                 if not pr.timed_out and pr.report.get("status") == "ok" and pr.returncode == 0:
@@ -1278,6 +1412,13 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
                     os.remove(entry.path)
             context.log.info(f"wiped workspace {ws}")
 
+        # chain_depth + governors (spec 013 US5): a check-bearing asset is always an asset; classify,
+        # derive depth, record, then enforce the governors before any launch work (R7/R8, §5/§6).
+        automated = is_automated_run(context)
+        chain_depth = derive_chain_depth(cfg, context)
+        record_chain_depth(context, chain_depth, automated)
+        governor_gate(context, cfg, chain_depth, automated, True)
+
         # Upstream handoff (spec 013 US2): one read-only /upstreams/<key>.json per declared upstream
         # + the AGENTBOX_UPSTREAM_<KEY> env vars, merged into the launch env (FR-011/012/013).
         handoff_dir, upstream_env = _prepare_upstream_handoff(cfg, context)
@@ -1307,6 +1448,7 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
                 pr = _run_producer(
                     context, cfg, session, cmd, pipes_dir, msg_path, stamp, session_id,
                     True, capture, staging_dir, launch_context,
+                    chain_depth=chain_depth, automated=automated,
                 )
                 # Write the report where the checks can read it: a per-run file under PIPES_ROOT
                 # (host==container shared), bind-mounted read-only at /report.json (R5). 0644 so a

@@ -145,10 +145,52 @@ function initRetention() {
   });
 }
 
+// Governors section on the /settings page (spec 013 US5). Two positive-integer inputs saved via
+// POST /api/settings/governors, using the shared notice/status pattern (mirrors initRetention).
+function initGovernors() {
+  const form = document.getElementById("ax-governors-form");
+  if (!form) return;
+  const runs = form.querySelector("#ax-governors-runs");
+  const depth = form.querySelector("#ax-governors-depth");
+  const status = document.getElementById("ax-governors-status");
+
+  function setStatus(msg, error) {
+    if (!status) return;
+    status.textContent = msg;
+    if (error) status.setAttribute("data-state", "error");
+    else status.removeAttribute("data-state");
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      max_runs_per_hour: Number(runs && runs.value),
+      max_chain_depth: Number(depth && depth.value),
+    };
+    setStatus("Saving…", false);
+    try {
+      const resp = await fetch("/api/settings/governors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setStatus(data.message || "Could not save", true);
+        return;
+      }
+      setStatus("Saved.", false);
+    } catch (err) {
+      setStatus("Could not reach the server", true);
+    }
+  });
+}
+
 function init() {
   const link = document.getElementById("ax-settings-link");
   if (link) link.addEventListener("click", openSettings);
   initRetention();
+  initGovernors();
 }
 
 if (document.readyState === "loading") {
