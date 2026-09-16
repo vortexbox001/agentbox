@@ -10,6 +10,7 @@ from dagster import (
     DefaultSensorStatus, DefaultScheduleStatus, define_asset_job,
     Out, Nothing,
     AssetSpec, AssetCheckSpec, AssetCheckResult, AssetCheckSeverity, MaterializeResult,
+    EventRecordsFilter, DagsterEventType,
     open_pipes_session, PipesEnvContextInjector, PipesFileMessageReader,
 )
 
@@ -384,6 +385,133 @@ def build_metadata(cfg: dict, report: dict, output_files: list[str], log_path: s
     return metadata
 
 
+# --- Upstream handoff (spec 013 US2, FR-011/FR-012/FR-012a/FR-013) ----------
+#
+# For each declared upstream, the downstream container receives an env var
+# AGENTBOX_UPSTREAM_<KEY> pointing at a read-only JSON file describing that upstream's latest
+# matching-partition materialization. The key transform is stated once here (writer) and mirrored
+# in the README (docs) + pinned by a parity test (research R6/R10).
+
+# The spec-007 report fields recovered off a materialization's metadata for the handoff `report`.
+_HANDOFF_REPORT_KEYS = ("status", "tokens_in", "tokens_out", "turns", "cost_usd",
+                        "files_written", "notes", "error")
+
+
+def upstream_env_key(asset_key: str) -> str:
+    """The ``AGENTBOX_UPSTREAM_<KEY>`` suffix: the asset key upper-snaked (``/`` and ``-`` → ``_``,
+    uppercased). ``notes/daily`` → ``NOTES_DAILY``; ``repo-review/list-commits`` →
+    ``REPO_REVIEW_LIST_COMMITS``. Stated once here (writer) and pinned by a parity test (R6/R10)."""
+    return re.sub(r"[/-]", "_", asset_key).upper()
+
+
+def upstream_key_slug(asset_key: str) -> str:
+    """The handoff filename stem: the lowercased key with ``/`` → ``_`` (``notes/daily`` →
+    ``notes_daily``). Hyphens are preserved (only ``/`` is replaced)."""
+    return asset_key.replace("/", "_")
+
+
+def _md_plain(value):
+    """Recover a raw Python value from a materialization metadata entry, mapping the null-numeric
+    placeholder back to ``None`` so a downstream reads a real null, not the em-dash."""
+    val = value.value if hasattr(value, "value") else value
+    return None if val == NULL_NUMERIC_PLACEHOLDER else val
+
+
+def _read_upstream_materialization(context: OpExecutionContext, asset_key: AssetKey,
+                                   partition: str | None) -> dict | None:
+    """The latest materialization of ``asset_key`` for ``partition`` as a plain dict, or ``None``.
+
+    Partitioned: the newest ``ASSET_MATERIALIZATION`` event for that partition; unpartitioned: the
+    asset's latest materialization event. Reads ``output_files`` / the spec-007 report fields /
+    ``chain_depth`` / ``automated`` off the materialization metadata and the event timestamp for
+    ``materialized_at`` (contract orchestrator-model §3).
+    """
+    instance = context.instance
+    if partition is not None:
+        records = instance.get_event_records(
+            EventRecordsFilter(
+                DagsterEventType.ASSET_MATERIALIZATION, asset_key=asset_key,
+                asset_partitions=[partition],
+            ),
+            limit=1, ascending=False,
+        )
+        if not records:
+            return None
+        entry = records[0].event_log_entry
+    else:
+        entry = instance.get_latest_materialization_event(asset_key)
+        if entry is None:
+            return None
+    materialization = entry.asset_materialization
+    md = (materialization.metadata if materialization else None) or {}
+    report = {k: _md_plain(md[k]) for k in _HANDOFF_REPORT_KEYS if k in md}
+    output_files = _md_plain(md.get("output_files")) or []
+    materialized_at = None
+    if entry.timestamp is not None:
+        materialized_at = datetime.datetime.fromtimestamp(
+            entry.timestamp, tz=datetime.timezone.utc
+        ).isoformat()
+    return {
+        "output_files": list(output_files),
+        "report": report or None,
+        "materialized_at": materialized_at,
+        # chain_depth + automated are recorded by US5 (T036); null until then, by design.
+        "chain_depth": _md_plain(md.get("chain_depth")),
+        "automated": _md_plain(md.get("automated")),
+    }
+
+
+def build_upstream_handoff(cfg: dict, context: OpExecutionContext, handoff_dir: str) -> dict[str, str]:
+    """Write one read-only JSON handoff file per declared upstream and return the env-var map
+    ``{AGENTBOX_UPSTREAM_<KEY>: /upstreams/<slug>.json}`` (contract §3, upstream-handoff.schema.json).
+
+    For each ``produces.depends_on`` key: resolve the matching partition
+    (``context.partition_key`` when partitioned, else ``None``), query the latest matching
+    materialization, and write ``<slug>.json`` describing it — ``materialized: false`` with
+    null/empty fields when there is none (FR-012a). Files are ``chmod 0644`` so the non-root
+    container reads them; the dir is mounted read-only at ``/upstreams`` by the caller (FR-013).
+    """
+    depends_on = (cfg.get("produces") or {}).get("depends_on") or []
+    partition = context.partition_key if getattr(context, "has_partition_key", False) else None
+    env: dict[str, str] = {}
+    for k in depends_on:
+        record = _read_upstream_materialization(context, AssetKey(k.split("/")), partition)
+        doc = {
+            "asset_key": k,
+            "partition": partition,
+            "materialized": record is not None,
+            "output_files": record["output_files"] if record else [],
+            "report": record["report"] if record else None,
+            "materialized_at": record["materialized_at"] if record else None,
+            "chain_depth": record["chain_depth"] if record else None,
+            "automated": record["automated"] if record else None,
+        }
+        slug = upstream_key_slug(k)
+        path = os.path.join(handoff_dir, f"{slug}.json")
+        with open(path, "w") as f:
+            json.dump(doc, f)
+        os.chmod(path, 0o644)
+        env[f"AGENTBOX_UPSTREAM_{upstream_env_key(k)}"] = f"/upstreams/{slug}.json"
+    return env
+
+
+def _prepare_upstream_handoff(cfg: dict, context: OpExecutionContext) -> tuple[str | None, dict]:
+    """Create the per-run read-only handoff dir + one JSON file per declared upstream (US2, §3).
+
+    Returns ``(handoff_dir, env_map)`` — ``(None, {})`` when the asset declares no upstreams (no
+    mount is added). The dir lives under ``STAGING_ROOT`` (host==container, the same boundary the
+    pipes/staging dirs use), ``chmod 0777`` so the non-root container can traverse it; the caller
+    ``--rm``-cleans it in ``finally`` and mounts it read-only at ``/upstreams``.
+    """
+    depends_on = (cfg.get("produces") or {}).get("depends_on") or []
+    if not depends_on:
+        return None, {}
+    os.makedirs(STAGING_ROOT, exist_ok=True)
+    handoff_dir = tempfile.mkdtemp(prefix=f"agentbox-upstreams-{context.run_id[:8]}-", dir=STAGING_ROOT)
+    os.chmod(handoff_dir, 0o777)
+    return handoff_dir, build_upstream_handoff(cfg, context, handoff_dir)
+
+
 def _launch_env_names(cfg: dict, runtime_env: dict) -> list[str]:
     """The environment-variable NAMES the launched container receives (FR-015: names only).
 
@@ -406,11 +534,12 @@ def _launch_env_names(cfg: dict, runtime_env: dict) -> list[str]:
     return sorted(names)
 
 
-def _launch_mounts(cfg: dict, ws: str) -> list[dict]:
+def _launch_mounts(cfg: dict, ws: str, handoff_dir: str | None = None) -> list[dict]:
     """The agent-facing bind mounts of the launch, as ``[{source, target, mode}]`` (FR-009).
 
-    Records the data mounts the agent sees (/output, /workspace, and the api prompt mount) —
-    not the ephemeral capture plumbing (/pipes, /staging), which is not agent-facing config.
+    Records the data mounts the agent sees (/output, /workspace, the api prompt mount, and — when
+    the asset declares upstreams — the read-only /upstreams handoff dir, FR-013) — not the ephemeral
+    capture plumbing (/pipes, /staging), which is not agent-facing config.
     """
     mounts = [{"source": _output_dir(cfg), "target": "/output", "mode": "rw"}]
     if cfg["harness"] in WORKSPACE_HARNESSES:
@@ -420,11 +549,14 @@ def _launch_mounts(cfg: dict, ws: str) -> list[dict]:
             "source": f"{paths.PROMPTS_DIR}/{cfg.get('prompt_file', '')}",
             "target": "/config/prompt.md", "mode": "ro",
         })
+    if handoff_dir is not None:
+        mounts.append({"source": handoff_dir, "target": "/upstreams", "mode": "ro"})
     return mounts
 
 
 def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_id: str,
-                    ws: str, runtime_env: dict, is_asset: bool) -> dict:
+                    ws: str, runtime_env: dict, is_asset: bool, handoff_dir: str | None = None,
+                    upstream_inputs: dict | None = None) -> dict:
     """Build the context snapshot from the launch config (spec 012, R3 orchestrator side).
 
     The instruction files, MCP exposed tools, and completeness statement are the image
@@ -449,9 +581,11 @@ def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_
             "asset_key": str(produces.get("asset") or ""),
             "partition_key": context.partition_key if context.has_partition_key else None,
             "variant": produces.get("variant"),
-            # Handoff inputs from the triggering run (op config), captured verbatim; None when
-            # nothing was handed off, so "no upstream inputs" is distinct from "not captured".
-            "upstream_inputs": ((context.op_config or {}).get("inputs") or None),
+            # Handoff inputs captured as provenance (spec 013 US2/R6): the read-only handoff files
+            # given to the container, keyed by AGENTBOX_UPSTREAM_<KEY> env var → in-container path.
+            # Falls back to op-config `inputs` when nothing was handed off, so "no upstream inputs"
+            # stays distinct from "not captured". The file remains the launch-time transport.
+            "upstream_inputs": (upstream_inputs or (context.op_config or {}).get("inputs") or None),
             "attempt": int(getattr(context, "retry_number", 0) or 0) + 1,
         }
     return run_capture.build_context(
@@ -461,7 +595,7 @@ def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_
         image_ref=image_ref,
         image_digest=_image_digest(image_ref) if image_ref else "",
         env_names=_launch_env_names(cfg, runtime_env),
-        mounts=_launch_mounts(cfg, ws),
+        mounts=_launch_mounts(cfg, ws, handoff_dir),
         network=cfg.get("network", "agentnet"),
         working_dir="/workspace" if cfg["harness"] in WORKSPACE_HARNESSES else None,
         workspace_dir=ws if cfg["harness"] in WORKSPACE_HARNESSES else None,
@@ -476,7 +610,8 @@ def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_
 
 
 def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
-                     session_id: str, ws: str, runtime_env: dict) -> list[str]:
+                     session_id: str, ws: str, runtime_env: dict,
+                     handoff_dir: str | None = None) -> list[str]:
     """Build the full ``docker run`` argv for one agent launch.
 
     Extracted verbatim from the op body so the launch is defined in one place and the
@@ -492,6 +627,10 @@ def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
         "--network", cfg.get("network", "agentnet"),
         "-v", f"{_output_dir(cfg)}:/output",
     ]
+    if handoff_dir is not None:
+        # one read-only handoff file per declared upstream at /upstreams (spec 013, FR-013); the
+        # AGENTBOX_UPSTREAM_<KEY> env vars pointing into it are merged via runtime_env below.
+        cmd += ["-v", f"{handoff_dir}:/upstreams:ro"]
     if cfg["harness"] in PROMPT_MOUNT_HARNESSES:
         # the prompt lives under the config root; the `-v` source is its HOST path (the host
         # daemon resolves bind sources — Docker-outside-of-Docker).
@@ -926,7 +1065,6 @@ def make_run_op(cfg: dict):
                 else:
                     os.remove(entry.path)
             context.log.info(f"wiped workspace {ws}")
-        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, runtime_env)
 
         # Whether this op runs bound to an asset (asset-mode via from_op / a materializing
         # job) or as a plain job. The container decides report_asset_materialization vs
@@ -934,12 +1072,19 @@ def make_run_op(cfg: dict):
         # matching channel back. Both agree with cfg's produces block.
         is_asset = bool((cfg.get("produces") or {}).get("asset"))
 
+        # Upstream handoff (spec 013 US2): one read-only /upstreams/<key>.json per declared upstream
+        # + the AGENTBOX_UPSTREAM_<KEY> env vars, merged into the launch env (FR-011/012/013).
+        handoff_dir, upstream_env = _prepare_upstream_handoff(cfg, context)
+        launch_env = {**runtime_env, **upstream_env}
+        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, launch_env, handoff_dir=handoff_dir)
+
         # Assemble + write the run directory's context.json FIRST (spec 012, contracts/run-directory.md):
         # so the audit record exists even for a crash before the first event. The image context
         # fragment (instruction files, MCP tools, completeness) is merged in after the run (T044).
         capture = run_capture.RunCapture(name, stamp[:10], context.run_id)
         capture.create()
-        launch_context = _launch_context(cfg, context, stamp, session_id, ws, runtime_env, is_asset)
+        launch_context = _launch_context(cfg, context, stamp, session_id, ws, launch_env, is_asset,
+                                         handoff_dir=handoff_dir, upstream_inputs=upstream_env or None)
         capture.write_context(launch_context)
         # Per-run ephemeral staging the image writes events.jsonl + the context fragment to,
         # bind-mounted at /staging (spec 012, T010a). Under STAGING_ROOT ($AGENTBOX_DATA,
@@ -1009,6 +1154,8 @@ def make_run_op(cfg: dict):
         finally:
             shutil.rmtree(pipes_dir, ignore_errors=True)
             shutil.rmtree(staging_dir, ignore_errors=True)  # --rm-cleaned staging (T010a)
+            if handoff_dir is not None:
+                shutil.rmtree(handoff_dir, ignore_errors=True)  # --rm-cleaned handoff (US2)
     return run_agent
 
 def build_asset(cfg: dict, file: str | None = None, cron: str | None = None,
@@ -1130,12 +1277,18 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
                 else:
                     os.remove(entry.path)
             context.log.info(f"wiped workspace {ws}")
-        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, runtime_env)
+
+        # Upstream handoff (spec 013 US2): one read-only /upstreams/<key>.json per declared upstream
+        # + the AGENTBOX_UPSTREAM_<KEY> env vars, merged into the launch env (FR-011/012/013).
+        handoff_dir, upstream_env = _prepare_upstream_handoff(cfg, context)
+        launch_env = {**runtime_env, **upstream_env}
+        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, launch_env, handoff_dir=handoff_dir)
 
         # Run directory + context.json first (spec 012); the image fragment is merged after the run.
         capture = run_capture.RunCapture(name, stamp[:10], context.run_id)
         capture.create()
-        launch_context = _launch_context(cfg, context, stamp, session_id, ws, runtime_env, True)
+        launch_context = _launch_context(cfg, context, stamp, session_id, ws, launch_env, True,
+                                         handoff_dir=handoff_dir, upstream_inputs=upstream_env or None)
         capture.write_context(launch_context)
         os.makedirs(STAGING_ROOT, exist_ok=True)
         staging_dir = tempfile.mkdtemp(prefix=f"agentbox-staging-{context.run_id[:8]}-", dir=STAGING_ROOT)
@@ -1197,6 +1350,8 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
         finally:
             shutil.rmtree(pipes_dir, ignore_errors=True)
             shutil.rmtree(staging_dir, ignore_errors=True)  # --rm-cleaned staging (T010a)
+            if handoff_dir is not None:
+                shutil.rmtree(handoff_dir, ignore_errors=True)  # --rm-cleaned handoff (US2)
 
     return AssetsDefinition.dagster_internal_init(
         keys_by_input_name={},

@@ -288,3 +288,98 @@ def test_failed_producer_records_observation_not_materialization(tmp_path, stub_
              if r.dagster_event]
     assert "ASSET_MATERIALIZATION" not in types
     assert types.count("ASSET_OBSERVATION") == 1
+
+
+# ── US2: upstream handoff files + env vars (spec 013, contract §3) ───────────
+import json as _json
+import tempfile as _tempfile
+from dagster import AssetMaterialization, MetadataValue, build_op_context
+
+
+def test_upstream_env_key_and_slug_transforms():
+    assert factory.upstream_env_key("notes/daily") == "NOTES_DAILY"
+    assert factory.upstream_env_key("repo-review/list-commits") == "REPO_REVIEW_LIST_COMMITS"
+    assert factory.upstream_key_slug("notes/daily") == "notes_daily"
+    assert factory.upstream_key_slug("repo-review/list-commits") == "repo-review_list-commits"
+
+
+def _handoff_cfg():
+    return {"name": "refined-daily", "harness": "api", "model": "cheap", "prompt_file": "x.md",
+            "output_dir": "/tmp/o",
+            "produces": {"asset": "refined/daily", "partition": "daily",
+                         "depends_on": ["notes/daily", "extras/daily"]}}
+
+
+def _validate_handoff(doc):
+    # structural validation against contracts/upstream-handoff.schema.json (required keys/types).
+    required = {"asset_key", "partition", "materialized", "output_files", "report",
+                "materialized_at", "chain_depth", "automated"}
+    assert set(doc) == required
+    assert isinstance(doc["asset_key"], str)
+    assert isinstance(doc["materialized"], bool)
+    assert isinstance(doc["output_files"], list)
+
+
+def test_handoff_selects_matching_partition_and_names_env_var(tmp_path):
+    inst = DagsterInstance.ephemeral()
+    inst.report_runless_asset_event(AssetMaterialization(
+        asset_key=AssetKey(["notes", "daily"]), partition="2026-09-09",
+        metadata={"output_files": MetadataValue.json(["/data/out/a.md"]),
+                  "status": MetadataValue.text("ok"), "tokens_in": MetadataValue.int(10)}))
+    ctx = build_op_context(instance=inst, partition_key="2026-09-09")
+    d = str(tmp_path / "up"); os.makedirs(d)
+    env = factory.build_upstream_handoff(_handoff_cfg(), ctx, d)
+    # one env var per declared upstream, upper-snaked
+    assert env["AGENTBOX_UPSTREAM_NOTES_DAILY"] == "/upstreams/notes_daily.json"
+    assert env["AGENTBOX_UPSTREAM_EXTRAS_DAILY"] == "/upstreams/extras_daily.json"
+    doc = _json.load(open(os.path.join(d, "notes_daily.json")))
+    _validate_handoff(doc)
+    assert doc["materialized"] is True
+    assert doc["partition"] == "2026-09-09"
+    assert doc["output_files"] == ["/data/out/a.md"]
+    assert doc["report"]["status"] == "ok"
+    # files are world-readable so the non-root container can read them
+    assert (os.stat(os.path.join(d, "notes_daily.json")).st_mode & 0o644) == 0o644
+
+
+def test_handoff_no_materialization_writes_null_file(tmp_path):
+    inst = DagsterInstance.ephemeral()  # nothing materialized
+    ctx = build_op_context(instance=inst, partition_key="2026-09-09")
+    d = str(tmp_path / "up"); os.makedirs(d)
+    factory.build_upstream_handoff(_handoff_cfg(), ctx, d)
+    doc = _json.load(open(os.path.join(d, "extras_daily.json")))
+    _validate_handoff(doc)
+    assert doc["materialized"] is False
+    assert doc["output_files"] == [] and doc["report"] is None
+    assert doc["materialized_at"] is None and doc["chain_depth"] is None
+
+
+def test_handoff_selects_latest_of_many(tmp_path):
+    inst = DagsterInstance.ephemeral()
+    for n in (1, 2, 3):
+        inst.report_runless_asset_event(AssetMaterialization(
+            asset_key=AssetKey(["notes", "daily"]), partition="2026-09-09",
+            metadata={"output_files": MetadataValue.json([f"/data/out/{n}.md"]),
+                      "status": MetadataValue.text("ok")}))
+    ctx = build_op_context(instance=inst, partition_key="2026-09-09")
+    d = str(tmp_path / "up"); os.makedirs(d)
+    factory.build_upstream_handoff(_handoff_cfg(), ctx, d)
+    doc = _json.load(open(os.path.join(d, "notes_daily.json")))
+    assert doc["output_files"] == ["/data/out/3.md"]  # newest wins
+
+
+def test_launch_snapshot_carries_upstream_mount_and_env(tmp_path, stub_launch, monkeypatch):
+    # An end-to-end materialize records the :ro /upstreams mount and the AGENTBOX_UPSTREAM_* env
+    # names in the launch (contract §3, FR-013).
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    cfg = _api_cfg(tmp_path, produces={"asset": "refined/daily", "partition": "daily",
+                                       "depends_on": ["notes/daily"]}, name="refined-daily")
+    os.makedirs(cfg["output_dir"], exist_ok=True)
+    ad = factory.build_asset(cfg, depends_on=["notes/daily"], on_upstream=True)
+    result = materialize([ad], partition_key="2026-09-09",
+                         instance=DagsterInstance.ephemeral())
+    assert result.success
+    argv = stub_launch.cmd
+    # the read-only handoff mount is present, and the env var was passed to the container
+    assert any(str(a).endswith(":/upstreams:ro") for a in argv)
+    assert any("AGENTBOX_UPSTREAM_NOTES_DAILY=" in str(a) for a in argv)
