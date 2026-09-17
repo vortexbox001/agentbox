@@ -4,7 +4,7 @@ Self-hosted runner for scheduled AI agents, built for a Raspberry Pi (arm64, Deb
 
 [Dagster](https://dagster.io) reads agent definitions from the config root's `agents/*.yaml`
 (see [Layout](#layout)) and, on a cron schedule or on demand, launches one short-lived Docker
-container per run. Three kinds of agent ("harnesses") are supported:
+container per run. Four kinds of agent ("harnesses") are supported:
 
 | Harness | What runs | Image | Talks to |
 |---|---|---|---|
