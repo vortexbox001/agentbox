@@ -8,6 +8,16 @@
 
 **Input**: User description: "Bring the Runs overview up to the standard of the Agents overview and Dagster's own Runs page: a tabbed header, a filter row, a table whose columns answer 'what ran, against what, who launched it, how did it go, what did it cost', a status that is actually true, and a one-click path to the same run in Dagster. Alongside it, tidy the shell: Runs leads the left-hand navigation, Settings appears once, and the logo takes you home. This is presentation and read-path work only; no agent schema or run-record changes."
 
+## Clarifications
+
+### Session 2026-09-17
+
+- Q: How do the four tabs (All, In progress, Succeeded, Failed) partition runs whose status is queued, timed out, or cancelled? → A: In progress = running or queued; Succeeded = succeeded; Failed = failed, timed out, or cancelled (all non-success terminal states); All = every run.
+- Q: How does the text filter match against agent, model, target, and run id? → A: Case-insensitive substring match on any of those fields.
+- Q: For an in-progress run, does the Duration cell tick live per second, or show elapsed time as of page render? → A: Elapsed as of page render; it advances on refresh and no live per-second ticker is required.
+- Q: When Dagster is reachable but has no record for a specific run (e.g. pruned or historical), what status shows for that row? → A: That row falls back to the local run record and is marked last-known, the same as when Dagster is unreachable.
+- Q: Do the tab count badges count the whole run set or the currently filtered set? → A: The text-, agent-, and date-range-filtered set, computed before tab partition and before pagination.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Read a run's true status at a glance (Priority: P1)
@@ -89,7 +99,7 @@ it, how it went, and what it cost. The columns, in order, are: Run, Status, Agen
 Target, Launched by, Checks, Created, Duration, Cost. The Agent and Model cells use the same
 mono type treatment as the Agents overview and the agent name links to that agent. Created is
 a single local-time timestamp like `Sep 17, 1:15 PM` with the full timestamp on hover.
-Duration is elapsed run time, counting up for an in-progress run. Cost shows `—` when unknown,
+Duration is elapsed run time, showing time so far for an in-progress run. Cost shows `—` when unknown,
 never zero. Target is the run's target as Dagster lists it (asset key or job name); Launched
 by is the schedule name, sensor name, or a manual launch. Checks shows the run's check results
 the same way the Agents overview does.
@@ -217,6 +227,9 @@ a visible focus state on keyboard focus.
   new runs are populated.
 - **Dagster unreachable.** The page loads from local run records, statuses are marked
   last-known, and no Dagster link icons are rendered as dead links.
+- **Run missing from Dagster while it is reachable.** If Dagster is reachable but has no record
+  for a specific run (pruned or historical), that row's status falls back to the local run
+  record and is marked last-known, the same as when Dagster is unreachable.
 - **Zero runs in a tab.** A tab whose filtered set is empty shows a count of 0 and an empty
   table state rather than an error.
 - **Run with no cost data.** Cost shows `—`, distinct from a run whose cost is a known `0`.
@@ -234,8 +247,9 @@ a visible focus state on keyboard focus.
 
 - **FR-001**: The Runs overview MUST show each run's status as the real outcome Dagster records
   (succeeded, failed, timed out, cancelled, queued, or in progress).
-- **FR-002**: When Dagster is unreachable, the overview MUST fall back to the status in the
-  local run record and MUST mark that status as last-known.
+- **FR-002**: When Dagster is unreachable, or when Dagster is reachable but has no record for a
+  specific run (e.g. a pruned or historical run), the overview MUST fall back to the status in
+  the local run record and MUST mark that status as last-known.
 - **FR-003**: When Dagster's recorded outcome and the run's self-reported report disagree, the
   overview MUST prefer Dagster's outcome while Dagster is reachable.
 - **FR-004**: Status text and colours MUST use the existing run status tag intents.
@@ -243,8 +257,11 @@ a visible focus state on keyboard focus.
 **Tabbed header**
 
 - **FR-005**: The page MUST present a tabbed header rendered with the shared tabs macro, with
-  the tabs All, In progress, Succeeded, and Failed.
-- **FR-006**: Each tab MUST carry a count badge reflecting the whole filtered set for that tab,
+  the tabs All, In progress, Succeeded, and Failed. The tabs MUST partition runs by status as
+  follows: In progress covers running or queued runs; Succeeded covers succeeded runs; Failed
+  covers all non-success terminal runs (failed, timed out, or cancelled); All covers every run.
+- **FR-006**: Each tab MUST carry a count badge reflecting that tab's members within the current
+  text-, agent-, and date-range-filtered set — computed before the tab partition is applied and
   independent of pagination.
 - **FR-007**: The tabbed header MUST replace the current Status dropdown, which MUST be removed.
 
@@ -252,7 +269,8 @@ a visible focus state on keyboard focus.
 
 - **FR-008**: Under the tabs, the page MUST present a filter control matching the Agents
   overview — a ghost Filter button that reveals a text filter.
-- **FR-009**: The text filter MUST narrow the table by agent, model, target, or run id.
+- **FR-009**: The text filter MUST narrow the table by agent, model, target, or run id, matching
+  as a case-insensitive substring against any of those fields.
 - **FR-010**: The existing agent and date-range filters MUST remain available through the
   filter control.
 - **FR-011**: Tab, text filter, agent, date-range, and page state MUST be encoded in the URL so
@@ -272,7 +290,8 @@ a visible focus state on keyboard focus.
 - **FR-017**: Created MUST show a single timestamp formatted like `Sep 17, 1:15 PM` in the
   operator's local time, with the full timestamp available on hover.
 - **FR-018**: Duration MUST show elapsed run time, and for an in-progress run MUST show time so
-  far.
+  far as computed at page render; a live per-second ticker is not required, and the elapsed time
+  advances on page refresh.
 - **FR-019**: Cost MUST show `—` when the cost is unknown and MUST NOT render unknown cost as
   zero.
 - **FR-020**: The Agent and Model cells MUST use the same mono type treatment as the same
@@ -323,8 +342,9 @@ a visible focus state on keyboard focus.
   attributes: run id, true status (with a last-known marker when derived locally), agent, model,
   target, launched-by source, check results, created timestamp, duration, and cost. This feature
   reads these from Dagster and existing run records; it does not add or change stored run data.
-- **Tab**: A partition of the filtered run set by state — All, In progress, Succeeded, Failed —
-  each with a count of its members.
+- **Tab**: A partition of the filtered run set by state — All, In progress (running or queued),
+  Succeeded (succeeded), Failed (failed, timed out, or cancelled) — each with a count of its
+  members within the current text-, agent-, and date-range-filtered set.
 - **Filter state**: The combination of active tab, text filter, agent, date range, and page,
   fully represented in the URL.
 
