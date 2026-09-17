@@ -4,9 +4,18 @@
 
 **Created**: 2026-09-16
 
-**Status**: Draft
+**Status**: Clarified
 
 **Input**: User description: "Extract a single `agent-base` image with the OS, non-root user, git, and the common command-line tools every agent tends to need, and rebuild each harness image as a thin layer on top. Adding a tool for all agents becomes a one-line change in one place; Pi builds get smaller and faster. No agent YAML changes. New `images/agent-base/` (Debian slim + Node 20, since three harnesses need Node): installs `git`, `curl`, `ca-certificates`, `ripgrep`, `jq`, the GitHub CLI (`gh`), `unzip`, and standard build essentials; creates the uid-1000 `node` user the harness images already assume; sets `WORKDIR /workspace`. Tagged `agentbox/agent-base`. `agent-claude`, `agent-pi`, `agent-codex` change to `FROM agentbox/agent-base` and drop their duplicated `apt-get`/user/workdir lines, keeping only the harness install, entrypoint, and harness-specific env (`CODEX_HOME`). `agent-python` stays on `python:3.12-slim` unless the plan finds it benefits. README build steps and `scripts/bootstrap.sh` build `agent-base` first, then the harness images. The common tool list lives in exactly one Dockerfile; each harness image carries a one-line comment pointing at the base. Out of scope: per-agent images, runtime tool installation (022), changing which harness images exist, language toolchains beyond the common set. Null action: if a harness genuinely can't use the shared base, leave that one on its own base and document why."
+
+## Clarifications
+
+### Session 2026-09-16
+
+- Q: The three shell-based harness wrappers are launched with `python3` and depend on a pinned `dagster-pipes`; if the harnesses drop their own `apt-get`/`pip` lines, where does that Python runtime come from? → A: The shared base also provides the Python 3 runtime (`python3` + `pip`) and the pinned `dagster-pipes` the wrappers require, so no shell-based harness re-declares them.
+- Q: What does "identical report, same output" (behavioral parity) mean for acceptance, given every live run differs by timestamp/run id and model nondeterminism? → A: Functional/format equivalence — the report format and agent output semantics are unchanged (same wrapper/runner and report code, image test suites pass unchanged), not a byte-identical comparison of two live runs.
+- Q: How is the "combined on-disk footprint is smaller" outcome measured, given `docker images` reports each image's full size including the now-shared base? → A: Deduplicated actual on-disk usage that counts the shared base layer once (e.g. the image store's unique size), not the sum of per-image reported sizes.
+- Q: Is `agent-python` decided to stay on its own base now, or is that deferred to the plan? → A: Decided now — `agent-python` stays on `python:3.12-slim` (it needs the Python runtime, not Node, and no shell tools), with the reason documented in its image.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -136,12 +145,17 @@ the common tooling it does not need.
   `ripgrep`, `jq`, the GitHub CLI (`gh`), `unzip`, and the standard build essentials.
 - **FR-003**: The common tool list MUST be defined in exactly one place; adding or removing a tool
   shared by all shell-based agents MUST require editing only that one place.
+- **FR-013**: The shared base MUST additionally provide the Python 3 runtime (`python3` and its
+  package installer) and the pinned `dagster-pipes` (Dagster 1.13.21) that every shell-based harness
+  wrapper is launched with and reports through, so that no shell-based harness re-declares them. This
+  runtime is defined in the same single place as the common tool set.
 
 **Harness images on the base**
 
 - **FR-004**: The shell-based harness images (`agent-claude`, `agent-pi`, `agent-codex`) MUST build
   on the shared base and MUST NOT re-declare the OS-package installation, the non-root-user
-  creation, or the working directory that the base provides.
+  creation, the working directory, or the Python runtime / pinned `dagster-pipes` that the base
+  provides.
 - **FR-005**: Each of those harness images MUST retain only its harness-specific setup — its harness
   installation, its entrypoint, and its harness-specific environment (for example `CODEX_HOME`).
 - **FR-006**: Each harness image built on the shared base MUST indicate, in the image itself, that
@@ -151,17 +165,23 @@ the common tooling it does not need.
 
 **Behavioral parity & scope**
 
-- **FR-008**: Every existing agent MUST behave identically after the refactor — same report, same
-  output — across all four harnesses.
+- **FR-008**: Every existing agent MUST behave identically after the refactor across all four
+  harnesses. Parity means functional/format equivalence — the report format and agent output
+  semantics are unchanged because the wrapper/runner and report code are unchanged and the image
+  test suites pass unchanged — not a byte-identical comparison of two live runs (which always differ
+  by timestamp, run id, and model nondeterminism).
 - **FR-009**: The refactor MUST require no changes to any agent YAML file.
 - **FR-010**: A harness that genuinely cannot use the shared base MUST be left on its own base with
-  a documented reason, rather than forcing a lowest-common-denominator base onto the others;
-  `agent-python`, which needs no shell tools, MAY remain on its own base.
+  a documented reason, rather than forcing a lowest-common-denominator base onto the others.
+  `agent-python` is decided to stay on `python:3.12-slim` — it needs the Python runtime rather than
+  the Node-bearing base and needs no shell tools — with that reason documented in its image.
 
 **Footprint & build process**
 
 - **FR-011**: The combined on-disk footprint of the shell-based harness images MUST be smaller after
-  the refactor than before, by sharing the common base layer.
+  the refactor than before, by sharing the common base layer. "Combined footprint" is the
+  deduplicated actual on-disk usage that counts the shared base layer once (e.g. the image store's
+  unique size), not the sum of each image's individually reported size.
 - **FR-012**: The build documentation (README build steps) and the bootstrap script
   (`scripts/bootstrap.sh`) MUST build the shared base first and then the harness images; compose
   notes MUST be updated if they reference image builds.
@@ -169,8 +189,9 @@ the common tooling it does not need.
 ### Key Entities *(include if feature involves data)*
 
 - **Shared base image (`agentbox/agent-base`)**: The single image carrying the common OS, the
-  non-root uid-1000 user, the `/workspace` working directory, and the common command-line tools;
-  the sole place the common tool list is defined.
+  non-root uid-1000 user, the `/workspace` working directory, the common command-line tools, and the
+  Python 3 runtime plus pinned `dagster-pipes` the shell-based wrappers run on; the sole place the
+  common tool list and that shared runtime are defined.
 - **Common tool set**: The command-line tools shared by every shell-based agent — `git`, `curl`,
   `ca-certificates`, `ripgrep`, `jq`, `gh`, `unzip`, and the standard build essentials — installed
   once in the shared base.
@@ -186,14 +207,17 @@ the common tooling it does not need.
 
 - **SC-001**: A maintainer can make a new command-line tool available to every shell-based agent by
   editing exactly one place and rebuilding, with zero edits to any harness image definition.
-- **SC-002**: Every existing agent, across all four harnesses, produces an identical report and
-  identical output before and after the refactor.
+- **SC-002**: Every existing agent, across all four harnesses, produces a report of the same format
+  and output of the same semantics before and after the refactor (functional/format equivalence, per
+  FR-008; verified by the unchanged wrapper/runner and report code and the image test suites passing
+  unchanged), rather than a byte-identical rerun.
 - **SC-003**: No shell-based harness image contains its own OS-package installation, non-root-user
   creation, or working-directory declaration — the common tool list is defined in exactly one place.
 - **SC-004**: The common tools (`git`, `rg`, `jq`, `gh`, and the rest of the common set) resolve to
   executables in each shell-based harness image.
-- **SC-005**: The combined on-disk size of the shell-based harness images is smaller after the
-  refactor than before.
+- **SC-005**: The combined on-disk size of the shell-based harness images — measured as deduplicated
+  usage that counts the shared base layer once, not the sum of per-image reported sizes — is smaller
+  after the refactor than before.
 - **SC-006**: The refactor changes no agent YAML file.
 
 ## Assumptions
@@ -204,7 +228,12 @@ the common tooling it does not need.
 - The harness images already assume a non-root uid-1000 `node` user and a `/workspace` working
   directory; the shared base provides exactly those so the harnesses need not redeclare them.
 - Three of the four harnesses require Node, so a Node-bearing shared base is the reasonable common
-  denominator; `agent-python` needs no shell tools and is expected to stay on its own base.
+  denominator; `agent-python` needs the Python runtime rather than Node and no shell tools, so it
+  stays on its own base (`python:3.12-slim`) — decided, not deferred (see FR-010).
+- The three shell-based harness wrappers are launched with `python3` and report through a pinned
+  `dagster-pipes`; the shared base therefore carries the Python runtime and that pinned
+  `dagster-pipes` alongside the common CLI tools (see FR-013), so the harnesses need not redeclare
+  them. `agent-python` keeps installing its own `dagster-pipes` because it stays on the Python base.
 - The specific base OS/runtime image and the exact build-instruction details are plan-level
   decisions; this specification fixes the common tool set, the single-source-of-truth requirement,
   and the behavioral-parity requirement, not the Dockerfile mechanics.
