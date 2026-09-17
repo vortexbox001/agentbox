@@ -1,12 +1,12 @@
 # GitHub source
 
-repo: leeclemmer/agentbox
+repo: vortexbox001/agentbox
 branch: main
 path: ui/design-system
 
 This project (AgentBox Design System) is associated with the AgentBox repository. `ui/design-system/` on the repo mirrors this project's structure (tokens, components, guidelines cards, the agentbox-app UI kit, and the tabbed-list/agentbox templates). The `ui-lhn-agent-listing` feature branch (agent-listing UI work) has been merged to `main`.
 
-Source URL: https://github.com/leeclemmer/agentbox/tree/main/ui/design-system
+Source URL: https://github.com/vortexbox001/agentbox/tree/main/ui/design-system
 
 ## Last sync
 
