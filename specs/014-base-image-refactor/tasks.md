@@ -39,9 +39,9 @@ This feature touches only the `images/` package plus two build entry points, per
 
 **Purpose**: Prepare the new base's home and capture the "before" baseline the footprint story needs.
 
-- [ ] T001 Create the `images/agent-base/` directory as the home of the new shared base Dockerfile,
+- [X] T001 Create the `images/agent-base/` directory as the home of the new shared base Dockerfile,
   per plan.md → Project Structure.
-- [ ] T002 [P] Record the pre-refactor "before" state (quickstart.md §1): with the harness images as
+- [!] T002 [P] _[BLOCKED: requires a Docker daemon, which is unavailable in this unattended build environment — no `docker` binary/daemon. The authored Dockerfiles/README/bootstrap are correct by inspection and the hermetic `images/tests` parity suite passes; run this build/run check on a Docker-capable host.]_  Record the pre-refactor "before" state (quickstart.md §1): with the harness images as
   they exist today, capture `docker system df -v | grep -E 'agent-claude|agent-pi|agent-codex'` and
   note how the common OS/tool/runtime install is stored today (once if Docker already dedups the
   byte-identical layers, or up to three times otherwise) as context for the T016 single-storage
@@ -57,7 +57,7 @@ the single source of truth for the common tool set and the shared Python/`dagste
 
 **⚠️ CRITICAL**: US1, US2, and US3 cannot begin until `agentbox/agent-base` exists and builds.
 
-- [ ] T003 Create `images/agent-base/Dockerfile` as the single source of truth (FR-001/002/003/013,
+- [X] T003 Create `images/agent-base/Dockerfile` as the single source of truth (FR-001/002/003/013,
   research.md R1/R2/R3, data-model.md "Shared base image", contracts/agent-base-image.md):
   - `FROM node:20-slim` (Debian bookworm-slim, arm64; provides Node 20 + the uid-1000 `node` user).
   - One `apt-get update && apt-get install -y --no-install-recommends` line with the common tool set:
@@ -75,7 +75,7 @@ the single source of truth for the common tool set and the shared Python/`dagste
     (`USER node`) as its own last step — preserving today's behavior (data-model.md).
   - A header comment marking this file as the **one place** the common tool set and shared runtime
     live (FR-003/SC-001).
-- [ ] T004 Build and smoke-test the base (contracts/agent-base-image.md guarantees, quickstart.md §2–§3):
+- [!] T004 _[BLOCKED: requires a Docker daemon, which is unavailable in this unattended build environment — no `docker` binary/daemon. The authored Dockerfiles/README/bootstrap are correct by inspection and the hermetic `images/tests` parity suite passes; run this build/run check on a Docker-capable host.]_  Build and smoke-test the base (contracts/agent-base-image.md guarantees, quickstart.md §2–§3):
   from the `images/` context run `docker build -f agent-base/Dockerfile -t agentbox/agent-base .`,
   then confirm `git curl rg jq gh unzip cc python3` all resolve and
   `python3 -c "import dagster_pipes"` succeeds. (Depends on T003.)
@@ -97,42 +97,42 @@ changed (approximated hermetically by `images/tests` passing unchanged, per FR-0
 
 ### Implementation for User Story 1
 
-- [ ] T005 [P] [US1] Rewrite `images/agent-claude/Dockerfile` as a thin layer (FR-004/005/006,
+- [X] T005 [P] [US1] Rewrite `images/agent-claude/Dockerfile` as a thin layer (FR-004/005/006,
   data-model.md): `FROM agentbox/agent-base`; a one-line comment stating the common tooling comes from
   `agent-base`; keep `RUN npm install -g @anthropic-ai/claude-code`, `COPY lib/ /app/lib/`,
   `COPY agent-claude/wrapper.py /app/wrapper.py`, a final `USER node`, and the unchanged
   `ENTRYPOINT ["python3", "/app/wrapper.py"]`; **remove** the `apt-get` install, the `python3`/`pip`
   install, the `dagster-pipes` install, and the `WORKDIR` line (all inherited from the base).
-- [ ] T006 [P] [US1] Rewrite `images/agent-pi/Dockerfile` as a thin layer (FR-004/005/006): `FROM
+- [X] T006 [P] [US1] Rewrite `images/agent-pi/Dockerfile` as a thin layer (FR-004/005/006): `FROM
   agentbox/agent-base`; one-line base pointer comment; keep
   `RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent`, `COPY lib/ /app/lib/`,
   `COPY agent-pi/wrapper.py /app/wrapper.py`, `COPY agent-pi/entrypoint.sh /app/entrypoint.sh` +
   `RUN chmod 755 /app/entrypoint.sh`, a final `USER node`, and the unchanged
   `ENTRYPOINT ["/app/entrypoint.sh"]`; **remove** the shared `apt-get`/`python3`/`pip`/`dagster-pipes`
   and `WORKDIR` lines.
-- [ ] T007 [P] [US1] Rewrite `images/agent-codex/Dockerfile` as a thin layer (FR-004/005/006): `FROM
+- [X] T007 [P] [US1] Rewrite `images/agent-codex/Dockerfile` as a thin layer (FR-004/005/006): `FROM
   agentbox/agent-base`; one-line base pointer comment; keep `RUN npm install -g @openai/codex`,
   `ENV CODEX_HOME=/creds` (harness-specific env), `COPY lib/ /app/lib/`,
   `COPY agent-codex/wrapper.py /app/wrapper.py`, a final `USER node`, and the unchanged
   `ENTRYPOINT ["python3", "/app/wrapper.py"]`; **remove** the shared
   `apt-get`/`python3`/`pip`/`dagster-pipes` and `WORKDIR` lines.
-- [ ] T008 [P] [US1] Update `README.md` step 4 "Build the agent images" (FR-012, research.md R4):
+- [X] T008 [P] [US1] Update `README.md` step 4 "Build the agent images" (FR-012, research.md R4):
   build `agentbox/agent-base` **first**, then the four harness images, and correct every `docker build`
   to use `-f images/<image>/Dockerfile … .` with the `images/` directory as context (fixing the
   pre-existing build-context bug where `images/agent-*` was passed as context but the Dockerfiles
   `COPY lib/`).
-- [ ] T009 [P] [US1] Update `scripts/bootstrap.sh` to build `agentbox/agent-base` first and then the
+- [X] T009 [P] [US1] Update `scripts/bootstrap.sh` to build `agentbox/agent-base` first and then the
   four harness images from the `images/` context (base-first build order; FR-012). Today the script
   does host setup only and builds no images — add the base-first image build step.
-- [ ] T010 [US1] Build the three thin harness images on the base from the `images/` context
+- [!] T010 [US1] _[BLOCKED: requires a Docker daemon, which is unavailable in this unattended build environment — no `docker` binary/daemon. The authored Dockerfiles/README/bootstrap are correct by inspection and the hermetic `images/tests` parity suite passes; run this build/run check on a Docker-capable host.]_  Build the three thin harness images on the base from the `images/` context
   (`docker build -f agent-claude/Dockerfile -t agentbox/agent-claude .`, and likewise for
   `agent-pi`/`agent-codex`) and confirm each build resolves `FROM agentbox/agent-base`. (Depends on
   T004, T005, T006, T007.)
-- [ ] T011 [P] [US1] Verify the common tools are present and runnable in every shell-based harness
+- [!] T011 [P] [US1] _[BLOCKED: requires a Docker daemon, which is unavailable in this unattended build environment — no `docker` binary/daemon. The authored Dockerfiles/README/bootstrap are correct by inspection and the hermetic `images/tests` parity suite passes; run this build/run check on a Docker-capable host.]_  Verify the common tools are present and runnable in every shell-based harness
   (FR-007/SC-004, quickstart.md §3): for `agent-claude`, `agent-pi`, `agent-codex` confirm
   `git curl rg jq gh unzip cc python3` resolve and `python3 -c "import dagster_pipes"` prints OK, with
   no `MISSING:` line. (Depends on T010.)
-- [ ] T012 [P] [US1] Verify behavioral parity (FR-008/SC-002, quickstart.md §6): run
+- [X] T012 [P] [US1] Verify behavioral parity (FR-008/SC-002, quickstart.md §6): run
   `.venv/bin/python -m pytest -q images/tests` and confirm the suite passes **unchanged** — same
   wrapper/runner and report code, so report format and output semantics are unchanged. This is the
   **hermetic approximation** of US1's Independent Test ("run one agent of each harness end to end"):
@@ -142,7 +142,7 @@ changed (approximated hermetically by `images/tests` passing unchanged, per FR-0
   may additionally run one agent per harness end to end and compare its report/output to a
   pre-refactor run for extra confidence; this manual check is not required for the gate (analysis
   finding G1).
-- [ ] T013 [P] [US1] Verify no agent YAML changed (FR-009/SC-006, quickstart.md §7):
+- [X] T013 [P] [US1] Verify no agent YAML changed (FR-009/SC-006, quickstart.md §7):
   `git diff --name-only | grep -E '/agents/.*\.ya?ml$'` returns nothing.
 
 **Checkpoint**: The three shell-based harnesses run on the shared base, tools resolve, `images/tests`
@@ -160,12 +160,12 @@ confirm `yq` is present in that harness with no change to the harness Dockerfile
 
 ### Implementation for User Story 2
 
-- [ ] T014 [US2] Verify single-source-of-truth (SC-001/US2, quickstart.md §5): temporarily append
+- [!] T014 [US2] _[BLOCKED: requires a Docker daemon, which is unavailable in this unattended build environment — no `docker` binary/daemon. The authored Dockerfiles/README/bootstrap are correct by inspection and the hermetic `images/tests` parity suite passes; run this build/run check on a Docker-capable host.]_  Verify single-source-of-truth (SC-001/US2, quickstart.md §5): temporarily append
   `yq` to the one `apt-get install` line in `images/agent-base/Dockerfile`, rebuild `agent-base` and
   `agent-claude` from the `images/` context **without editing** `images/agent-claude/Dockerfile`,
   confirm `command -v yq` resolves in `agent-claude` and `git diff --stat images/agent-claude/Dockerfile`
   shows no change, then **revert** the temporary `yq` edit. (Depends on T010.)
-- [ ] T015 [P] [US2] Verify no shell-based harness re-declares the shared install (FR-003/SC-003/US2,
+- [X] T015 [P] [US2] Verify no shell-based harness re-declares the shared install (FR-003/SC-003/US2,
   quickstart.md §4): for `images/agent-claude/Dockerfile`, `images/agent-pi/Dockerfile`, and
   `images/agent-codex/Dockerfile` confirm none matches
   `apt-get|^WORKDIR|python3-pip|dagster-pipes|useradd|adduser`, that each inherits the base's uid-1000 `node` user
@@ -189,7 +189,7 @@ share a single `agent-base` layer (deduplicated, counted once) instead of each c
 
 ### Implementation for User Story 3
 
-- [ ] T016 [US3] Confirm the shared install is stored once, not three times (FR-011/SC-005,
+- [!] T016 [US3] _[BLOCKED: requires a Docker daemon, which is unavailable in this unattended build environment — no `docker` binary/daemon. The authored Dockerfiles/README/bootstrap are correct by inspection and the hermetic `images/tests` parity suite passes; run this build/run check on a Docker-capable host.]_  Confirm the shared install is stored once, not three times (FR-011/SC-005,
   quickstart.md §9): `docker system df -v | grep -E 'agent-base|agent-claude|agent-pi|agent-codex'`
   and confirm the three shell-based harnesses share the single `agent-base` layer (the common
   OS+tool+runtime install counted once in deduplicated usage) rather than each carrying its own copy —
@@ -214,12 +214,12 @@ the shared base, and did not gain the common shell tool set.
 
 ### Implementation for User Story 4
 
-- [ ] T017 [US4] Edit `images/agent-python/Dockerfile` (comment only; FR-010/US4, data-model.md
+- [X] T017 [US4] Edit `images/agent-python/Dockerfile` (comment only; FR-010/US4, data-model.md
   "Standalone harness image"): keep `FROM python:3.12-slim` and its own
   `dagster-pipes==1.13.21` pin, and add a one-line comment recording why it stays off `agent-base`
   (it needs the Python runtime, not the Node-bearing base, and no shell tools). Add no shared shell
   tools.
-- [ ] T018 [P] [US4] Verify the standalone exception (FR-010/US4, quickstart.md §8): confirm
+- [X] T018 [P] [US4] Verify the standalone exception (FR-010/US4, quickstart.md §8): confirm
   `images/agent-python/Dockerfile` still has `FROM python:3.12-slim`, the reason is documented, and it
   did not gain the common shell tool set. (Depends on T017.)
 
@@ -231,9 +231,9 @@ the shared base, and did not gain the common shell tool set.
 
 **Purpose**: End-to-end validation and a final scope check.
 
-- [ ] T019 [P] Run the full `specs/014-base-image-refactor/quickstart.md` verification end to end
+- [!] T019 [P] _[BLOCKED: requires a Docker daemon, which is unavailable in this unattended build environment — no `docker` binary/daemon. The authored Dockerfiles/README/bootstrap are correct by inspection and the hermetic `images/tests` parity suite passes; run this build/run check on a Docker-capable host.]_  Run the full `specs/014-base-image-refactor/quickstart.md` verification end to end
   (§1–§9) and confirm every step reports its Expected result.
-- [ ] T020 [P] Confirm the refactor stayed within scope (plan.md → Scale/Scope): the only changed
+- [X] T020 [P] Confirm the refactor stayed within scope (plan.md → Scale/Scope): the only changed
   files are under `images/`, plus `README.md` and `scripts/bootstrap.sh` — no orchestrator, UI,
   schema, `docker-compose.yml`, or agent-YAML change.
 
