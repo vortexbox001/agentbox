@@ -536,3 +536,48 @@ def test_manual_run_bypasses_and_succeeds(tmp_path, stub_launch, monkeypatch):
     assert result.success
     run = inst.get_run_by_id(result.run_id)
     assert run.tags.get("agentbox/automated") == "0"
+
+
+# ── Refuse partitionless materialization of a daily asset (bug partition-key-not-stamped) ──
+
+from dagster import build_op_context as _build_op_context
+
+
+def _daily_cfg(tmp_path):
+    return _api_cfg(tmp_path, produces={"asset": "notes/daily", "partition": "daily"})
+
+
+def test_require_partition_refuses_daily_without_partition(tmp_path):
+    cfg = _daily_cfg(tmp_path)
+    ctx = _build_op_context()  # no partition_key -> has_partition_key is False
+    with pytest.raises(factory.PartitionRequired):
+        factory.require_partition(cfg, ctx, True)
+
+
+def test_require_partition_allows_daily_with_partition(tmp_path):
+    cfg = _daily_cfg(tmp_path)
+    ctx = _build_op_context(partition_key="2026-09-09")
+    factory.require_partition(cfg, ctx, True)  # must not raise
+
+
+def test_require_partition_noop_for_unpartitioned_asset(tmp_path):
+    cfg = _api_cfg(tmp_path, produces={"asset": "repo-review/agentbox"})
+    factory.require_partition(cfg, _build_op_context(), True)  # no partition declared -> no raise
+
+
+def test_require_partition_noop_for_plain_job(tmp_path):
+    cfg = _daily_cfg(tmp_path)
+    factory.require_partition(cfg, _build_op_context(), False)  # not asset-mode -> no raise
+
+
+def test_daily_success_materialization_records_partition(tmp_path, stub_launch, monkeypatch):
+    # Regression lock: a partitioned run still succeeds AND records the partition (the emission
+    # path was verified correct; the guard must not break it).
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    cfg = _daily_cfg(tmp_path)
+    os.makedirs(cfg["output_dir"], exist_ok=True)
+    ad = factory.build_asset(cfg)
+    result = materialize([ad], partition_key="2026-09-09")
+    assert result.success
+    mat = result.get_asset_materialization_events()[0].step_materialization_data.materialization
+    assert mat.partition == "2026-09-09"
