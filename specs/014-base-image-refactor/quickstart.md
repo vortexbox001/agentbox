@@ -2,7 +2,8 @@
 
 This guide proves the feature end to end: the base builds, the shell-based harnesses build on it, the
 common tools resolve, no agent YAML changed, behavior is unchanged (image tests pass), one-place tool
-addition works, and the deduplicated footprint shrinks. Run it on the arm64 Pi host (or any Docker
+addition works, and the common install is stored once (deduplicated) as the shared base layer. Run it
+on the arm64 Pi host (or any Docker
 host); build steps are the live-verification posture used by prior specs. See
 [contracts/agent-base-image.md](contracts/agent-base-image.md) and [data-model.md](data-model.md) for
 the guarantees each step checks; do not duplicate their detail here.
@@ -108,13 +109,16 @@ grep -qiE 'node|shell tool|shared base|agent-base' images/agent-python/Dockerfil
 
 **Expected**: both `OK` lines.
 
-## 9. Smaller combined footprint, deduplicated (FR-011 / SC-005)
+## 9. Shared install stored once, deduplicated (FR-011 / SC-005)
 
 ```bash
 docker system df -v | grep -E 'agent-base|agent-claude|agent-pi|agent-codex'
 ```
 
-**Expected**: the deduplicated on-disk usage of the three shell-based harnesses **plus** the single
-shared `agent-base` layer is smaller than the "before" total from step 1 — the common OS+tool+runtime
-layer is stored once instead of three times. Compare deduplicated store usage, **not** the sum of the
-per-image `docker images` SIZE column (which counts the shared base three times — research.md R5).
+**Expected**: the three shell-based harnesses share the single `agent-base` layer — the common
+OS+tool+runtime install is stored **once** in deduplicated on-disk usage, not copied into each of the
+three harnesses. Read deduplicated store usage, **not** the sum of the per-image `docker images` SIZE
+column (which counts the shared base three times — research.md R5). This is a structural
+single-storage check: because the base standardizes net-new tools
+(`ripgrep`/`jq`/`gh`/`unzip`/`build-essential`), the raw combined total is **not** required to be
+smaller than the "before" total from step 1 (spec Clarifications 2026-09-16).

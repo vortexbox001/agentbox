@@ -14,7 +14,12 @@ rebuild `agent-claude`, `agent-pi`, and `agent-codex` as thin layers (`FROM agen
 that add only their harness install, entrypoint, and harness-specific env (`CODEX_HOME`). The common
 tool list then lives in exactly one Dockerfile, so adding a tool for every shell-based agent is a
 one-line change in one place, and the three harness images stop repeating the same OS/tool/user work
-so their deduplicated on-disk footprint shrinks. `agent-python` stays on `python:3.12-slim` — it
+so the common OS+tool+runtime install is built once (cached) and stored once, deduplicated, instead
+of three times. (The consolidation covers the five packages the harnesses already share — `git`,
+`curl`, `ca-certificates`, `python3`, `python3-pip` — plus the `dagster-pipes` pin; the additional
+common tools `ripgrep`/`jq`/`gh`/`unzip`/`build-essential` are *newly standardized*, so the raw
+combined total is not asserted to shrink — the guaranteed win is single-storage of the shared
+install, see spec Clarifications 2026-09-16.) `agent-python` stays on `python:3.12-slim` — it
 needs the Python runtime rather than the Node-bearing base and no shell tools — with that reason
 recorded in its image (spec FR-010 / US4 null action). No agent YAML changes; no orchestrator or UI
 code changes; no schema change. Behavioral parity is functional/format equivalence: the
@@ -37,9 +42,12 @@ wrapper/runner and report code are untouched and the `images/tests` suite passes
   shared `images/lib/` stays in context. The existing README build commands (which pass
   `images/agent-*` as the context) contradict the Dockerfiles' own `COPY lib/` and are corrected as
   part of FR-012 (see [research.md](research.md) R4 and the Constitution Check).
-- **R5 — Footprint measurement**: "smaller combined footprint" is verified with `docker system df -v`
+- **R5 — Footprint measurement**: the footprint claim is verified with `docker system df -v`
   (deduplicated unique on-disk size counting the shared base once), not the sum of per-image
-  `docker images` sizes (FR-011 / SC-005).
+  `docker images` sizes. The claim is *structural* — the common OS+tool+runtime install is stored
+  once as the shared base layer rather than three times — not a raw net size reduction, because the
+  base standardizes net-new tools the harnesses did not carry before (FR-011 / SC-005; spec
+  Clarifications 2026-09-16).
 
 ## Technical Context
 
@@ -66,7 +74,7 @@ only artifacts are Docker images in the local image store.
 unchanged — it is the behavioral-parity evidence (FR-008/SC-002); it is hermetic and does not build
 images. The other four suites (`ui`, `orchestrator`, `litellm`, `scripts`) are untouched. Build-time
 verification (base builds, harnesses build on it, `git`/`rg`/`jq`/`gh`/`python3` resolve, no agent
-YAML changed, deduplicated footprint shrinks) is scripted in [quickstart.md](quickstart.md), the
+YAML changed, shared install stored once in deduplicated usage) is scripted in [quickstart.md](quickstart.md), the
 same live-verification posture used by prior specs.
 
 **Target Platform**: Docker images built and run on the Raspberry Pi host (arm64, Debian Bookworm)
@@ -99,8 +107,11 @@ performance change (containers run the same wrapper/runner as before).
 - **No YAML changes** (FR-009/SC-006): no file under any `agents/` tree changes.
 - **Null action** (FR-010): `agent-python` stays on `python:3.12-slim` with the reason documented in
   the image; it is not forced onto the Node base.
-- **Smaller footprint** (FR-011/SC-005): deduplicated on-disk usage (shared base counted once) is
-  smaller than the pre-refactor shell-based harness total.
+- **Single-storage footprint** (FR-011/SC-005): the common OS+tool+runtime install is stored once —
+  the three shell-based harnesses share a single `agent-base` layer (deduplicated on-disk usage,
+  shared base counted once) instead of each carrying its own copy. The raw combined total is not
+  asserted to be smaller than before, since the base standardizes net-new tools (spec Clarifications
+  2026-09-16).
 - **Build order** (FR-012): README build steps and `scripts/bootstrap.sh` build `agent-base` first,
   then the harness images; Compose notes updated only if they reference image builds (they do not).
 
@@ -120,6 +131,16 @@ comment); two build entry points updated. No Python/JS/YAML/schema changes. File
   no capability an agent didn't already have — the shell-based harnesses already carried `git`/`curl`
   and a Python runtime; `ripgrep`/`jq`/`gh`/`unzip`/build-essential are ordinary read/transform CLI
   tools inside the same sandbox, granted uniformly rather than ad hoc.
+  **Explicit trade-off (analysis finding C1)**: Principle I grants each agent the *minimum* it needs,
+  yet a full compiler toolchain (`build-essential`) and `gh` are now installed into *every*
+  shell-based agent, not only those that need them. This is a deliberate judgment call, decided
+  unattended and recorded in spec Clarifications 2026-09-16: FR-002 fixes `build-essential` and `gh`
+  as part of the standard common set, and granting them uniformly in one auditable place is preferable
+  to per-agent ad-hoc installs that drift out of sync. Because this widens no isolation boundary,
+  network reach, credential, or mount — the tools run in the same sandbox with the same uid-1000 user
+  — it is a surfaced trade-off, not a Principle I violation (hence MEDIUM, not CRITICAL). If a future
+  audit shows `build-essential` is genuinely unused by a harness, it can be dropped from the shared
+  set without touching the isolation model.
 - **II. Configuration over Code** — Respected. No orchestrator code changes; agents are still
   discovered from their YAML, and no agent YAML changes (FR-009). The "add a tool once" win is itself
   a configuration-over-duplication improvement at the image layer.

@@ -41,9 +41,12 @@ This feature touches only the `images/` package plus two build entry points, per
 
 - [ ] T001 Create the `images/agent-base/` directory as the home of the new shared base Dockerfile,
   per plan.md → Project Structure.
-- [ ] T002 [P] Record the pre-refactor "before" footprint baseline (quickstart.md §1): with the
-  harness images as they exist today, capture `docker system df -v | grep -E 'agent-claude|agent-pi|agent-codex'`
-  and save the deduplicated sizes for the later SC-005 comparison in T016.
+- [ ] T002 [P] Record the pre-refactor "before" state (quickstart.md §1): with the harness images as
+  they exist today, capture `docker system df -v | grep -E 'agent-claude|agent-pi|agent-codex'` and
+  note how the common OS/tool/runtime install is stored today (once if Docker already dedups the
+  byte-identical layers, or up to three times otherwise) as context for the T016 single-storage
+  check. This is a baseline snapshot, not a numeric target to beat (SC-005 is a structural claim —
+  see spec Clarifications 2026-09-16).
 
 ---
 
@@ -72,7 +75,7 @@ the single source of truth for the common tool set and the shared Python/`dagste
     (`USER node`) as its own last step — preserving today's behavior (data-model.md).
   - A header comment marking this file as the **one place** the common tool set and shared runtime
     live (FR-003/SC-001).
-- [ ] T004 Build and smoke-test the base (contracts/agent-base-image.md guarantees, quickstart.md §3):
+- [ ] T004 Build and smoke-test the base (contracts/agent-base-image.md guarantees, quickstart.md §2–§3):
   from the `images/` context run `docker build -f agent-base/Dockerfile -t agentbox/agent-base .`,
   then confirm `git curl rg jq gh unzip cc python3` all resolve and
   `python3 -c "import dagster_pipes"` succeeds. (Depends on T003.)
@@ -158,8 +161,11 @@ confirm `yq` is present in that harness with no change to the harness Dockerfile
 - [ ] T015 [P] [US2] Verify no shell-based harness re-declares the shared install (FR-003/SC-003/US2,
   quickstart.md §4): for `images/agent-claude/Dockerfile`, `images/agent-pi/Dockerfile`, and
   `images/agent-codex/Dockerfile` confirm none matches
-  `apt-get|useradd|adduser|^WORKDIR|python3-pip|dagster-pipes`, each has `FROM agentbox/agent-base`,
-  and each carries the one-line base pointer (FR-006). (Depends on T005–T007.)
+  `apt-get|^WORKDIR|python3-pip|dagster-pipes`, that each inherits the base's uid-1000 `node` user
+  rather than creating one (no `useradd`/`adduser` line — none existed before the refactor either, so
+  this grep guards against a regression rather than removing an existing line), that each has
+  `FROM agentbox/agent-base`, and that each carries the one-line base pointer (FR-006). (Depends on
+  T005–T007.)
 
 **Checkpoint**: Adding a tool for all shell-based agents is proven to be a one-line, one-place change.
 
@@ -167,21 +173,27 @@ confirm `yq` is present in that harness with no change to the harness Dockerfile
 
 ## Phase 5: User Story 3 - Smaller, faster harness image builds (Priority: P2)
 
-**Goal**: Confirm the combined deduplicated on-disk footprint of the shell-based harnesses (counting
-the shared base once) is smaller after the refactor.
+**Goal**: Confirm the common OS+tool+runtime install is stored once — the three shell-based harnesses
+share a single `agent-base` layer (deduplicated, counted once) instead of each carrying its own copy.
 
-**Independent Test**: Compare the combined deduplicated size before vs. after and confirm it shrank.
+**Independent Test**: Inspect deduplicated on-disk usage and confirm the three harnesses share one
+`agent-base` layer (common install stored once, not three times) — a structural check, not a raw
+"smaller than before" comparison, since the base standardizes net-new tools.
 
 ### Implementation for User Story 3
 
-- [ ] T016 [US3] Measure the post-refactor deduplicated footprint (FR-011/SC-005, quickstart.md §9):
-  `docker system df -v | grep -E 'agent-base|agent-claude|agent-pi|agent-codex'`, count the shared
-  `agent-base` layer once, and confirm the total is smaller than the T002 "before" baseline (do **not**
-  sum per-image `docker images` SIZE, which counts the base three times — research.md R5). (Depends on
-  T002, T010.)
+- [ ] T016 [US3] Confirm the shared install is stored once, not three times (FR-011/SC-005,
+  quickstart.md §9): `docker system df -v | grep -E 'agent-base|agent-claude|agent-pi|agent-codex'`
+  and confirm the three shell-based harnesses share the single `agent-base` layer (the common
+  OS+tool+runtime install counted once in deduplicated usage) rather than each carrying its own copy —
+  do **not** sum per-image `docker images` SIZE, which counts the base three times (research.md R5).
+  This is a structural single-storage check, not a raw "smaller than the T002 baseline" comparison:
+  the base standardizes net-new tools (`ripgrep`/`jq`/`gh`/`unzip`/`build-essential`), so the raw
+  total need not shrink (spec Clarifications 2026-09-16). (Depends on T002, T010.)
 
-**Checkpoint**: The shared base is stored once instead of three times; the combined footprint is
-smaller.
+**Checkpoint**: The shared OS+tool+runtime install is stored once instead of three times — the three
+shell-based harnesses share the single `agent-base` layer (structural single-storage win; the raw
+total need not shrink, since the base standardizes net-new tools).
 
 ---
 
@@ -290,7 +302,7 @@ Task: "Verify no agent YAML changed"
 1. Setup + Foundational → shared base ready.
 2. US1 → the three harnesses run on the base, parity verified → **MVP**.
 3. US2 → prove the one-place tool addition (yq experiment).
-4. US3 → confirm the smaller deduplicated footprint.
+4. US3 → confirm the shared install is stored once (deduplicated), not three times.
 5. US4 → `agent-python` standalone reason (independent; can land any time after Setup).
 6. Polish → full quickstart run + scope check.
 

@@ -17,6 +17,32 @@
 - Q: How is the "combined on-disk footprint is smaller" outcome measured, given `docker images` reports each image's full size including the now-shared base? → A: Deduplicated actual on-disk usage that counts the shared base layer once (e.g. the image store's unique size), not the sum of per-image reported sizes.
 - Q: Is `agent-python` decided to stay on its own base now, or is that deferred to the plan? → A: Decided now — `agent-python` stays on `python:3.12-slim` (it needs the Python runtime, not Node, and no shell tools), with the reason documented in its image.
 
+### Session 2026-09-16 (analysis remediation)
+
+These decisions were taken unattended while acting on the `/speckit-analyze` findings; no human was
+available to clarify. They are recorded here so the reasoning is reviewable.
+
+- Q: FR-011/SC-005 asserted the combined harness footprint MUST be *smaller* after the refactor, yet
+  the shared base **adds** tools the harnesses do not carry today (`ripgrep`, `jq`, `gh`, `unzip`,
+  `build-essential` — the last alone is ~150–200 MB), while the five already-shared packages
+  (`git`, `curl`, `ca-certificates`, `python3`, `python3-pip`) plus the `dagster-pipes` pin are
+  byte-identical across the three harnesses today. Is "combined footprint is smaller" the right
+  success gate? (analysis finding H1) → A: No. Re-scope FR-011/SC-005/US3 to the structurally
+  guaranteed claim — the common OS + tool + runtime install is **stored once**, as a single shared
+  base layer all three shell-based harnesses share, instead of built and stored three times. The raw
+  combined total is *not* asserted to be numerically smaller than before, because the base
+  standardizes net-new tools; the durable win is single-storage of the shared install (and the common
+  work being built once and cached), not a net size reduction. This keeps T016/SC-005 a real
+  pass/fail gate rather than one that could legitimately fail once `build-essential`/`gh` are added.
+- Q: Principle I grants each agent the *minimum* tooling it needs, yet the shared base installs a full
+  compiler toolchain (`build-essential`) and `gh` into every shell-based agent uniformly — is that
+  acceptable? (analysis finding C1) → A: Yes, keep the uniform common set. FR-002 fixes
+  `build-essential` and `gh` as part of the standard common tool set, and granting them uniformly in
+  one auditable place is preferable to per-agent ad-hoc installs that drift. The trade-off (uniform
+  common tooling vs. strict per-agent minimum) is now recorded explicitly in the plan's Constitution
+  Check §I so the decision is auditable; there is no isolation-boundary, network-reach, or mount
+  change, so this is not a Principle I violation.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Rebuild every harness on one shared base with identical behavior (Priority: P1)
@@ -43,8 +69,10 @@ Confirm no agent YAML file changed.
 1. **Given** the shared base and the rebuilt harness images, **When** an existing agent of each
    harness is run end to end, **Then** its report and output are identical to the pre-refactor run.
 2. **Given** the rebuilt `agent-claude`, `agent-pi`, and `agent-codex` images, **When** their image
-   definitions are inspected, **Then** none carries its own OS-package installation, non-root-user
-   creation, or working-directory line — those come from the shared base.
+   definitions are inspected, **Then** none carries its own OS-package installation, working-directory
+   line, or Python-runtime install, and each inherits the base image's uid-1000 `node` user (no
+   user-creation line of its own — none existed before either) — all of these come from the shared
+   base.
 3. **Given** the refactor is complete, **When** the agent YAML files are compared to before,
    **Then** no agent YAML changed.
 
@@ -76,23 +104,31 @@ image, and confirm `yq` is present in that harness with no change to the harness
 
 ---
 
-### User Story 3 - Smaller, faster harness image builds (Priority: P2)
+### User Story 3 - Common work built and stored once, faster rebuilds (Priority: P2)
 
-An operator building images on a Raspberry Pi wants the harness images to be smaller and to build
-faster. Because the shell-based harness images now share one base layer instead of each installing
-the same OS and tools, their combined footprint is smaller and the common work is built once.
+An operator building images on a Raspberry Pi wants the shared work built once and stored once, and
+rebuilds to be faster. Today the three shell-based harnesses each install the same five packages
+(`git`, `curl`, `ca-certificates`, `python3`, `python3-pip`) plus the same pinned `dagster-pipes`;
+after the refactor those — together with the newly standardized common tools (`ripgrep`, `jq`, `gh`,
+`unzip`, `build-essential`) and the `/workspace` workdir — live in one shared base layer. That common
+OS+tool+runtime work is built once and cached, and stored once (deduplicated) instead of three times.
+(The refactor consolidates the five already-shared packages and *newly standardizes* the additional
+tools; because those additions are net-new, the raw combined total is not asserted to shrink — see
+Clarifications 2026-09-16 (analysis remediation).)
 
-**Why this priority**: A smaller, faster build is a concrete benefit for the constrained Pi target,
-but it follows from the shared base rather than standing alone, so it ships after the base and the
-one-place tool change.
+**Why this priority**: Building and storing the common work once is a concrete benefit for the
+constrained Pi target, but it follows from the shared base rather than standing alone, so it ships
+after the base and the one-place tool change.
 
-**Independent Test**: Compare the combined size of the shell-based harness images before and after
-the refactor and confirm the combined footprint is smaller.
+**Independent Test**: Inspect deduplicated on-disk usage and confirm the three shell-based harnesses
+share a single `agent-base` layer — the common install stored once, not three times — rather than
+confirming a raw net size reduction.
 
 **Acceptance Scenarios**:
 
-1. **Given** the rebuilt shell-based harness images, **When** their combined on-disk size is
-   compared to before the refactor, **Then** the combined footprint is smaller.
+1. **Given** the rebuilt shell-based harness images, **When** deduplicated on-disk usage is inspected,
+   **Then** the common OS+tool+runtime install is stored once as the shared `agent-base` layer, not
+   copied into each of the three harnesses.
 2. **Given** the shared base is already built, **When** the harness images are rebuilt, **Then** the
    common OS and tool installation is not repeated per harness — it is inherited from the base.
 
@@ -178,10 +214,14 @@ the common tooling it does not need.
 
 **Footprint & build process**
 
-- **FR-011**: The combined on-disk footprint of the shell-based harness images MUST be smaller after
-  the refactor than before, by sharing the common base layer. "Combined footprint" is the
-  deduplicated actual on-disk usage that counts the shared base layer once (e.g. the image store's
-  unique size), not the sum of each image's individually reported size.
+- **FR-011**: The common OS + tool + runtime install MUST be stored once — as a single shared base
+  layer that all three shell-based harness images share — rather than built and stored separately in
+  each harness. Verified via deduplicated on-disk usage (the image store's unique size, which counts
+  the shared base layer once, not the sum of each image's individually reported size). Because the
+  shared base standardizes tools the harnesses did not carry before (`ripgrep`, `jq`, `gh`, `unzip`,
+  `build-essential`), the raw combined total is NOT required to be numerically smaller than before
+  the refactor; the guaranteed win is single-storage of the shared install (see Clarifications
+  2026-09-16 (analysis remediation)).
 - **FR-012**: The build documentation (README build steps) and the bootstrap script
   (`scripts/bootstrap.sh`) MUST build the shared base first and then the harness images; compose
   notes MUST be updated if they reference image builds.
@@ -211,13 +251,17 @@ the common tooling it does not need.
   and output of the same semantics before and after the refactor (functional/format equivalence, per
   FR-008; verified by the unchanged wrapper/runner and report code and the image test suites passing
   unchanged), rather than a byte-identical rerun.
-- **SC-003**: No shell-based harness image contains its own OS-package installation, non-root-user
-  creation, or working-directory declaration — the common tool list is defined in exactly one place.
+- **SC-003**: No shell-based harness image contains its own OS-package installation, working-directory
+  declaration, or Python-runtime install, and each inherits the base's uid-1000 `node` user rather
+  than creating one (no harness ever carried a user-creation line) — the common install is defined in
+  exactly one place.
 - **SC-004**: The common tools (`git`, `rg`, `jq`, `gh`, and the rest of the common set) resolve to
   executables in each shell-based harness image.
-- **SC-005**: The combined on-disk size of the shell-based harness images — measured as deduplicated
-  usage that counts the shared base layer once, not the sum of per-image reported sizes — is smaller
-  after the refactor than before.
+- **SC-005**: The common OS + tool + runtime install is stored once, not three times — verified by
+  inspecting deduplicated on-disk usage (the image store's unique size) and confirming the three
+  shell-based harnesses share a single `agent-base` layer rather than each carrying its own copy. The
+  raw combined total is not asserted to be smaller than before, since the base standardizes tools the
+  harnesses did not previously carry (see Clarifications 2026-09-16 (analysis remediation)).
 - **SC-006**: The refactor changes no agent YAML file.
 
 ## Assumptions

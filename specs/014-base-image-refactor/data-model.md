@@ -87,9 +87,11 @@ python:3.12-slim ──▶ agent-python        (standalone; not on the shared ba
 - **Build order**: `agent-base` before the three thin harnesses (enforced by `FROM` at build time;
   stated explicitly in README build steps and `scripts/bootstrap.sh` — FR-012). `agent-python` has no
   ordering dependency on `agent-base`.
-- **Footprint**: the three thin harnesses share the single `agent-base` layer set, so the
-  deduplicated on-disk total (counting the base once) is smaller than three independent copies of the
-  same OS+tools+runtime (FR-011/SC-005).
+- **Footprint**: the three thin harnesses share the single `agent-base` layer set, so the common
+  OS+tools+runtime install is stored **once** in deduplicated on-disk usage (base counted once)
+  instead of three independent copies. This is a structural single-storage claim, not a raw net size
+  reduction vs. before the refactor — the base standardizes net-new tools, so the raw total need not
+  shrink (FR-011/SC-005; spec Clarifications 2026-09-16 (analysis remediation)).
 
 ## State transitions
 

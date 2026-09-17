@@ -92,16 +92,23 @@ mechanics the spec deliberately deferred to the plan.
   - Use BuildKit `--build-context`/bake — rejected: adds tooling the project doesn't use elsewhere;
     the plain `-f … images/` form matches the Dockerfiles' own documented invocation.
 
-## R5 — Measuring the smaller combined footprint
+## R5 — Verifying the footprint claim (single-storage, deduplicated)
 
 - **Decision**: verify FR-011/SC-005 with **`docker system df -v`** (or the image store's unique
   size), reading the deduplicated on-disk usage that counts the shared base layer **once**, and
-  compare the shell-based harness total before vs. after the refactor.
+  confirm the three shell-based harnesses share that single `agent-base` layer — i.e. the common
+  OS+tool+runtime install is stored **once**, not three times. The claim is *structural* (single
+  storage of the shared install), **not** a raw "combined total is numerically smaller than before"
+  comparison.
 - **Rationale**: `docker images` reports each image's *full* size including shared layers, so summing
   those columns after the refactor would count the base layer three times and could look *larger* —
-  exactly the trap the spec's clarification warns about. The deduplicated store size is the metric the
-  spec fixed (FR-011). The saving comes from the common OS+tool+runtime install existing as one shared
-  layer instead of three near-identical copies.
+  exactly the trap the spec's clarification warns about, so the deduplicated store size is the metric
+  the spec fixed (FR-011). But a raw before-vs-after size *reduction* cannot be guaranteed: the base
+  standardizes tools the harnesses did not carry before (`ripgrep`, `jq`, `gh`, `unzip`,
+  `build-essential` — the last alone is ~150–200 MB), and the five packages the harnesses already
+  share are byte-identical and may already dedup today. So the durable, guaranteed win recorded in the
+  spec's 2026-09-16 (analysis remediation) clarification is that the shared install exists as **one**
+  base layer instead of three near-identical copies — not a net size drop.
 - **Alternatives considered**:
   - Sum of `docker images` SIZE column — rejected: double/triple-counts shared layers; not the
     clarified metric.
