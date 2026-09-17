@@ -15,7 +15,8 @@ common tool list and the shared Python/`dagster-pipes` runtime are defined.
 | Tag | `agentbox/agent-base` | FR-001, spec Key Entities |
 | Base | `node:20-slim` (Debian bookworm-slim, arm64) | R1 |
 | Non-root user | uid-1000 `node` (inherited from `node:20-slim`; not re-created) | FR-001, R1 |
-| Working directory | `/workspace` | FR-001 |
+| Working directory | `WORKDIR /workspace` | FR-001 |
+| Final user | left as the image default (**root**) — the base does not `USER node`, so downstream harnesses can `npm install -g`; the uid-1000 `node` user is inherited and available for each harness to switch to | FR-001, R1, parity |
 | Common tools | `git`, `curl`, `ca-certificates`, `ripgrep`, `jq`, `unzip`, `build-essential`, plus `gh` from the official GitHub CLI apt repo | FR-002, R2 |
 | Python runtime | `python3` + `python3-pip` (apt) | FR-013, R3 |
 | Report runtime | `dagster-pipes==1.13.21` (pip3, `--break-system-packages`) | FR-013, R3 |
@@ -39,7 +40,8 @@ A harness image that builds on the shared base and adds only its own harness.
 | Shared library | `COPY lib/ /app/lib/` (from the `images/` context) | unchanged |
 | Wrapper / entrypoint | `COPY agent-*/wrapper.py`, plus `agent-pi/entrypoint.sh` (+ `chmod 755`); `ENTRYPOINT` unchanged per image | FR-005 |
 | Harness-specific env | `ENV CODEX_HOME=/creds` (agent-codex only) | FR-005 |
-| Must NOT contain | OS-package `apt-get` install, user creation, `WORKDIR`, or the Python/`dagster-pipes` install | FR-004, SC-003 |
+| Final user switch | keeps its own `USER node` as the last step before `ENTRYPOINT` (a user *switch*, not user *creation* — the base leaves the image as root so `npm install -g` works; this line preserves today's non-root run) | FR-005, parity |
+| Must NOT contain | OS-package `apt-get` install, user *creation* (`useradd`/`adduser`), `WORKDIR`, or the Python/`dagster-pipes` install | FR-004, SC-003 |
 
 **Per-image specifics (what survives the thinning)**
 

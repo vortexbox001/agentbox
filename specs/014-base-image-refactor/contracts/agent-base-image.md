@@ -29,10 +29,13 @@ the single-source-of-truth requirement (FR-003/SC-003).
 4. `COPY lib/ /app/lib/` and its wrapper (`COPY agent-*/wrapper.py`), plus `agent-pi`'s
    `entrypoint.sh` (+ `chmod`).
 5. Any harness-specific env (`ENV CODEX_HOME=/creds` for `agent-codex`).
-6. Its `ENTRYPOINT` (unchanged from today).
+6. A final `USER node` switch before the entrypoint — the base is left as root so the harness's
+   `npm install -g` works, and this line restores today's non-root run. It is a user *switch*, not
+   user *creation*, so it does not violate the single-source-of-truth guarantee.
+7. Its `ENTRYPOINT` (unchanged from today).
 
-Nothing else. The absence of `apt-get`, user creation, and `WORKDIR` in these files is itself part of
-the contract (SC-003) and is checked in the quickstart.
+Nothing else. The absence of `apt-get`, user *creation*, and `WORKDIR` in these files is itself part
+of the contract (SC-003) and is checked in the quickstart.
 
 ## Single-source-of-truth guarantee (SC-001)
 
