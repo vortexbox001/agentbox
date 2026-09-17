@@ -1,161 +1,164 @@
 # Specification Analysis Report — Runs Overview Page (015)
 
-**Command**: `/speckit-analyze` (read-only cross-artifact consistency check)
+**Command**: `/speckit-analyze` (non-destructive, read-only cross-artifact consistency check)
 **Date**: 2026-09-17
+**Branch**: `015-ui-runs-overview-page`
 **Feature dir**: `specs/015-ui-runs-overview-page/`
-**Artifacts analysed**: `spec.md`, `plan.md`, `tasks.md` (+ `research.md`, `data-model.md`, `contracts/runs-overview.md`, `contracts/pagination-component.md`, `checklists/`)
-**Constitution**: v1.3.0 (`.specify/memory/constitution.md`)
+**Artifacts analysed**: `spec.md`, `plan.md`, `tasks.md` (+ `research.md`, `data-model.md`,
+`contracts/runs-overview.md`, `contracts/pagination-component.md`, `checklists/*`) against
+`.specify/memory/constitution.md` (v1.3.0).
 
-> **Status: post-remediation.** This report was regenerated after the analysis-remediation pass that
-> acted on the eight findings below. The original findings are retained with a **Resolution** column
-> so the change is reviewable. All eight are now **RESOLVED**; a fresh detection pass over the edited
-> artifacts surfaced **no new findings**. The judgment calls made unattended are recorded in
-> `spec.md` §Clarifications → *Session 2026-09-17 (analysis remediation)*.
+> **Context**: This feature's artifacts have already been through one `/speckit-analyze`
+> remediation pass — see spec.md → *Clarifications → Session 2026-09-17 (analysis remediation)*,
+> which resolved findings A1, A2, A3, A5, A6, and A8 by editing spec / plan / tasks / data-model /
+> research / contracts in lockstep. This report is a **fresh re-analysis** of the current state. The
+> earlier remediated items are re-verified below as **resolved**; the findings that remain are the
+> residue that the prior pass did not fully propagate, plus one task-ordering issue. **No CRITICAL or
+> HIGH findings.** Coverage is 100% of functional requirements. The feature is ready for
+> `/speckit-implement`.
 
-## Summary verdict
+---
 
-The three core artifacts were already unusually well aligned; the remediation pass closed the eight
-refinement findings without any architectural change. Every functional requirement (FR-001–**FR-035**)
-maps to at least one task, every user story has an implementation + test task pair, and the
-constitution gates (VII One Design System, V Ephemeral Runs, VI Docs Track Reality) remain respected
-and explicitly tracked. **No CRITICAL issues and no constitution violations — before or after
-remediation.**
+## Findings
 
-What changed in remediation:
-- The `timed_out` status-vocabulary inconsistency (A1) is reconciled: `timed out` derives only from
-  the local record and shows on last-known rows; FR-001, US1, and SC-001 now say this, matching
-  contract §D and research R8.
-- The `unknown` status set now matches across data-model, contract §D, tasks, and a new FR-005 note
-  (A2), including the explicit `all ≥ in_progress + succeeded + failed` count relationship.
-- The N=500 enrichment cap is now a real requirement (**FR-035**) with a rendering task (**T045**),
-  so the "surfaced, never silently truncated" promise in research R1 is honest (A3).
-- The reviewer-owned `spec-quality.md` checklist (CHK001–CHK040) was walked and marked satisfied
-  (A4), with the previously-open gaps (CHK003/008/022/031/032) closed by the edits above.
-- LOW findings A5 (SC-007 theme-parity verification), A6 (a11y of added controls), A7 (`created_iso`
-  field-inventory drift), and A8 (first-paint timezone) are each recorded/reconciled.
+| ID | Category | Severity | Location(s) | Summary | Recommendation |
+|----|----------|----------|-------------|---------|----------------|
+| C1 | Inconsistency (task ordering) | MEDIUM | tasks.md T045 (Phase 2, lines 97–103); depends on T014 (Phase 4), T019 (Phase 5) | T045 renders the FR-035 enrichment-cap note and sits inside **Phase 2 (Foundational)** — right above the "Checkpoint: Foundation ready" line — yet its own body states it *depends on T014 and T019*, which live in Phase 4 (US2) and Phase 5 (US3). The Foundational phase is declared a blocking prerequisite that "no status/tab/column story can begin until complete," but T045 cannot complete until two later-phase template tasks land. | Move T045 out of Phase 2 into Phase 5 (or a late cross-cutting slot after T019), or split it: keep the server-side cap **flag** in T007 (Phase 2) and render the **note** in a US3-phase task. The dependency is already documented in the task text, so this is a placement fix, not new work. |
+| C2 | Inconsistency (mislabel) | LOW | tasks.md T045 line 97 (`[US1]`) | T045 is tagged `[US1]` but implements **FR-035** (enrichment bound / cap note), which the spec places under its own *Enrichment bound* heading and is not part of US1's status-truth narrative (US1 = truthful per-row status). FR-035 has no dedicated user story. | Re-tag T045 to the story that owns the table render it depends on (US3), or leave `[US1]` but note FR-035 is a cross-cutting requirement. Cosmetic; does not affect coverage. |
+| I1 | Inconsistency (terminology drift) | LOW | research.md R8 line 166–167 vs data-model.md L16, contracts/runs-overview.md §D L128, spec FR-005, tasks.md T003 | The A2 remediation added the `unknown` presented status to FR-005, the data-model Run/Tab entities, contract §D, and T003 — but **research.md R8's enumerated "presented status set" still lists only six** (succeeded, failed, timed out, cancelled, queued, in progress) and never mentions `unknown`. Every other artifact now carries a seven-member set including `unknown` (→ All-only). | Add `unknown` to R8's presented-status enumeration (and note its "All only" partition) so R8 matches contract §D and the data-model. Read-only report — not applied here. |
+| A1 | Ambiguity | LOW | contracts/runs-overview.md §D L127 ("queued/idle") vs research.md R8 L178 ("idle/queued") vs spec FR-004 | The tag **intent** for a `queued` run is not pinned to one name: the contract writes "queued/idle" and research writes "idle/queued", while FR-004 only mandates reusing "the existing run status tag intents." Whether a distinct `queued` intent exists or it reuses `idle` is left to implementation (T003 `_status_intent`). | Confirm during implementation which intent the existing `run_status_tag` macro actually exposes and state it once. Low impact — FR-004's "reuse existing intents" is satisfied either way. |
+| I2 | Inconsistency (docs vs tasks) | LOW | plan.md §Project Structure L165–169 vs tasks.md T037, T040, T042 | The plan's `ui/tests/` tree lists `test_runs.py`, `test_dagster.py`, `test_conformance.py`, `test_design_system_sync.py`, but the tasks also exercise `test_design_system_docs.py` (T037/T042), `test_ui_consistency.py` and `test_api.py` (T040). The plan tree is illustrative, but omits three test files the tasks depend on. | Add the three test files to the plan's structure block (or annotate the tree as non-exhaustive). No functional impact; all named files exist in the repo. |
 
-An operator may proceed to `/speckit-implement`.
+*(5 findings total; no overflow — well under the 50-row cap.)*
 
-## Findings (all resolved)
+---
 
-| ID | Category | Severity | Location(s) | Summary | Resolution |
-|----|----------|----------|-------------|---------|------------|
-| A1 | Inconsistency | MEDIUM | spec.md FR-001, US1 (narrative + Independent Test), SC-001; contracts/runs-overview.md §D; research.md R8 | FR-001/US1/SC-001 claimed a **timed-out** status is "the real outcome Dagster records", but Dagster has no TIMEOUT RunStatus (§D marks `timed_out` as "(none; local)"), so it can never present while Dagster is reachable and wins (FR-003). | **RESOLVED.** FR-001, US1 (narrative + Independent Test), and SC-001 now state `timed out` derives **only** from the local record and appears only on a last-known row; while Dagster is reachable a timed-out run shows Dagster's terminal state (failed/cancelled). Now consistent with §D and R8. Decision recorded in Clarifications. |
-| A2 | Inconsistency | MEDIUM | spec.md FR-005; data-model.md (Run + Tab entities); contracts/runs-overview.md §D; tasks.md T003 | Presented-status set differed: data-model listed 6 states (no `unknown`); §D + T003 listed 7. `unknown` routes to "All only", so the three sub-tab counts need not sum to `all`, and FR-005 never mentioned it. | **RESOLVED.** `unknown` added to the data-model Run presented set and Tab entity; FR-005 now states an `unknown` run appears under All only and that `all ≥ in_progress + succeeded + failed`. Parity across data-model, §D, tasks, spec. Decision recorded in Clarifications. |
-| A3 | Coverage Gap | MEDIUM | research.md R1; spec.md FR-035 (new); tasks.md T045 (new) | R1 promised the N=500 enrichment cap be "surfaced (a note), never silently truncated," but no FR/SC required it and no task rendered it. | **RESOLVED.** Added **FR-035** (visible cap note; rows beyond the cap shown last-known, never truncated) and **T045** to render it in `runs/list.html` (tokens/macros only) with a covering `test_runs.py` case. R1 now cross-references FR-035/T045. Closes CHK031/CHK032. |
-| A4 | Underspecification | MEDIUM | checklists/spec-quality.md (CHK001–CHK040) | The feature's reviewer-owned quality checklist was entirely unchecked; `/speckit-implement` reads checkbox state as a gate. | **RESOLVED.** All CHK001–CHK040 walked and marked `[x]` in the remediation pass. Previously-open gaps closed by A1/A2/A3/A5/A6 edits (CHK003 marker form, CHK008 a11y, CHK022 SC-007 parity, CHK031/032 cap). A dated review note was added to the checklist's Notes and to Clarifications. |
-| A5 | Coverage Gap | LOW | spec.md SC-007; tasks.md T025 | SC-007 requires light/dark cross-overview parity, but no task can observe rendered themes (T025 uses TestClient). | **RESOLVED.** Recorded that theme parity is guaranteed **by construction** (tokens-only, enforced by `test_conformance.py`) and validated **manually** per quickstart — no pixel/theme assertion is added. Verification note added under T025; decision in Clarifications. |
-| A6 | Coverage Gap | LOW | spec.md FR-032/FR-033; checklists/spec-quality.md CHK008 | Accessibility was specified only for the logo focus state; tabs/filter/pagination carried no explicit keyboard/ARIA requirement. | **RESOLVED.** Added an accessibility note under the Design-system-conformance requirements: a11y for the added controls is inherited from the shared macros (covered by FR-033); the new `pagination` macro adds `aria-label`/`aria-disabled`. Closes CHK008; decision in Clarifications. |
-| A7 | Inconsistency | LOW | data-model.md (Run entity); contracts/runs-overview.md §B; tasks.md T008 | `created_iso` appeared in the `/api/runs` payload (§B) and T008's row fields but not in the data-model Run entity table. | **RESOLVED.** Added a `created_iso` row to the data-model Run table (companion to `created`: the hover value and the machine-readable value JS re-localises). Field inventory now identical across data-model, §B, and T008. |
-| A8 | Ambiguity | LOW | research.md R7; spec.md SC-005; tasks.md T023 | Created/Duration are formatted browser-tz-side, but the server's first paint has no browser tz while SC-005 asserts an exact literal — the first-paint interaction was unstated. | **RESOLVED.** R7 now states each row carries a machine-readable timestamp (epoch/`created_iso`) plus a server-rendered fallback label; `runs-list.js` re-localises to the browser tz on load, and SC-005's exact literal is evaluated in the operator's local tz. Status/ordering never depend on it. Decision in Clarifications. |
+## Re-verification of the prior remediation pass
 
-_No findings dropped to overflow; all eight are resolved and no new findings were introduced._
+Each item the spec's "analysis remediation" session claims to have fixed was re-checked in the
+current artifacts and confirmed consistent:
 
-## Coverage Summary — Functional Requirements → Tasks
+| Prior ID | Concern | Status now |
+|----------|---------|-----------|
+| A1 (prior) | `timed out` cannot come from Dagster (no TIMEOUT RunStatus) | **Resolved** — FR-001, US1, SC-001, contract §D, research R8 all state `timed_out` derives only from the local record and appears only on a last-known row. Consistent. |
+| A2 (prior) | `unknown` status missing from data-model / FR-005 partition | **Resolved in spec/data-model/contract/tasks** — FR-005 adds the All-only rule and `all ≥ in_progress+succeeded+failed`; data-model Run & Tab entities carry it; contract §D has an `unknown` row. **Not propagated to research.md R8** → see finding **I1**. |
+| A3 (prior) | N=500 cap promised "never silently truncated" but no requirement/task rendered a note | **Resolved** — FR-035 added; T045 renders the note. (Placement of T045 → finding **C1**.) |
+| A5 (prior) | SC-007 light/dark parity had no automatable task | **Resolved** — recorded as a by-construction + manual verification note on T025; no pixel/theme assertion added. Consistent with FR-033/`test_conformance.py`. |
+| A6 (prior) | a11y unspecified for tabs/filter/pagination | **Resolved** — accessibility note under FR-032/FR-033; the new `pagination` macro carries `aria-label="Pagination"`/`aria-disabled` (contract §B; T032). |
+| A8 (prior) | server first-paint has no browser tz but SC-005 asserts a literal | **Resolved** — research R7 documents the epoch/ISO + server label + client re-localise approach; data-model adds `created_iso`; T023 implements it. |
+
+Findings **A4** and **A7** from the earlier pass are not listed in the spec's remediation session;
+their underlying decisions (R4 staged Settings consolidation, R7 timestamp formatting) are present
+and internally consistent in the current artifacts, so no residual issue is raised for them.
+
+---
+
+## Coverage Summary (Functional Requirements → Tasks)
 
 | Requirement | Has Task? | Task IDs | Notes |
 |-------------|-----------|----------|-------|
-| FR-001 true status | ✅ | T003, T007, T010, T013 | A1 reconciled: `timed_out` is local-only / last-known. |
-| FR-002 last-known fallback | ✅ | T004, T007, T011, T012, T013 | Covers both unreachable and no-record cases. |
-| FR-003 Dagster wins | ✅ | T012, T013 | Merge precedence in T007. |
-| FR-004 status tag intents | ✅ | T003, T010 | |
-| FR-005 tabbed partition | ✅ | T003, T014 | `unknown` → All only; `all ≥ sub-tabs` (A2 resolved). |
-| FR-006 count badges over filtered set | ✅ | T007, T014, T018 | |
-| FR-007 remove Status dropdown | ✅ | T007, T014, T018 | Old `status` param ignored. |
-| FR-008 ghost Filter | ✅ | T015 | |
-| FR-009 text filter substring | ✅ | T006, T016, T018 | Em-dash target never matches. |
-| FR-010 agent + date filters retained | ✅ | T015 | |
-| FR-011 URL state | ✅ | T016, T018 | |
-| FR-012 column order | ✅ | T019, T025 | |
-| FR-013 remove Date/Time/Attempts | ✅ | T019, T025 | |
+| FR-001 true status | ✅ | T003, T007, T010 | normalisation + pipeline + render |
+| FR-002 last-known fallback | ✅ | T007, T011, T012 | unreachable + no-record both covered |
+| FR-003 Dagster wins while reachable | ✅ | T007, T012 | merge precedence |
+| FR-004 status tag intents | ✅ | T003, T010 | `_status_intent` → `run_status_tag` |
+| FR-005 tabbed partition (+`unknown` All-only) | ✅ | T003, T007, T014 | |
+| FR-006 count badges over filtered set | ✅ | T007, T014, T018 | before partition, page-independent |
+| FR-007 remove Status dropdown | ✅ | T007, T014, T018 | |
+| FR-008 ghost Filter control | ✅ | T015 | |
+| FR-009 text filter agent/model/target/run id | ✅ | T006, T016 | server + client |
+| FR-010 agent + date filters retained | ✅ | T015, T016 | |
+| FR-011 URL state | ✅ | T007, T016 | |
+| FR-012 ten-column order | ✅ | T019 | |
+| FR-013 remove Date/Time/Attempts | ✅ | T005, T019 | |
 | FR-014 Target | ✅ | T004, T021 | |
 | FR-015 Launched by | ✅ | T004, T021 | |
-| FR-016 Checks like Agents | ✅ | T004, T022 | Reuses `_check_status`/`_parse_checks`. |
-| FR-017 Created format | ✅ | T023, T025 | First-paint tz reconciled (A8). |
-| FR-018 Duration | ✅ | T023, T025 | No live ticker. |
-| FR-019 Cost `—` not 0 | ✅ | T024, T025 | Reuses `_fmt_cost`. |
-| FR-020 mono Agent/Model + agent link | ✅ | T020, T025 | |
-| FR-021 `—` when unobtainable | ✅ | T021, T025 | |
-| FR-022 Dagster link icon | ✅ | T026, T028 | |
-| FR-023 run id link | ✅ | T019, T026, T028 | |
-| FR-024 no icon when unconfigured | ✅ | T026, T028 | |
-| FR-025 30/page pagination | ✅ | T007, T034, T036 | |
+| FR-016 Checks (as Agents overview) | ✅ | T004, T022 | |
+| FR-017 Created `Sep 17, 1:15 PM` + hover | ✅ | T023, T025 | |
+| FR-018 Duration elapsed / in-progress | ✅ | T005, T023 | |
+| FR-019 Cost `—` not `0` | ✅ | T024 | reuses `_fmt_cost` |
+| FR-020 mono Agent/Model + agent link | ✅ | T020 | |
+| FR-021 `—` when unobtainable | ✅ | T021 | |
+| FR-022 Dagster link icon | ✅ | T026, T027 | |
+| FR-023 run id → AgentBox page | ✅ | T019, T026 | |
+| FR-024 no icon when Dagster unconfigured | ✅ | T026, T028 | |
+| FR-025 30/page, newest first | ✅ | T007, T034 | |
 | FR-026 filters before pagination | ✅ | T007 | |
-| FR-027 change tab/filter → page 1 | ✅ | T017, T036 | Client + server clamp. |
-| FR-028 page in URL | ✅ | T016, T034, T035 | |
-| FR-029 nav Runs · rule · Agents | ✅ | T038, T040 | |
+| FR-027 tab/filter change → page 1 | ✅ | T007, T017 | client + server clamp |
+| FR-028 page in URL | ✅ | T034, T035 | |
+| FR-029 nav order Runs·rule·Agents | ✅ | T038 | |
 | FR-030 single Settings entry | ✅ | T038, T040 | |
-| FR-031 settings modal reachable (staged) | ✅ | T038 | `/settings` retained unlinked (R4). |
-| FR-032 logo → home + focus | ✅ | T039, T040 | a11y of added controls now noted (A6). |
-| FR-033 design-system conformance | ✅ | T027, T033, T037 | |
-| FR-034 Pagination design-system-first | ✅ | T029, T030, T031, T032, T037 | |
-| **FR-035 enrichment-cap note** | ✅ | **T045**, T007 | New (A3): visible cap note; older rows last-known. |
+| FR-031 settings reachable from modal (staged) | ✅ | T038 | research R4 |
+| FR-032 logo → home + focus state | ✅ | T039, T040 | |
+| FR-033 design-system conformance | ✅ | T027, T033, T043 | + conformance suite |
+| FR-034 pagination in DS first | ✅ | T029–T033 | design-system-first |
+| FR-035 enrichment-cap note | ✅ | T045 | placement → finding C1 |
 
-**FR coverage: 35 / 35 = 100%.**
+**Success Criteria (buildable) → Tasks**: SC-001/002 → T013; SC-003/004 → T018; SC-005 → T023/T025;
+SC-006 → T036; SC-008 → T040; SC-009 → T037/T043. SC-007 (cross-overview light/dark parity) is
+**by-construction + manual** (documented note on T025; enforced indirectly by `test_conformance.py`),
+not a discrete automated task — accepted per the A5 remediation.
 
-### Success Criteria → Tasks
+**Coverage**: 35/35 functional requirements have ≥ 1 task (**100%**). No requirement has zero
+coverage.
 
-| SC | Has Task? | Task IDs | Notes |
-|----|-----------|----------|-------|
-| SC-001 status truth | ✅ | T013 | Reworded for `timed out` provenance (A1). |
-| SC-002 renders with Dagster down | ✅ | T013 | |
-| SC-003 single-action find | ✅ | T018 | |
-| SC-004 URL round-trip | ✅ | T018, T036 | |
-| SC-005 exact Created/Cost literals | ✅ | T023, T025 | First-paint tz reconciled (A8). |
-| SC-006 30/page + page-1 reset | ✅ | T036 | |
-| SC-007 light/dark cross-overview parity | ✅ | T025 + conformance | Verification method now stated (A5): tokens-only conformance + manual quickstart. |
-| SC-008 nav/settings/logo | ✅ | T040 | |
-| SC-009 full suite incl. conformance | ✅ | T037, T043 | |
+---
 
-## Constitution Alignment
+## Constitution Alignment (v1.3.0)
 
-No violations, before or after remediation. The plan's Constitution Check (plan.md:82–99) remains
-accurate against v1.3.0:
+| Principle | Verdict | Evidence |
+|-----------|---------|----------|
+| VII. One Design System | **PASS** | Pagination lands in the design system first (T029–T031) before the macro (T032) and page use (T034); FR-033/FR-034; conformance enforced by `test_conformance.py`/`test_design_system_sync.py`/`test_design_system_docs.py` (SC-009). No inline styles / literal colours / hand-rolled controls planned. |
+| V. Ephemeral Runs, Immutable Outputs | **PASS** | Read-path only; `SCHEMA_VERSION` untouched; no run-record writes (plan Summary, data-model header, tasks Notes). |
+| VI. Docs Track Reality | **PASS** | README (T041) and design-system readme (T031/T042) updated; docs tests keep them honest. |
+| I–IV | **N/A** | No orchestrator, agent-schema, harness, or secret surface changes. |
 
-- **VII One Design System** — Pagination is design-system-first (component + specimen + manifest +
-  bundle + readme, then macro, then use; T029–T034); FR-035's cap note is tokens/macros only (T045);
-  enforced by `test_conformance.py` / `test_design_system_docs.py` / `test_design_system_sync.py`.
-  **PASS.**
-- **V Ephemeral Runs, Immutable Outputs** — read-path/presentation only; `SCHEMA_VERSION` untouched;
-  no run-record writes (the remediation added no write path). **PASS.**
-- **VI Docs Track Reality** — README + design-system readme updates tracked (T041, T042). **PASS.**
-- **I–IV** — not engaged. **N/A.**
+**No constitution violations. No CRITICAL findings.**
 
-No CRITICAL findings arise from the constitution.
+---
 
 ## Unmapped Tasks
 
-None orphaned. Non-FR tasks are correctly scoped as infrastructure/quality:
-- **T001, T002** — Setup (baseline suite green; confirm reusable assets).
-- **T009** — foundational `test_dagster.py` coverage (one-POST guarantee).
-- **T041, T042** — docs (constitution VI).
-- **T043, T044** — full gate + quickstart walk (SC-009).
-- **T045** — maps to the new FR-035 (enrichment-cap note).
+None that are orphaned. Non-requirement tasks map cleanly to plan/constitution obligations:
+T001–T002 (Setup — baseline suite + reusable-asset verification), T041–T044 (Polish — docs per
+Principle VI, full-gate run per SC-009, quickstart walk-through).
+
+---
 
 ## Metrics
 
-- **Total functional requirements**: 35 (FR-001–FR-035)
-- **Total success criteria**: 9 (SC-001–SC-009)
-- **Total tasks**: 45 (T001–T045)
-- **FR coverage**: 100% (35/35 have ≥1 task)
-- **SC coverage**: 100% (SC-007 verification method now explicit)
-- **Open findings**: 0 (8 resolved)
-- **Ambiguity count**: 0
-- **Inconsistency count**: 0
-- **Coverage-gap count**: 0
+- **Total functional requirements**: 35 (FR-001 … FR-035)
+- **Total success criteria**: 9 (SC-001 … SC-009)
+- **Total tasks**: 45 (T001 … T045)
+- **Requirement coverage**: 100% (35/35 with ≥ 1 task)
+- **Findings**: 5 (0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW)
 - **Duplication count**: 0
-- **Critical issues count**: 0
+- **Ambiguity count**: 2 (A1 queued intent; the `queued`/`idle` naming)
+- **Terminology-drift count**: 1 (I1 `unknown` missing from research R8)
+- **Task-ordering issues**: 1 (C1)
 - **Constitution violations**: 0
+
+---
 
 ## Next Actions
 
-No open findings and no CRITICAL issues — implementation is **not blocked**. `/speckit-implement` may
-proceed. The eight prior findings are resolved in `spec.md`, `data-model.md`, `research.md`,
-`tasks.md`, and `checklists/spec-quality.md`; the unattended judgment calls (A1, A2, A3, A5, A6, A8)
-are recorded in `spec.md` §Clarifications → *Session 2026-09-17 (analysis remediation)*. No re-plan or
-re-architecture is warranted; `/speckit-plan` need not be rerun.
+- **No CRITICAL/HIGH issues** — the feature is cleared to proceed to `/speckit-implement`.
+- Before or during implementation, address the residue (all optional, none blocking):
+  1. **C1 (MEDIUM)** — relocate/split T045 so its phase matches its T014/T019 dependency, or move the
+     note render into a US3 task and keep only the cap **flag** in Phase-2 T007.
+  2. **I1 (LOW)** — add `unknown` to research.md R8's presented-status enumeration to match contract
+     §D / data-model / FR-005.
+  3. **C2, A1, I2 (LOW)** — retag T045's story, pin the `queued` tag intent once, and extend the
+     plan's test-file tree to include `test_design_system_docs.py`, `test_ui_consistency.py`, and
+     `test_api.py`.
+- Suggested commands to apply the above (manual, not run by this read-only analysis):
+  - `/speckit-tasks` to re-slot T045 (finding C1/C2).
+  - Manual edit of `research.md` R8 and `plan.md` structure block (findings I1/I2) — outside the
+    analyze scope, which does not touch these files.
 
-## Extension hooks
+## Remediation
 
-`.specify/extensions.yml` was checked: `hooks:` is empty (`hooks: {}`), so no `before_analyze` or
-`after_analyze` hooks are registered — hook execution skipped, as designed.
+This is a read-only analysis and **no artifact files were modified** (spec.md, plan.md, tasks.md,
+research.md, data-model.md, and contracts are unchanged). Because the run is unattended, no
+remediation edits were applied automatically. The residual findings above are all LOW/MEDIUM and
+non-blocking; a follow-up remediation session could fold them in the same way the prior pass folded
+A1–A8, but doing so is optional and not required to begin implementation.
