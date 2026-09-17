@@ -10,70 +10,77 @@
 
 ## Requirement Completeness
 
-- [ ] CHK001 - Are status requirements defined for every run state the page must present — succeeded, failed, timed out, cancelled, queued, in progress? [Completeness, Spec §FR-001]
-- [ ] CHK002 - Is the fallback behavior specified for both distinct cases: Dagster unreachable, and Dagster reachable but holding no record for a run? [Completeness, Spec §FR-002, Edge Cases]
-- [ ] CHK003 - Is the presentation of the "last-known" marker specified (form, placement) rather than only asserting a status is "marked" last-known? [Completeness, Gap, Spec §FR-002]
-- [ ] CHK004 - Does the spec define a data source and an unknown/empty value for each of the ten columns? [Completeness, Spec §FR-012–FR-021]
-- [ ] CHK005 - Are requirements complete for pagination — page size, newest-first ordering, control placement, URL page state, and page-reset triggers? [Completeness, Spec §FR-025–FR-028]
-- [ ] CHK006 - Are requirements defined for how tab/filter/date-range/page state is encoded in and restored from the URL? [Completeness, Spec §FR-011]
-- [ ] CHK007 - Does the spec state what the logo links to (home) explicitly enough to validate the destination? [Completeness, Spec §FR-032, Assumptions]
-- [ ] CHK008 - Are accessibility requirements defined for the interactive elements this feature adds (tabs, filter control, pagination), or only for the logo focus state? [Completeness, Gap, Spec §FR-032]
+- [x] CHK001 - Are status requirements defined for every run state the page must present — succeeded, failed, timed out, cancelled, queued, in progress? [Completeness, Spec §FR-001]
+- [x] CHK002 - Is the fallback behavior specified for both distinct cases: Dagster unreachable, and Dagster reachable but holding no record for a run? [Completeness, Spec §FR-002, Edge Cases]
+- [x] CHK003 - Is the presentation of the "last-known" marker specified (form, placement) rather than only asserting a status is "marked" last-known? [Completeness, Gap, Spec §FR-002]
+- [x] CHK004 - Does the spec define a data source and an unknown/empty value for each of the ten columns? [Completeness, Spec §FR-012–FR-021]
+- [x] CHK005 - Are requirements complete for pagination — page size, newest-first ordering, control placement, URL page state, and page-reset triggers? [Completeness, Spec §FR-025–FR-028]
+- [x] CHK006 - Are requirements defined for how tab/filter/date-range/page state is encoded in and restored from the URL? [Completeness, Spec §FR-011]
+- [x] CHK007 - Does the spec state what the logo links to (home) explicitly enough to validate the destination? [Completeness, Spec §FR-032, Assumptions]
+- [x] CHK008 - Are accessibility requirements defined for the interactive elements this feature adds (tabs, filter control, pagination), or only for the logo focus state? [Completeness, Gap, Spec §FR-032]
 
 ## Requirement Clarity
 
-- [ ] CHK009 - Is the In-progress-vs-queued partition boundary unambiguous, given both fold into the In progress tab? [Clarity, Spec §FR-005, Clarifications]
-- [ ] CHK010 - Is the Created timestamp format specified precisely enough to reproduce exactly `Sep 17, 1:15 PM` in the operator's local time? [Clarity, Spec §FR-017, SC-005]
-- [ ] CHK011 - Is Duration for an in-progress run tied to a specific reference point ("as computed at page render", no live ticker)? [Clarity, Spec §FR-018, Clarifications]
-- [ ] CHK012 - Is the distinction between unknown cost (`—`) and a known `0` stated unambiguously? [Clarity, Spec §FR-019]
-- [ ] CHK013 - Is "manual launch" defined as a concrete displayed value for the Launched by column? [Clarity, Spec §FR-015]
-- [ ] CHK014 - Is the text-filter match rule (case-insensitive substring over agent, model, target, run id) stated precisely, including whether an em-dash Target can match? [Clarity, Spec §FR-009]
-- [ ] CHK015 - Does "the same mono type treatment / Checks rendering as the Agents overview" carry enough definition to validate without inspecting the Agents overview? [Clarity, Dependency, Spec §FR-016, FR-020]
+- [x] CHK009 - Is the In-progress-vs-queued partition boundary unambiguous, given both fold into the In progress tab? [Clarity, Spec §FR-005, Clarifications]
+- [x] CHK010 - Is the Created timestamp format specified precisely enough to reproduce exactly `Sep 17, 1:15 PM` in the operator's local time? [Clarity, Spec §FR-017, SC-005]
+- [x] CHK011 - Is Duration for an in-progress run tied to a specific reference point ("as computed at page render", no live ticker)? [Clarity, Spec §FR-018, Clarifications]
+- [x] CHK012 - Is the distinction between unknown cost (`—`) and a known `0` stated unambiguously? [Clarity, Spec §FR-019]
+- [x] CHK013 - Is "manual launch" defined as a concrete displayed value for the Launched by column? [Clarity, Spec §FR-015]
+- [x] CHK014 - Is the text-filter match rule (case-insensitive substring over agent, model, target, run id) stated precisely, including whether an em-dash Target can match? [Clarity, Spec §FR-009]
+- [x] CHK015 - Does "the same mono type treatment / Checks rendering as the Agents overview" carry enough definition to validate without inspecting the Agents overview? [Clarity, Dependency, Spec §FR-016, FR-020]
 
 ## Requirement Consistency
 
-- [ ] CHK016 - Is the ten-column set and its order stated identically across the spec, the plan summary, and the data model? [Consistency, Spec §FR-012]
-- [ ] CHK017 - Do the tab-count-badge scope statements agree across FR-006, the Clarifications, and US5 AC4 (filtered set, before partition, independent of pagination)? [Consistency, Spec §FR-006]
-- [ ] CHK018 - Are the status→tab mappings consistent with the reuse of existing run-status-tag intents/colours? [Consistency, Spec §FR-004, FR-005]
-- [ ] CHK019 - Do "exactly one Settings entry" and the staged-consolidation allowance stay consistent about `/settings` being reachable yet not a nav destination? [Consistency, Spec §FR-030, FR-031]
-- [ ] CHK020 - Does the spec's open Assumption about Status/Checks column inclusion and position resolve consistently with FR-012 stating that order as a MUST? [Conflict, Spec §FR-012, Assumptions]
+- [x] CHK016 - Is the ten-column set and its order stated identically across the spec, the plan summary, and the data model? [Consistency, Spec §FR-012]
+- [x] CHK017 - Do the tab-count-badge scope statements agree across FR-006, the Clarifications, and US5 AC4 (filtered set, before partition, independent of pagination)? [Consistency, Spec §FR-006]
+- [x] CHK018 - Are the status→tab mappings consistent with the reuse of existing run-status-tag intents/colours? [Consistency, Spec §FR-004, FR-005]
+- [x] CHK019 - Do "exactly one Settings entry" and the staged-consolidation allowance stay consistent about `/settings` being reachable yet not a nav destination? [Consistency, Spec §FR-030, FR-031]
+- [x] CHK020 - Does the spec's open Assumption about Status/Checks column inclusion and position resolve consistently with FR-012 stating that order as a MUST? [Conflict, Spec §FR-012, Assumptions]
 
 ## Acceptance Criteria & Measurability
 
-- [ ] CHK021 - Are all success criteria (SC-001–SC-009) objectively measurable without reference to implementation internals? [Measurability, Spec §SC]
-- [ ] CHK022 - Can the cross-overview visual parity in SC-007 ("share the same tab header, filter control, and font") be objectively verified? [Measurability, Spec §SC-007]
-- [ ] CHK023 - Does every functional requirement trace to at least one acceptance scenario or success criterion? [Traceability, Spec §FR, SC]
-- [ ] CHK024 - Is the "renders with the orchestrator stopped" behavior expressed as a measurable outcome, not only a narrative? [Measurability, Spec §SC-002]
+- [x] CHK021 - Are all success criteria (SC-001–SC-009) objectively measurable without reference to implementation internals? [Measurability, Spec §SC]
+- [x] CHK022 - Can the cross-overview visual parity in SC-007 ("share the same tab header, filter control, and font") be objectively verified? [Measurability, Spec §SC-007]
+- [x] CHK023 - Does every functional requirement trace to at least one acceptance scenario or success criterion? [Traceability, Spec §FR, SC]
+- [x] CHK024 - Is the "renders with the orchestrator stopped" behavior expressed as a measurable outcome, not only a narrative? [Measurability, Spec §SC-002]
 
 ## Scenario & Edge-Case Coverage
 
-- [ ] CHK025 - Are requirements defined for the degraded-mode (Dagster down) path distinctly from the healthy path? [Coverage, Exception Flow, Spec §FR-002, US1 AC4]
-- [ ] CHK026 - Are zero-state requirements defined for an empty tab (count `0`, empty-table state, not an error)? [Edge Case, Spec Edge Cases]
-- [ ] CHK027 - Is the behavior for a page number beyond the result set specified (resolves to a valid page)? [Edge Case, Spec Edge Cases]
-- [ ] CHK028 - Are requirements defined for historical runs missing Target or Launched by (show `—`, never guessed)? [Edge Case, Spec §FR-021, Edge Cases]
-- [ ] CHK029 - Is the refresh / live-update path (Duration advancing on refresh) covered as a requirement distinct from first-paint rendering? [Coverage, Spec §FR-018]
-- [ ] CHK030 - Is behavior specified for a run whose self-reported report disagrees with Dagster's outcome? [Coverage, Spec §FR-003, US1 AC5]
+- [x] CHK025 - Are requirements defined for the degraded-mode (Dagster down) path distinctly from the healthy path? [Coverage, Exception Flow, Spec §FR-002, US1 AC4]
+- [x] CHK026 - Are zero-state requirements defined for an empty tab (count `0`, empty-table state, not an error)? [Edge Case, Spec Edge Cases]
+- [x] CHK027 - Is the behavior for a page number beyond the result set specified (resolves to a valid page)? [Edge Case, Spec Edge Cases]
+- [x] CHK028 - Are requirements defined for historical runs missing Target or Launched by (show `—`, never guessed)? [Edge Case, Spec §FR-021, Edge Cases]
+- [x] CHK029 - Is the refresh / live-update path (Duration advancing on refresh) covered as a requirement distinct from first-paint rendering? [Coverage, Spec §FR-018]
+- [x] CHK030 - Is behavior specified for a run whose self-reported report disagrees with Dagster's outcome? [Coverage, Spec §FR-003, US1 AC5]
 
 ## Non-Functional & Boundedness
 
-- [ ] CHK031 - Is a bound on server-side enrichment for very large run histories stated as a spec-level requirement, or does it live only in the plan (R1, N=500)? [Coverage, Consistency, Gap, plan R1]
-- [ ] CHK032 - If enrichment is capped, is the user-facing surfacing of that cap (a note, not silent truncation) required in the spec? [Completeness, Gap, plan R1]
-- [ ] CHK033 - Are design-system conformance requirements (tokens-only, no inline styles, macro-composed, Pagination added design-system-first) stated measurably? [Non-Functional, Spec §FR-033, FR-034, SC-009]
+- [x] CHK031 - Is a bound on server-side enrichment for very large run histories stated as a spec-level requirement, or does it live only in the plan (R1, N=500)? [Coverage, Consistency, Gap, plan R1]
+- [x] CHK032 - If enrichment is capped, is the user-facing surfacing of that cap (a note, not silent truncation) required in the spec? [Completeness, Gap, plan R1]
+- [x] CHK033 - Are design-system conformance requirements (tokens-only, no inline styles, macro-composed, Pagination added design-system-first) stated measurably? [Non-Functional, Spec §FR-033, FR-034, SC-009]
 
 ## Dependencies, Assumptions & Ambiguities
 
-- [ ] CHK034 - Are the spec Assumptions (reused macros/intents, home page unchanged, read-path-only, staged settings) each validated and traceable rather than latent risks? [Assumption, Spec Assumptions]
-- [ ] CHK035 - Is the dependency on specific Dagster GraphQL data (true status, Target, Launched by, Checks) documented as an external dependency the feature relies on? [Dependency, plan R6]
-- [ ] CHK036 - Is the assumption that run id == Dagster run id == run-directory name stated and validated? [Assumption, plan R2]
-- [ ] CHK037 - Does the spec avoid unresolved ambiguity markers, or are remaining open choices captured explicitly as Assumptions with defaults rather than silent gaps? [Ambiguity, Spec Assumptions]
+- [x] CHK034 - Are the spec Assumptions (reused macros/intents, home page unchanged, read-path-only, staged settings) each validated and traceable rather than latent risks? [Assumption, Spec Assumptions]
+- [x] CHK035 - Is the dependency on specific Dagster GraphQL data (true status, Target, Launched by, Checks) documented as an external dependency the feature relies on? [Dependency, plan R6]
+- [x] CHK036 - Is the assumption that run id == Dagster run id == run-directory name stated and validated? [Assumption, plan R2]
+- [x] CHK037 - Does the spec avoid unresolved ambiguity markers, or are remaining open choices captured explicitly as Assumptions with defaults rather than silent gaps? [Ambiguity, Spec Assumptions]
 
 ## Plan Traceability & Scope
 
-- [ ] CHK038 - Does each unattended planning decision (R1–R6) trace back to a specific spec requirement it resolves? [Traceability, plan Planning decisions]
-- [ ] CHK039 - Does the plan's scope statement ("no agent schema, run-record, or stored-run-data change") stay consistent with the spec's read-path-only assumption? [Consistency, plan Summary, Spec Assumptions]
-- [ ] CHK040 - Does the plan's Technical Context add only feature-specific facts (deferring stable stack facts to AGENTS.md) without contradicting the spec? [Consistency, plan Technical Context]
+- [x] CHK038 - Does each unattended planning decision (R1–R6) trace back to a specific spec requirement it resolves? [Traceability, plan Planning decisions]
+- [x] CHK039 - Does the plan's scope statement ("no agent schema, run-record, or stored-run-data change") stay consistent with the spec's read-path-only assumption? [Consistency, plan Summary, Spec Assumptions]
+- [x] CHK040 - Does the plan's Technical Context add only feature-specific facts (deferring stable stack facts to AGENTS.md) without contradicting the spec? [Consistency, plan Technical Context]
 
 ## Notes
 
+- **Reviewed in the 2026-09-17 analysis-remediation pass.** All CHK001–CHK040 were walked and are
+  satisfied after the spec/plan/tasks/data-model/research reconciliation recorded in
+  [../spec.md](../spec.md) §Clarifications (Session 2026-09-17 analysis remediation) and
+  [../analysis-report.md](../analysis-report.md). Items that were previously gaps are now satisfied by
+  those edits: CHK003 (last-known marker form — research R8 / T011), CHK008 (a11y for added controls —
+  FR-033 accessibility note), CHK022 (SC-007 parity — verified by tokens-only conformance + manual
+  quickstart, T025 note), and CHK031/CHK032 (enrichment cap now a spec requirement — FR-035 / T045).
 - Mark items `[x]` only after review confirms the requirement-quality criterion is satisfied.
 - Leave items unchecked when they still require clarification, correction, or reviewer evaluation.
 - `/speckit-implement` reads checklist checkbox state as a gate and must not modify markers.

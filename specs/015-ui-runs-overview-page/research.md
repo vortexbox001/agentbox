@@ -13,7 +13,8 @@ Launched by, and Checks; on Dagster timeout/HTTP/parse failure, or for a run id 
 record of, that row falls back to the local `report.json` status and is marked **last-known**
 (FR-002, FR-003). To keep a single render bounded on a very large history, enrichment (and thus the
 truthful tab counts) is capped at the most recent **N = 500** runs of the filtered set; any older
-rows are shown last-known and the cap is surfaced (a note), never silently truncated.
+rows are shown last-known and the cap is surfaced (a visible note), never silently truncated. This
+surfacing is a requirement — **FR-035** — rendered by **T045** (A3); it is not left implicit.
 
 **Rationale**: Tab membership and the count badges are defined over the filtered set *before*
 partition (FR-005/FR-006, clarifications). If status were enriched only client-side after paint, the
@@ -140,6 +141,15 @@ at render: `endTime − startTime` for a finished run, `now − startTime` for a
 live per-second ticker; advances on refresh — FR-018, clarification). When start/end are unknown the
 cell shows `—`. Cost shows `—` for a null/absent cost, never `0` (FR-019), reusing the existing
 `_fmt_cost` em-dash-for-null rule.
+
+**First paint vs. browser timezone** (A8): the server has no browser timezone at first paint, so each
+row carries a **machine-readable timestamp** (the `started` epoch / `created_iso`, data-model) in a
+data attribute *and* a server-rendered fallback label. `runs-list.js` re-localises that timestamp to
+the browser's timezone on load, replacing the server label. SC-005's exact literal `Sep 17, 1:15 PM`
+is therefore evaluated in the operator's local timezone (the environment under test). This keeps the
+"truthful on first paint" goal (R1 — status/counts/partition are server-computed) and the
+operator-local timestamp requirement (FR-017) from conflicting: only the timestamp *presentation* is
+localised client-side; nothing about status or ordering depends on it.
 
 **Rationale**: Matches FR-017/FR-018/FR-019 and SC-005 exactly. Local-time formatting is done in the
 template/JS against the browser's timezone; the disk row already carries a `started` epoch, and

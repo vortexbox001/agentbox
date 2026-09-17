@@ -18,16 +18,53 @@
 - Q: When Dagster is reachable but has no record for a specific run (e.g. pruned or historical), what status shows for that row? → A: That row falls back to the local run record and is marked last-known, the same as when Dagster is unreachable.
 - Q: Do the tab count badges count the whole run set or the currently filtered set? → A: The text-, agent-, and date-range-filtered set, computed before tab partition and before pagination.
 
+### Session 2026-09-17 (analysis remediation)
+
+Decisions made unattended while acting on the `/speckit-analyze` report (see
+[analysis-report.md](./analysis-report.md)). Each resolves a cross-artifact inconsistency or gap and
+is applied consistently across spec / plan / tasks / data-model / research / contracts.
+
+- Q: FR-001 said `timed out` is "the real outcome Dagster records", but Dagster has no TIMEOUT
+  RunStatus and records timeouts as `FAILURE`/`CANCELED` — so a timed-out run can never present as
+  `timed out` while Dagster is reachable and wins (FR-003). How is `timed out` sourced? → A: The
+  presented `timed out` status derives **only** from the local run record (`timeout`); it therefore
+  appears only on a last-known row. While Dagster is reachable and holds a record, a timed-out run
+  shows the terminal state Dagster records (failed or cancelled). FR-001, US1 (narrative + Independent
+  Test), and SC-001 updated to say this; consistent with contract §D and research R8. (A1)
+- Q: `unknown` status was in the contract §D / tasks presented set but absent from the data-model set
+  and unmentioned by the FR-005 partition; where does an unknown-status run count? → A: `unknown` is
+  part of the presented set; a run with an unknown status appears under **All only** (counted in the
+  All badge, in none of the three sub-tab badges), so `all ≥ in_progress + succeeded + failed`. Added
+  to FR-005, the data-model Run set, and the data-model Tab entity. (A2)
+- Q: Research R1 promises the N=500 enrichment cap is "surfaced (a note), never silently truncated",
+  but no requirement or task rendered a note. → A: Made the promise honest and requirement-backed:
+  added **FR-035** requiring a visible cap note (rows beyond the cap shown last-known) and task T045
+  to render it in `runs/list.html` (tokens/macros only) with a covering test. (A3)
+- Q: SC-007 requires light/dark cross-overview parity but no automated task can observe rendered
+  themes. → A: Theme parity is guaranteed by the tokens-only design system (both themes render from
+  the same tokens by construction, enforced by `test_conformance.py`) and validated manually per
+  quickstart; no pixel/theme assertion is added. Recorded as a verification note on T025. (A5)
+- Q: Is accessibility specified for the added controls (tabs, filter, pagination) or only the logo? →
+  A: a11y for the added controls is **inherited from the shared design-system macros** (covered by
+  FR-033 conformance); the new pagination macro adds `aria-label="Pagination"`/`aria-disabled`. Added
+  an accessibility note under the Design-system-conformance requirements. (A6)
+- Q: Created/Duration are formatted browser-tz-side, but the server's first paint has no browser
+  timezone while SC-005 asserts the exact literal `Sep 17, 1:15 PM`. → A: The row carries a
+  machine-readable timestamp (epoch/ISO) plus a server-rendered label; `runs-list.js` re-localises it
+  to the browser timezone on load, and SC-005's exact literal is evaluated in the operator's local
+  timezone. Recorded in research R7. (A8)
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Read a run's true status at a glance (Priority: P1)
 
 An operator opens the Runs overview and, for every run in the list, sees the status that
-actually reflects how the run ended: succeeded, failed, timed out, cancelled, still queued,
-or in progress. The status shown matches what Dagster records for that run, not merely what
-the run's own self-reported report claimed. When Dagster cannot be reached, the operator
-still sees a status derived from the local run record, clearly marked as last-known so they
-know it may be stale.
+actually reflects how the run ended: succeeded, failed, cancelled, still queued, or in
+progress. The status shown matches what Dagster records for that run, not merely what the
+run's own self-reported report claimed. (Dagster has no distinct timeout status, so a
+`timed out` status is derived from the local run record and shown on a last-known row.) When
+Dagster cannot be reached, the operator still sees a status derived from the local run record,
+clearly marked as last-known so they know it may be stale.
 
 **Why this priority**: The current list shows every row as `ok`, which is actively
 misleading — an operator cannot tell a failed run from a successful one. A truthful status
@@ -35,10 +72,11 @@ is the single most important thing the overview must deliver; every other improv
 secondary to the list telling the truth. It delivers value on its own even with no other
 change to the page.
 
-**Independent Test**: Trigger one run that succeeds, one that fails, one that times out, and
-leave one in progress; confirm each row's Status matches what Dagster shows for that run.
-Then stop Dagster and confirm the page still loads with statuses derived from local records,
-each marked as last-known.
+**Independent Test**: Trigger one run that succeeds, one that fails, and leave one in progress;
+confirm each row's Status matches what Dagster shows for that run. Then stop Dagster and confirm
+the page still loads with statuses derived from local records, each marked as last-known —
+including a run whose local record reports a timeout, which then shows as `timed out` (Dagster
+has no distinct timeout status, so `timed out` never comes from Dagster while it is reachable).
 
 **Acceptance Scenarios**:
 
@@ -245,8 +283,12 @@ a visible focus state on keyboard focus.
 
 **Run status**
 
-- **FR-001**: The Runs overview MUST show each run's status as the real outcome Dagster records
-  (succeeded, failed, timed out, cancelled, queued, or in progress).
+- **FR-001**: The Runs overview MUST show each run's status as its real outcome: succeeded, failed,
+  cancelled, queued, or in progress as Dagster records it. Dagster has no distinct TIMEOUT status (it
+  records a timeout as a failure or cancellation), so the presented `timed out` status derives only
+  from the local run record and therefore appears only on a last-known row (per FR-002); while
+  Dagster is reachable and holds a record, a timed-out run shows the terminal state Dagster records
+  (per FR-003).
 - **FR-002**: When Dagster is unreachable, or when Dagster is reachable but has no record for a
   specific run (e.g. a pruned or historical run), the overview MUST fall back to the status in
   the local run record and MUST mark that status as last-known.
@@ -259,7 +301,10 @@ a visible focus state on keyboard focus.
 - **FR-005**: The page MUST present a tabbed header rendered with the shared tabs macro, with
   the tabs All, In progress, Succeeded, and Failed. The tabs MUST partition runs by status as
   follows: In progress covers running or queued runs; Succeeded covers succeeded runs; Failed
-  covers all non-success terminal runs (failed, timed out, or cancelled); All covers every run.
+  covers all non-success terminal runs (failed, timed out, or cancelled); All covers every run. A
+  run whose status cannot be resolved to any of these buckets (an `unknown` status) MUST appear
+  under All only: it is counted in the All badge but in none of the In progress, Succeeded, or
+  Failed badges. Consequently the All count MUST be ≥ the sum of the three sub-tab counts.
 - **FR-006**: Each tab MUST carry a count badge reflecting that tab's members within the current
   text-, agent-, and date-range-filtered set — computed before the tab partition is applied and
   independent of pagination.
@@ -336,6 +381,20 @@ a visible focus state on keyboard focus.
 - **FR-034**: Pagination MUST be added to the design system first and provided as a shared macro
   before it is used on this page.
 
+> **Accessibility note (FR-032, FR-033)**: The interactive controls this feature adds — the tabbed
+> header, the ghost-Filter control, and pagination — inherit their keyboard and ARIA behaviour from
+> the shared design-system macros (the `tabs` macro and the new `pagination` macro, which carries
+> `aria-label="Pagination"` and marks its disabled end control `aria-disabled`). No bespoke
+> accessibility wiring is added beyond the logo keyboard focus state required by FR-032; a11y for the
+> added controls is therefore covered by design-system conformance (FR-033).
+
+**Enrichment bound**
+
+- **FR-035**: When the filtered run set exceeds the enrichment cap (the most recent N = 500 runs are
+  enriched from Dagster per render, so a single render stays bounded on a large history), the overview
+  MUST surface a visible note that only the most recent N runs are enriched. Rows beyond the cap MUST
+  be shown last-known (from the local run record) rather than silently truncated or omitted.
+
 ### Key Entities *(include if feature involves data)*
 
 - **Run (as presented)**: A single orchestrated run as it appears in the overview. Presentation
@@ -352,8 +411,9 @@ a visible focus state on keyboard focus.
 
 ### Measurable Outcomes
 
-- **SC-001**: For a set of runs deliberately driven to succeed, fail, time out, and stay in
-  progress, 100% of rows show the status Dagster records for that run.
+- **SC-001**: For a set of runs deliberately driven to succeed, fail, and stay in progress, 100% of
+  rows show the status Dagster records for that run; a run whose local record reports a timeout shows
+  as `timed out` when its row is last-known (Dagster has no distinct timeout status).
 - **SC-002**: With Dagster stopped, the overview still loads and every row shows a last-known
   status with no dead Dagster links.
 - **SC-003**: An operator can locate a specific run by agent, model, target, or run id using the

@@ -13,7 +13,7 @@ Dagster enrichment (`dagster.run_status`, R6) on the run id.
 |-------|--------|-------|
 | `run_id` | disk (dir name = Dagster run id, R2) | Links to the AgentBox run page `/runs/{run_id}` (FR-023). |
 | `dagster_url` | `public_dagster_url(request)` + `run_id` | `{base}/runs/{run_id}`; the indigo link icon, new tab. Absent → no icon (FR-022/FR-024). |
-| `status` | Dagster (true) → local fallback | Presented status ∈ {succeeded, failed, timed_out, cancelled, queued, in_progress}. Fallback marked `last_known` (FR-001/FR-002/FR-003). |
+| `status` | Dagster (true) → local fallback | Presented status ∈ {succeeded, failed, timed_out, cancelled, queued, in_progress, unknown}. `timed_out` derives only from the local record (Dagster has no TIMEOUT status; A1). `unknown` is the fallback for an unresolvable status (contract §D). Fallback marked `last_known` (FR-001/FR-002/FR-003). |
 | `last_known` | derived | `True` when status came from the local record (Dagster unreachable, or no record for this id). Renders a visible marker (R8). |
 | `agent` | disk (`context`/dir) | Mono treatment; **links to the agent** `/agents/{agent}` (FR-020). |
 | `model` | disk (`context.model.model` / `report.model`) | Mono treatment (FR-020); `—` when absent. |
@@ -21,6 +21,7 @@ Dagster enrichment (`dagster.run_status`, R6) on the run id.
 | `launched_by` | Dagster run tags | `dagster/schedule_name` → schedule; `dagster/sensor_name` → sensor; else **manual launch** (FR-015); `—` when unobtainable (FR-021). |
 | `checks` | Dagster (asset-check evaluations) | Same shape/rendering as the Agents overview Checks column (FR-016), via `dagster._check_status`. `—`/none when not applicable. |
 | `created` | disk `started` epoch, refined by Dagster `startTime` | Label `Sep 17, 1:15 PM` in operator local time; full ISO on hover (FR-017, SC-005). |
+| `created_iso` | disk `started` epoch (refined by Dagster `startTime`) | Full ISO-8601 timestamp companion to `created`: the `title=` hover value and the machine-readable value `runs-list.js` re-localises to the browser tz on first paint (FR-017, SC-005, research R7). Present in the `/api/runs` payload (contract §B) and the row fields (T008). |
 | `duration` | Dagster `startTime`/`endTime`, else disk | `end − start` finished; `now − start` in-progress (no ticker, advances on refresh, FR-018); `—` when unknown. |
 | `cost_usd` | disk `report.cost_usd` | `$x.xxxx`; `—` when null — never `0` (FR-019), via existing `_fmt_cost`. |
 
@@ -46,6 +47,10 @@ request over the text-/agent-/date-range-filtered set **before** partition and p
 | `in_progress` | in progress **or** queued | count within filtered set |
 | `succeeded` | succeeded | count within filtered set |
 | `failed` | failed, timed out, or cancelled (all non-success terminal) | count within filtered set |
+
+An `unknown`-status run belongs to **no** sub-tab: it is counted only in `all` (contract §D, FR-005).
+Therefore `all` ≥ `in_progress` + `succeeded` + `failed`; the three sub-tab counts need not sum to
+`all`. This is intended behaviour, not a rounding surprise.
 
 Rendered with the shared `tabs` macro (FR-005); each carries a count badge (FR-006). An empty tab
 shows count `0` and an empty-table state, not an error (edge case). Counts are over the whole

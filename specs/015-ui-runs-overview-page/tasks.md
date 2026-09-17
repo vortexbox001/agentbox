@@ -94,6 +94,13 @@ begin until this phase is complete.**
   count), parses status/target/launched-by/checks, omits run ids absent from `results`, and degrades
   to `{"reachable": False, "runs": {}}` on transport/parse/`PythonError` arms (contract §C
   guarantees).
+- [ ] T045 [US1] Surface the enrichment-cap note (FR-035, research R1). In `ui/main.py` (T007) flag
+  when the filtered set exceeds N=500 so only the most-recent N are enriched (rows beyond the cap
+  stay last-known, never dropped); in `ui/templates/runs/list.html` render a visible note ("Showing
+  the most recent 500 runs enriched from Dagster; older rows show last-known status.") composed from
+  tokens/macros only — no inline style. Add a `test_runs.py` case: with >500 filtered rows the note
+  renders and the older rows are present and last-known (not truncated). Depends on T007 (cap flag)
+  and the reworked template (T014/T019).
 
 **Checkpoint**: Foundation ready — the page renders enriched rows disk-first; user-story rendering
 can proceed.
@@ -190,6 +197,12 @@ confirm a 13:15 run reads `Sep 17, 1:15 PM`; unknown cost reads `—`; Date/Time
   `—` while `$0` shows a value; an in-progress Duration shows elapsed-so-far; agent cell links to
   `/agents/<agent>`; Target/Launched by fall back to `—` when enrichment is absent (AC1–AC6,
   SC-005/SC-007).
+
+> **SC-007 theme-parity verification note (A5)**: SC-007's light/dark cross-overview parity is not
+> asserted by a pixel/theme test (the TestClient cannot observe rendered themes). It is guaranteed
+> **by construction** — both overviews render from the same design-system tokens, enforced by
+> `test_conformance.py` (tokens-only, macro-composed) — and validated **manually** per quickstart.
+> T025 verifies the shared column set / mono treatment / agent link that SC-007 also names.
 
 **Checkpoint**: All three P1 stories complete — the overview is a truthful, filterable, readable
 table. **MVP boundary.**

@@ -129,7 +129,7 @@ of the spec + repo. Full rationale in [research.md](./research.md).
 ```text
 specs/015-ui-runs-overview-page/
 ├── plan.md              # This file (/speckit-plan output)
-├── research.md          # Phase 0 output — decisions R1–R6
+├── research.md          # Phase 0 output — decisions R1–R8
 ├── data-model.md        # Phase 1 output — presented Run, Tab, Filter state, enrichment
 ├── quickstart.md        # Phase 1 output — runnable validation of every user story
 ├── contracts/
