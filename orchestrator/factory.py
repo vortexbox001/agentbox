@@ -529,6 +529,33 @@ class GovernorRefusal(Exception):
     per-hour slot (FR-014/FR-016, R8)."""
 
 
+class PartitionRequired(Exception):
+    """A daily asset was materialized with no partition key (bug partition-key-not-stamped).
+
+    A partitioned asset must always materialize a concrete partition. A partitionless run records
+    ``partition=None``, which never satisfies ``missing()`` / per-partition ``any_deps_updated()``
+    and cascades to unpartitioned downstream runs. Raising ends the run before any launch work so
+    the bogus ``partition=None`` materialization is never recorded."""
+
+
+def require_partition(cfg: dict, context: OpExecutionContext, is_asset: bool) -> None:
+    """Refuse an asset-materializing run of a daily asset that carries no partition key.
+
+    The Dagster UI forces partition selection and automation targets the latest partition, so the
+    only way here is a manual/job launch of a partitioned asset with no partition — the source of
+    the ``partition=None`` daily materializations. Refuse it loudly (contract: refuse, not route).
+    A non-asset (plain job) run and an unpartitioned asset are no-ops here."""
+    produces = cfg.get("produces") or {}
+    if not is_asset or produces.get("partition") != "daily":
+        return
+    if getattr(context, "has_partition_key", False):
+        return
+    raise PartitionRequired(
+        f"{cfg['name']}: daily asset '{produces.get('asset')}' was materialized without a "
+        "partition. Daily assets must target a concrete partition key — select a partition."
+    )
+
+
 # The Dagster run tags that mark an automation-launched run (automation-condition sensor / schedule)
 # — their presence classifies a run as automated; their absence is a manual launch (R8).
 _AUTOMATION_TAG_KEYS = ("dagster/auto_materialize", "dagster/sensor_name", "dagster/schedule_name")
@@ -1197,6 +1224,10 @@ def make_run_op(cfg: dict):
         # matching channel back. Both agree with cfg's produces block.
         is_asset = bool((cfg.get("produces") or {}).get("asset"))
 
+        # Refuse a partitionless materialization of a daily asset BEFORE any launch work, so a
+        # bogus partition=None materialization is never recorded (bug partition-key-not-stamped).
+        require_partition(cfg, context, is_asset)
+
         # chain_depth + governors (spec 013 US5): classify the run, derive its depth from upstream
         # materializations, record both, then enforce the governors BEFORE any launch work — a
         # refused automated run raises GovernorRefusal here, before any run/staging/pipes dir is
@@ -1411,6 +1442,10 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
                 else:
                     os.remove(entry.path)
             context.log.info(f"wiped workspace {ws}")
+
+        # Refuse a partitionless materialization of a daily asset before any launch work (a
+        # check-bearing asset is always an asset) — bug partition-key-not-stamped.
+        require_partition(cfg, context, True)
 
         # chain_depth + governors (spec 013 US5): a check-bearing asset is always an asset; classify,
         # derive depth, record, then enforce the governors before any launch work (R7/R8, §5/§6).

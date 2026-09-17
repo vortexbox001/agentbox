@@ -55,6 +55,17 @@ sudo chown "$AGENTBOX_UID":"$AGENTBOX_GID" "$AGENTBOX_CONFIG"
 
 # /data/logs (if present) is not agentbox-owned — left untouched (Clarification C).
 
+# --- Agent images -----------------------------------------------------------
+# Compose does not build the agent images. Build the shared base FIRST (the three shell-based
+# harnesses are `FROM agentbox/agent-base`, so it must exist before them), then the harnesses.
+# Every build uses images/ as context so each Dockerfile's `COPY lib/` resolves (FR-012).
+IMAGES_DIR="$REPO_ROOT/images"
+docker build -f "$IMAGES_DIR/agent-base/Dockerfile"   -t agentbox/agent-base   "$IMAGES_DIR"
+docker build -f "$IMAGES_DIR/agent-claude/Dockerfile" -t agentbox/agent-claude "$IMAGES_DIR"
+docker build -f "$IMAGES_DIR/agent-pi/Dockerfile"     -t agentbox/agent-pi     "$IMAGES_DIR"
+docker build -f "$IMAGES_DIR/agent-codex/Dockerfile"  -t agentbox/agent-codex  "$IMAGES_DIR"
+docker build -f "$IMAGES_DIR/agent-python/Dockerfile" -t agentbox/agent-python "$IMAGES_DIR"
+
 echo "Bootstrap complete."
 echo "  config: $AGENTBOX_CONFIG"
 echo "  data:   $AGENTBOX_DATA"

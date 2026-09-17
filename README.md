@@ -4,7 +4,7 @@ Self-hosted runner for scheduled AI agents, built for a Raspberry Pi (arm64, Deb
 
 [Dagster](https://dagster.io) reads agent definitions from the config root's `agents/*.yaml`
 (see [Layout](#layout)) and, on a cron schedule or on demand, launches one short-lived Docker
-container per run. Three kinds of agent ("harnesses") are supported:
+container per run. Four kinds of agent ("harnesses") are supported:
 
 | Harness | What runs | Image | Talks to |
 |---|---|---|---|
@@ -140,12 +140,18 @@ walkthroughs in `specs/010-file-layout-overhaul/quickstart.md`.
 
 4. **Build the agent images.** Compose does not build these; do it once and again after editing
    `images/`:
+   The three shell-based harnesses (`agent-claude`, `agent-pi`, `agent-codex`) share
+   `agentbox/agent-base` — the single source of truth for the common OS/tool set and the
+   `python3`/`dagster-pipes` runtime — so build the base **first**. Every build uses the `images/`
+   directory as context (the trailing `.`) so each Dockerfile's `COPY lib/` resolves:
    ```bash
-   docker build -t agentbox/agent-python images/agent-python
-   docker build -t agentbox/agent-claude  images/agent-claude
-   docker build -t agentbox/agent-pi      images/agent-pi
-   docker build -t agentbox/agent-codex   images/agent-codex
+   docker build -f images/agent-base/Dockerfile   -t agentbox/agent-base   images
+   docker build -f images/agent-claude/Dockerfile -t agentbox/agent-claude images
+   docker build -f images/agent-pi/Dockerfile     -t agentbox/agent-pi     images
+   docker build -f images/agent-codex/Dockerfile  -t agentbox/agent-codex  images
+   docker build -f images/agent-python/Dockerfile -t agentbox/agent-python images
    ```
+   (`agent-python` is standalone — it does not build on the base — so its order does not matter.)
 
 5. **Provide Claude credentials for the `claude-code` harness.** Run `claude setup-token` on any
    machine with a browser, and put the long-lived token it prints into `.env` as
