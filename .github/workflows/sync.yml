@@ -1,0 +1,23 @@
+name: Sync to Pi
+on: push
+
+jobs:
+  sync:
+    runs-on: self-hosted
+    steps:
+      - name: Sync branch
+        run: |
+          cd /home/vortex/GitHub/agentbox/
+          git fetch origin
+          if git ls-remote --exit-code origin ${{ github.ref_name }}; then
+            git checkout ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+          fi
+
+      - name: Rebuild and restart containers
+        run: |
+          cd /home/vortex/GitHub/agentbox/
+          docker compose up -d --build
+
+      - name: Clean up old images
+        run: docker image prune -f
