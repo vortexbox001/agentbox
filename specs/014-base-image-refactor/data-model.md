@@ -27,6 +27,13 @@ common tool list and the shared Python/`dagster-pipes` runtime are defined.
   the shell-based images (FR-003/FR-013, SC-003).
 - `git`, `rg`, `jq`, `gh`, `python3` resolve to executables (FR-007, verified in quickstart).
 - No secret, token, or credential in any layer or build arg (Constitution III).
+- **`/workspace` image-time owner**: the base runs `WORKDIR /workspace` while still root, so the
+  directory is created **root-owned** — a shift from today's harnesses, which run `USER node` *before*
+  `WORKDIR /workspace` and so create it uid-1000-owned. This is a conscious no-op for the workspace
+  harnesses, not a parity break: `/workspace` is bind-mounted `rw` from the host at run time
+  (`orchestrator/factory.py`, the `-v {ws}:/workspace` mount), so the host directory's ownership
+  overrides the image-time owner. The image-time owner of `/workspace` is therefore not observable at
+  run time (see spec FR-008 parity; analysis finding U1).
 
 ## Entity: Thin harness image — `agent-claude`, `agent-pi`, `agent-codex`
 

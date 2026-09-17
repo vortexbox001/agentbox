@@ -178,7 +178,8 @@ the common tooling it does not need.
   common operating system, the non-root uid-1000 user the harness images already assume, the
   `/workspace` working directory, and the common command-line tools.
 - **FR-002**: The shared base's common tool set MUST include `git`, `curl`, `ca-certificates`,
-  `ripgrep`, `jq`, the GitHub CLI (`gh`), `unzip`, and the standard build essentials.
+  `ripgrep`, `jq`, the GitHub CLI (`gh`), `unzip`, and the standard build essentials (the
+  `build-essential` apt package).
 - **FR-003**: The common tool list MUST be defined in exactly one place; adding or removing a tool
   shared by all shell-based agents MUST require editing only that one place.
 - **FR-013**: The shared base MUST additionally provide the Python 3 runtime (`python3` and its

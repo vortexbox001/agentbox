@@ -134,7 +134,14 @@ changed (approximated hermetically by `images/tests` passing unchanged, per FR-0
   no `MISSING:` line. (Depends on T010.)
 - [ ] T012 [P] [US1] Verify behavioral parity (FR-008/SC-002, quickstart.md §6): run
   `.venv/bin/python -m pytest -q images/tests` and confirm the suite passes **unchanged** — same
-  wrapper/runner and report code, so report format and output semantics are unchanged.
+  wrapper/runner and report code, so report format and output semantics are unchanged. This is the
+  **hermetic approximation** of US1's Independent Test ("run one agent of each harness end to end"):
+  because the wrapper/runner and report code are untouched and the parser suite passes unchanged,
+  functional/format equivalence is proven without a live run (FR-008 defines parity as
+  functional/format equivalence, not a byte-identical rerun). *Optional, non-blocking*: an operator
+  may additionally run one agent per harness end to end and compare its report/output to a
+  pre-refactor run for extra confidence; this manual check is not required for the gate (analysis
+  finding G1).
 - [ ] T013 [P] [US1] Verify no agent YAML changed (FR-009/SC-006, quickstart.md §7):
   `git diff --name-only | grep -E '/agents/.*\.ya?ml$'` returns nothing.
 
@@ -161,7 +168,7 @@ confirm `yq` is present in that harness with no change to the harness Dockerfile
 - [ ] T015 [P] [US2] Verify no shell-based harness re-declares the shared install (FR-003/SC-003/US2,
   quickstart.md §4): for `images/agent-claude/Dockerfile`, `images/agent-pi/Dockerfile`, and
   `images/agent-codex/Dockerfile` confirm none matches
-  `apt-get|^WORKDIR|python3-pip|dagster-pipes`, that each inherits the base's uid-1000 `node` user
+  `apt-get|^WORKDIR|python3-pip|dagster-pipes|useradd|adduser`, that each inherits the base's uid-1000 `node` user
   rather than creating one (no `useradd`/`adduser` line — none existed before the refactor either, so
   this grep guards against a regression rather than removing an existing line), that each has
   `FROM agentbox/agent-base`, and that each carries the one-line base pointer (FR-006). (Depends on
@@ -171,7 +178,7 @@ confirm `yq` is present in that harness with no change to the harness Dockerfile
 
 ---
 
-## Phase 5: User Story 3 - Smaller, faster harness image builds (Priority: P2)
+## Phase 5: User Story 3 - Common work built and stored once, faster rebuilds (Priority: P2)
 
 **Goal**: Confirm the common OS+tool+runtime install is stored once — the three shell-based harnesses
 share a single `agent-base` layer (deduplicated, counted once) instead of each carrying its own copy.
