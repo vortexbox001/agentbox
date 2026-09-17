@@ -164,19 +164,22 @@ FR-017 requires the operator's local time. A live ticker — explicitly not requ
 **Decision**: Normalise Dagster's `RunStatus` (`QUEUED`, `NOT_STARTED`, `STARTING`, `STARTED`,
 `SUCCESS`, `FAILURE`, `CANCELED`, `CANCELING`) and the local report statuses (`ok`, `failed`,
 `timeout`, `running`, `unknown`) into one presented status set: **succeeded, failed, timed out,
-cancelled, queued, in progress**. The tab partition (FR-005) is then:
+cancelled, queued, in progress, unknown**. The tab partition (FR-005) is then:
 
 - **In progress** = in progress **or** queued (Dagster `STARTED`/`STARTING`/`QUEUED`/`NOT_STARTED`;
   local `running`).
 - **Succeeded** = succeeded (`SUCCESS`; local `ok`).
 - **Failed** = all non-success terminal states: failed, timed out, cancelled (`FAILURE`/`CANCELED`;
   local `failed`/`timeout`).
-- **All** = every run.
+- **All** = every run. A run whose status is **`unknown`** (a fallback state — local `unknown`/missing
+  and no Dagster record) counts in **All only**, in none of the three sub-tab badges, so
+  `all ≥ in_progress + succeeded + failed` (matches data-model, contract §D, FR-005).
 
 Colours/labels reuse the existing run-status-tag intents (FR-004): success → success, failed/timed
-out/cancelled → failure/error, in progress → running, queued → idle/queued. A last-known row keeps
-its intent and adds a visible last-known marker (a badge/`title`), so a stale status is never
-mistaken for a live one.
+out/cancelled → failure/error, in progress → running, queued → the `run_status_tag` `queued` status
+(which renders the neutral gray **idle** dot — see clarification A1), unknown → idle. A last-known
+row keeps its intent and adds a visible last-known marker (a badge/`title`), so a stale status is
+never mistaken for a live one.
 
 **Rationale**: One normalisation table keeps Dagster's richer vocabulary and the local report
 vocabulary rendering through the same intents (FR-004) and makes the partition rule (FR-005 +

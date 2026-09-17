@@ -166,7 +166,10 @@ ui/
     ├── test_runs.py                # status truth, fallback/last-known, columns, filter, pagination, counts
     ├── test_dagster.py             # run_status batching + degrade-to-unreachable
     ├── test_conformance.py         # tokens-only / macro-composed / no inline styles
-    └── test_design_system_sync.py  # manifest ↔ macro ↔ bundle parity for Pagination
+    ├── test_design_system_sync.py  # manifest ↔ macro ↔ bundle parity for Pagination
+    ├── test_design_system_docs.py  # readme documents Pagination (T037/T042)
+    ├── test_ui_consistency.py      # nav order · single Settings entry · logo home link (T040)
+    └── test_api.py                 # /api/runs shape + nav/settings route checks (T040)
 ```
 
 **Structure Decision**: Single-package UI feature. All product code lives under `ui/`, matching the

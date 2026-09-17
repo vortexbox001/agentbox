@@ -94,14 +94,6 @@ begin until this phase is complete.**
   count), parses status/target/launched-by/checks, omits run ids absent from `results`, and degrades
   to `{"reachable": False, "runs": {}}` on transport/parse/`PythonError` arms (contract §C
   guarantees).
-- [ ] T045 [US1] Surface the enrichment-cap note (FR-035, research R1). In `ui/main.py` (T007) flag
-  when the filtered set exceeds N=500 so only the most-recent N are enriched (rows beyond the cap
-  stay last-known, never dropped); in `ui/templates/runs/list.html` render a visible note ("Showing
-  the most recent 500 runs enriched from Dagster; older rows show last-known status.") composed from
-  tokens/macros only — no inline style. Add a `test_runs.py` case: with >500 filtered rows the note
-  renders and the older rows are present and last-known (not truncated). Depends on T007 (cap flag)
-  and the reworked template (T014/T019).
-
 **Checkpoint**: Foundation ready — the page renders enriched rows disk-first; user-story rendering
 can proceed.
 
@@ -192,6 +184,15 @@ confirm a 13:15 run reads `Sep 17, 1:15 PM`; unknown cost reads `—`; Date/Time
   against the browser tz (FR-017/FR-018, research R7, SC-005).
 - [ ] T024 [US3] Render Cost via `_fmt_cost` so unknown shows `—` and a real `0` still shows a value
   (FR-019).
+- [ ] T045 [US3] Surface the enrichment-cap note (FR-035, research R1). In `ui/main.py` (T007) flag
+  when the filtered set exceeds N=500 so only the most-recent N are enriched (rows beyond the cap
+  stay last-known, never dropped); in `ui/templates/runs/list.html` render a visible note ("Showing
+  the most recent 500 runs enriched from Dagster; older rows show last-known status.") composed from
+  tokens/macros only — no inline style. Add a `test_runs.py` case: with >500 filtered rows the note
+  renders and the older rows are present and last-known (not truncated). Depends on the reworked
+  template (T014/T019) and the T007 cap flag — hence placed in US3 (owns the table render), not the
+  Foundational phase. FR-035 is a cross-cutting enrichment-bound requirement with no dedicated user
+  story; it is tagged `[US3]` because it renders on the US3 table.
 - [ ] T025 [P] [US3] Add `test_runs.py` cases: header is exactly the ten columns in order with no
   Date/Time/Attempts; a 13:15-on-17-Sep run's Created reads `Sep 17, 1:15 PM`; unknown cost reads
   `—` while `$0` shows a value; an in-progress Duration shows elapsed-so-far; agent cell links to

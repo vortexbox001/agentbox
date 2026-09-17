@@ -124,7 +124,7 @@ both the tag intent and the tab bucket:
 | timed_out | (none; local) | `timeout` | error | Failed |
 | cancelled | `CANCELED` / `CANCELING` | — | error | Failed |
 | in_progress | `STARTED` / `STARTING` | `running` | running | In progress |
-| queued | `QUEUED` / `NOT_STARTED` | — | queued/idle | In progress |
+| queued | `QUEUED` / `NOT_STARTED` | — | queued (gray idle dot) | In progress |
 | unknown | (fallback) | `unknown` / missing | idle | shown under All only |
 
 A `last_known` row keeps its mapped intent and adds a visible last-known marker (FR-002).

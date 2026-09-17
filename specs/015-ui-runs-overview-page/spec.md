@@ -54,6 +54,32 @@ is applied consistently across spec / plan / tasks / data-model / research / con
   to the browser timezone on load, and SC-005's exact literal is evaluated in the operator's local
   timezone. Recorded in research R7. (A8)
 
+### Session 2026-09-17 (analysis remediation, pass 2)
+
+Decisions made unattended while acting on the second `/speckit-analyze` report (findings C1, C2, I1,
+A1, I2). Applied consistently across spec / plan / tasks / research / contracts.
+
+- Q: The `queued` run status's tag intent was named inconsistently — the contract wrote "queued/idle"
+  and research wrote "idle/queued" — and FR-004 only mandates "reuse the existing intents". Does a
+  distinct `queued` intent exist or does it reuse `idle`? → A: The shared `run_status_tag` macro
+  (`ui/templates/components/macros.html:161`) **does** accept a distinct `queued` status value, which
+  it renders with the neutral gray **idle** status dot. So the presented `queued` status passes
+  `status="queued"` to `run_status_tag` (satisfying FR-004's "reuse existing intents"), and the dot it
+  shows is the neutral/gray `idle` state. Pinned once this way in contract §D ("queued (gray idle
+  dot)") and research R8. (A1)
+- Q: (C1) Task T045 (FR-035 enrichment-cap note) sat in **Phase 2 (Foundational)** yet its body
+  depends on T014 (US2) and T019 (US3) template work, contradicting the "Foundational blocks all
+  stories" rule. → A: Moved T045 into **Phase 5 (US3)** — the phase that owns the table render it
+  depends on — after T024, keeping its stable ID `T045`. Placement fix only; no new work. (C1)
+- Q: (C2) T045 was tagged `[US1]` but implements FR-035, a cross-cutting enrichment-bound requirement
+  with no dedicated user story. → A: Re-tagged `[US3]` (the story that owns the table render it lands
+  on) and noted FR-035's cross-cutting nature in the task text. (C2)
+- Also folded in two documentation-only fixes flagged read-only by the report: added `unknown` to
+  research R8's presented-status enumeration with its All-only partition rule so R8 matches contract
+  §D / data-model / FR-005 (I1); and extended plan.md's `ui/tests/` structure tree with
+  `test_design_system_docs.py`, `test_ui_consistency.py`, and `test_api.py` (all present in the repo
+  and exercised by tasks T037/T040/T042) so the tree matches the tasks (I2).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Read a run's true status at a glance (Priority: P1)

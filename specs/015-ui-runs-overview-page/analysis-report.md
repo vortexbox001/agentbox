@@ -1,6 +1,6 @@
 # Specification Analysis Report — Runs Overview Page (015)
 
-**Command**: `/speckit-analyze` (non-destructive, read-only cross-artifact consistency check)
+**Command**: `/speckit-analyze` (non-destructive cross-artifact consistency check) + remediation pass
 **Date**: 2026-09-17
 **Branch**: `015-ui-runs-overview-page`
 **Feature dir**: `specs/015-ui-runs-overview-page/`
@@ -8,48 +8,48 @@
 `contracts/runs-overview.md`, `contracts/pagination-component.md`, `checklists/*`) against
 `.specify/memory/constitution.md` (v1.3.0).
 
-> **Context**: This feature's artifacts have already been through one `/speckit-analyze`
-> remediation pass — see spec.md → *Clarifications → Session 2026-09-17 (analysis remediation)*,
-> which resolved findings A1, A2, A3, A5, A6, and A8 by editing spec / plan / tasks / data-model /
-> research / contracts in lockstep. This report is a **fresh re-analysis** of the current state. The
-> earlier remediated items are re-verified below as **resolved**; the findings that remain are the
-> residue that the prior pass did not fully propagate, plus one task-ordering issue. **No CRITICAL or
-> HIGH findings.** Coverage is 100% of functional requirements. The feature is ready for
+> **Status**: The five findings from the prior read-only re-analysis (C1, C2, I1, A1, I2) have now
+> been **remediated** — see spec.md → *Clarifications → Session 2026-09-17 (analysis remediation,
+> pass 2)*. All edits were applied consistently across spec / plan / tasks / research / contracts.
+> A post-remediation re-scan finds **no CRITICAL or HIGH findings and no remaining
+> MEDIUM/LOW findings**. Coverage is 100% of functional requirements. The feature is ready for
 > `/speckit-implement`.
 
 ---
 
 ## Findings
 
-| ID | Category | Severity | Location(s) | Summary | Recommendation |
-|----|----------|----------|-------------|---------|----------------|
-| C1 | Inconsistency (task ordering) | MEDIUM | tasks.md T045 (Phase 2, lines 97–103); depends on T014 (Phase 4), T019 (Phase 5) | T045 renders the FR-035 enrichment-cap note and sits inside **Phase 2 (Foundational)** — right above the "Checkpoint: Foundation ready" line — yet its own body states it *depends on T014 and T019*, which live in Phase 4 (US2) and Phase 5 (US3). The Foundational phase is declared a blocking prerequisite that "no status/tab/column story can begin until complete," but T045 cannot complete until two later-phase template tasks land. | Move T045 out of Phase 2 into Phase 5 (or a late cross-cutting slot after T019), or split it: keep the server-side cap **flag** in T007 (Phase 2) and render the **note** in a US3-phase task. The dependency is already documented in the task text, so this is a placement fix, not new work. |
-| C2 | Inconsistency (mislabel) | LOW | tasks.md T045 line 97 (`[US1]`) | T045 is tagged `[US1]` but implements **FR-035** (enrichment bound / cap note), which the spec places under its own *Enrichment bound* heading and is not part of US1's status-truth narrative (US1 = truthful per-row status). FR-035 has no dedicated user story. | Re-tag T045 to the story that owns the table render it depends on (US3), or leave `[US1]` but note FR-035 is a cross-cutting requirement. Cosmetic; does not affect coverage. |
-| I1 | Inconsistency (terminology drift) | LOW | research.md R8 line 166–167 vs data-model.md L16, contracts/runs-overview.md §D L128, spec FR-005, tasks.md T003 | The A2 remediation added the `unknown` presented status to FR-005, the data-model Run/Tab entities, contract §D, and T003 — but **research.md R8's enumerated "presented status set" still lists only six** (succeeded, failed, timed out, cancelled, queued, in progress) and never mentions `unknown`. Every other artifact now carries a seven-member set including `unknown` (→ All-only). | Add `unknown` to R8's presented-status enumeration (and note its "All only" partition) so R8 matches contract §D and the data-model. Read-only report — not applied here. |
-| A1 | Ambiguity | LOW | contracts/runs-overview.md §D L127 ("queued/idle") vs research.md R8 L178 ("idle/queued") vs spec FR-004 | The tag **intent** for a `queued` run is not pinned to one name: the contract writes "queued/idle" and research writes "idle/queued", while FR-004 only mandates reusing "the existing run status tag intents." Whether a distinct `queued` intent exists or it reuses `idle` is left to implementation (T003 `_status_intent`). | Confirm during implementation which intent the existing `run_status_tag` macro actually exposes and state it once. Low impact — FR-004's "reuse existing intents" is satisfied either way. |
-| I2 | Inconsistency (docs vs tasks) | LOW | plan.md §Project Structure L165–169 vs tasks.md T037, T040, T042 | The plan's `ui/tests/` tree lists `test_runs.py`, `test_dagster.py`, `test_conformance.py`, `test_design_system_sync.py`, but the tasks also exercise `test_design_system_docs.py` (T037/T042), `test_ui_consistency.py` and `test_api.py` (T040). The plan tree is illustrative, but omits three test files the tasks depend on. | Add the three test files to the plan's structure block (or annotate the tree as non-exhaustive). No functional impact; all named files exist in the repo. |
-
-*(5 findings total; no overflow — well under the 50-row cap.)*
+*(0 open findings. All prior findings resolved — see the remediation table below.)*
 
 ---
 
-## Re-verification of the prior remediation pass
+## Remediation of the prior findings (this pass)
 
-Each item the spec's "analysis remediation" session claims to have fixed was re-checked in the
-current artifacts and confirmed consistent:
+| ID | Category | Severity | Resolution | Where fixed |
+|----|----------|----------|------------|-------------|
+| C1 | Inconsistency (task ordering) | MEDIUM | **Resolved** — T045 (FR-035 enrichment-cap note) moved out of Phase 2 (Foundational) into **Phase 5 (US3)**, the phase that owns the table render it depends on (T014/T019). Stable ID `T045` retained to avoid renumbering churn (a deliberate, documented choice — it sits between T024 and T025 by phase, not by numeric order). | `tasks.md` (T045 relocated; Phase-2 checkpoint restored) |
+| C2 | Inconsistency (mislabel) | LOW | **Resolved** — T045 re-tagged `[US1]` → `[US3]`; task text now notes FR-035 is a cross-cutting enrichment-bound requirement with no dedicated user story, tagged to US3 because it renders on the US3 table. | `tasks.md` (T045) |
+| I1 | Inconsistency (terminology drift) | LOW | **Resolved** — `unknown` added to research R8's presented-status enumeration, with the "All only" partition rule (`all ≥ in_progress + succeeded + failed`) so R8 matches contract §D, the data-model, and FR-005. | `research.md` (R8) |
+| A1 | Ambiguity | LOW | **Resolved (decision recorded)** — the shared `run_status_tag` macro *does* expose a distinct `queued` status value that renders the neutral gray **idle** dot. Pinned once: contract §D now reads "queued (gray idle dot)" and research R8 states the `queued` status → gray idle dot. Decision recorded in the spec's Clarifications (pass 2). | `contracts/runs-overview.md` (§D), `research.md` (R8), `spec.md` (Clarifications) |
+| I2 | Inconsistency (docs vs tasks) | LOW | **Resolved** — plan.md's `ui/tests/` structure tree extended with `test_design_system_docs.py`, `test_ui_consistency.py`, and `test_api.py` (all present in the repo; exercised by T037/T040/T042). | `plan.md` (Project Structure) |
+
+*(5 prior findings, all resolved; 0 open.)*
+
+---
+
+## Re-verification of the first remediation pass (A1–A8)
+
+Each item the spec's first "analysis remediation" session claims to have fixed remains consistent in
+the current artifacts:
 
 | Prior ID | Concern | Status now |
 |----------|---------|-----------|
 | A1 (prior) | `timed out` cannot come from Dagster (no TIMEOUT RunStatus) | **Resolved** — FR-001, US1, SC-001, contract §D, research R8 all state `timed_out` derives only from the local record and appears only on a last-known row. Consistent. |
-| A2 (prior) | `unknown` status missing from data-model / FR-005 partition | **Resolved in spec/data-model/contract/tasks** — FR-005 adds the All-only rule and `all ≥ in_progress+succeeded+failed`; data-model Run & Tab entities carry it; contract §D has an `unknown` row. **Not propagated to research.md R8** → see finding **I1**. |
-| A3 (prior) | N=500 cap promised "never silently truncated" but no requirement/task rendered a note | **Resolved** — FR-035 added; T045 renders the note. (Placement of T045 → finding **C1**.) |
-| A5 (prior) | SC-007 light/dark parity had no automatable task | **Resolved** — recorded as a by-construction + manual verification note on T025; no pixel/theme assertion added. Consistent with FR-033/`test_conformance.py`. |
-| A6 (prior) | a11y unspecified for tabs/filter/pagination | **Resolved** — accessibility note under FR-032/FR-033; the new `pagination` macro carries `aria-label="Pagination"`/`aria-disabled` (contract §B; T032). |
+| A2 (prior) | `unknown` status missing from data-model / FR-005 partition | **Resolved** — FR-005 adds the All-only rule; data-model Run & Tab entities carry it; contract §D has an `unknown` row; **and research R8 now enumerates it too** (was finding I1, now fixed). |
+| A3 (prior) | N=500 cap promised "never silently truncated" but nothing rendered a note | **Resolved** — FR-035 added; T045 renders the note (now correctly placed in US3 — was finding C1, now fixed). |
+| A5 (prior) | SC-007 light/dark parity had no automatable task | **Resolved** — by-construction + manual verification note on T025; consistent with FR-033/`test_conformance.py`. |
+| A6 (prior) | a11y unspecified for tabs/filter/pagination | **Resolved** — accessibility note under FR-032/FR-033; the `pagination` macro carries `aria-label="Pagination"`/`aria-disabled` (contract §B; T032). |
 | A8 (prior) | server first-paint has no browser tz but SC-005 asserts a literal | **Resolved** — research R7 documents the epoch/ISO + server label + client re-localise approach; data-model adds `created_iso`; T023 implements it. |
-
-Findings **A4** and **A7** from the earlier pass are not listed in the spec's remediation session;
-their underlying decisions (R4 staged Settings consolidation, R7 timestamp formatting) are present
-and internally consistent in the current artifacts, so no residual issue is raised for them.
 
 ---
 
@@ -60,7 +60,7 @@ and internally consistent in the current artifacts, so no residual issue is rais
 | FR-001 true status | ✅ | T003, T007, T010 | normalisation + pipeline + render |
 | FR-002 last-known fallback | ✅ | T007, T011, T012 | unreachable + no-record both covered |
 | FR-003 Dagster wins while reachable | ✅ | T007, T012 | merge precedence |
-| FR-004 status tag intents | ✅ | T003, T010 | `_status_intent` → `run_status_tag` |
+| FR-004 status tag intents | ✅ | T003, T010 | `_status_intent` → `run_status_tag`; `queued` → gray idle dot (A1) |
 | FR-005 tabbed partition (+`unknown` All-only) | ✅ | T003, T007, T014 | |
 | FR-006 count badges over filtered set | ✅ | T007, T014, T018 | before partition, page-independent |
 | FR-007 remove Status dropdown | ✅ | T007, T014, T018 | |
@@ -91,7 +91,7 @@ and internally consistent in the current artifacts, so no residual issue is rais
 | FR-032 logo → home + focus state | ✅ | T039, T040 | |
 | FR-033 design-system conformance | ✅ | T027, T033, T043 | + conformance suite |
 | FR-034 pagination in DS first | ✅ | T029–T033 | design-system-first |
-| FR-035 enrichment-cap note | ✅ | T045 | placement → finding C1 |
+| FR-035 enrichment-cap note | ✅ | T045 | now in Phase 5 / US3 (C1/C2 resolved) |
 
 **Success Criteria (buildable) → Tasks**: SC-001/002 → T013; SC-003/004 → T018; SC-005 → T023/T025;
 SC-006 → T036; SC-008 → T040; SC-009 → T037/T043. SC-007 (cross-overview light/dark parity) is
@@ -130,35 +130,29 @@ Principle VI, full-gate run per SC-009, quickstart walk-through).
 - **Total success criteria**: 9 (SC-001 … SC-009)
 - **Total tasks**: 45 (T001 … T045)
 - **Requirement coverage**: 100% (35/35 with ≥ 1 task)
-- **Findings**: 5 (0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW)
+- **Open findings**: 0 (0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW)
+- **Findings resolved this pass**: 5 (1 MEDIUM, 4 LOW)
 - **Duplication count**: 0
-- **Ambiguity count**: 2 (A1 queued intent; the `queued`/`idle` naming)
-- **Terminology-drift count**: 1 (I1 `unknown` missing from research R8)
-- **Task-ordering issues**: 1 (C1)
+- **Ambiguity count**: 0 (A1 `queued`/`idle` naming pinned)
+- **Terminology-drift count**: 0 (I1 `unknown` propagated to research R8)
+- **Task-ordering issues**: 0 (C1 T045 re-slotted into US3)
 - **Constitution violations**: 0
 
 ---
 
 ## Next Actions
 
-- **No CRITICAL/HIGH issues** — the feature is cleared to proceed to `/speckit-implement`.
-- Before or during implementation, address the residue (all optional, none blocking):
-  1. **C1 (MEDIUM)** — relocate/split T045 so its phase matches its T014/T019 dependency, or move the
-     note render into a US3 task and keep only the cap **flag** in Phase-2 T007.
-  2. **I1 (LOW)** — add `unknown` to research.md R8's presented-status enumeration to match contract
-     §D / data-model / FR-005.
-  3. **C2, A1, I2 (LOW)** — retag T045's story, pin the `queued` tag intent once, and extend the
-     plan's test-file tree to include `test_design_system_docs.py`, `test_ui_consistency.py`, and
-     `test_api.py`.
-- Suggested commands to apply the above (manual, not run by this read-only analysis):
-  - `/speckit-tasks` to re-slot T045 (finding C1/C2).
-  - Manual edit of `research.md` R8 and `plan.md` structure block (findings I1/I2) — outside the
-    analyze scope, which does not touch these files.
+- **No open issues** — the feature is cleared to proceed to `/speckit-implement`.
+- Note for implementers: T045 keeps its stable ID while living in Phase 5 (US3) by phase, not by
+  numeric position; this is intentional (avoids renumbering the whole list for one late-added,
+  cross-cutting task).
 
 ## Remediation
 
-This is a read-only analysis and **no artifact files were modified** (spec.md, plan.md, tasks.md,
-research.md, data-model.md, and contracts are unchanged). Because the run is unattended, no
-remediation edits were applied automatically. The residual findings above are all LOW/MEDIUM and
-non-blocking; a follow-up remediation session could fold them in the same way the prior pass folded
-A1–A8, but doing so is optional and not required to begin implementation.
+This pass **modified artifact files** to close the five prior findings: `tasks.md` (T045 relocation
++ retag), `research.md` (R8 `unknown` enumeration + `queued` intent), `contracts/runs-overview.md`
+(§D `queued` intent), `plan.md` (test-file tree), and `spec.md` (a *Clarifications → Session
+2026-09-17 (analysis remediation, pass 2)* subsection recording the A1 decision and the C1/C2/I1/I2
+fixes). The run was unattended, so the one judgment finding (A1) was decided from the repo (the
+`run_status_tag` macro's actual `queued` handling) and recorded in the spec rather than left open. No
+feature code was changed — this is a spec/plan/tasks reconciliation only.
