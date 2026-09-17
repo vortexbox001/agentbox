@@ -152,3 +152,29 @@ def test_every_manifest_card_preview_exists():
     manifest = json.loads(_read(MANIFEST))
     missing = [c["path"] for c in manifest["cards"] if not os.path.exists(os.path.join(DESIGN_DIR, c["path"]))]
     assert not missing, f"manifest card preview file(s) missing: {missing}"
+
+
+# ── spec 015 US5 / FR-034: Pagination is a first-class design-system component ──
+# Design-system-first gate made executable: the component source, specimen, manifest entry,
+# shared macro, and readme entry must all be present (contract pagination-component §A/§D, T037).
+def test_pagination_is_registered_end_to_end():
+    manifest = json.loads(_read(MANIFEST))
+    # Manifest ↔ bundle ↔ macro parity for Pagination.
+    assert any(c["name"] == "Pagination" for c in manifest["components"]), \
+        "Pagination missing from _ds_manifest.json components"
+    assert any(sp["name"] == "Pagination" for sp in manifest["startingPoints"]), \
+        "Pagination missing a startingPoints entry"
+    assert "pagination" in _macro_names(), "no shared `pagination` macro in macros.html"
+    bundle = _read(os.path.join(DESIGN_DIR, "_ds_bundle.js"))
+    assert "components/navigation/Pagination.jsx" in bundle, "Pagination not in the rebuilt bundle"
+    assert "__ds_ns.Pagination = __ds_scope.Pagination;" in bundle, \
+        "Pagination not exposed by the bundle namespace"
+    # Component source file set (parallel to Tabs.*) + specimen.
+    nav = os.path.join(DESIGN_DIR, "components", "navigation")
+    for f in ("Pagination.jsx", "Pagination.d.ts", "Pagination.prompt.md", "pagination.card.html"):
+        assert os.path.exists(os.path.join(nav, f)), f"missing Pagination component file: {f}"
+
+
+def test_pagination_documented_in_readme():
+    readme = _read(os.path.join(DESIGN_DIR, "readme.md"))
+    assert "Pagination" in readme, "readme.md does not document the Pagination component"

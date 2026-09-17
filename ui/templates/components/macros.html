@@ -120,6 +120,29 @@
 </div>
 {%- endmacro %}
 
+{# ── Pagination (Pagination.d.ts) ────────────────────────
+   Prev · page indicator · Next, composed from the shared button treatment (contract
+   pagination-component §B, FR-034). Works without JS: Prev/Next are real links carrying the
+   preserved `base_query` so a copied ?page= URL restores the page. On page 1 Prev is
+   aria-disabled/non-navigating; on the last page Next likewise (never a dead link). `pages`
+   is always ≥ 1; runs-list.js MAY enhance the links but is not required for correctness. #}
+{% macro pagination(page=1, pages=1, base_query="", attrs={}) -%}
+{%- set sep = "&" if base_query else "" -%}
+<nav class="ax-pagination" aria-label="Pagination"{{ attrs|xmlattr }}>
+  {%- if page <= 1 %}
+  <span class="ax-btn ax-btn--ghost ax-btn--outlined ax-pagination-prev" aria-disabled="true">Prev</span>
+  {%- else %}
+  <a class="ax-btn ax-btn--ghost ax-btn--outlined ax-pagination-prev" rel="prev" href="?{{ base_query }}{{ sep }}page={{ page - 1 }}">Prev</a>
+  {%- endif %}
+  <span class="ax-pagination-indicator">Page {{ page }} of {{ pages }}</span>
+  {%- if page >= pages %}
+  <span class="ax-btn ax-btn--ghost ax-btn--outlined ax-pagination-next" aria-disabled="true">Next</span>
+  {%- else %}
+  <a class="ax-btn ax-btn--ghost ax-btn--outlined ax-pagination-next" rel="next" href="?{{ base_query }}{{ sep }}page={{ page + 1 }}">Next</a>
+  {%- endif %}
+</nav>
+{%- endmacro %}
+
 {# ── Card (Card.d.ts) ────────────────────────────────────  border, no shadow. Body is the {% call %} block. #}
 {% macro card(title=none, class="", attrs={}) -%}
 <div class="ax-card{% if class %} {{ class }}{% endif %}"{{ attrs|xmlattr }}>

@@ -1,63 +1,123 @@
 {% extends "base.html" %}
 {% import "components/macros.html" as ui %}
 
+{# Full-bleed list view: no page header — the tab bar + toolbar stand in for it, matching the
+   Agents overview (contract runs-overview §A, FR-005/FR-012). #}
 {% block page_header %}{% endblock %}
 {% block content_class %}ax-content--flush{% endblock %}
 
+{% set tab_defs = [
+  {"id": "all", "label": "All", "count": counts.all},
+  {"id": "in_progress", "label": "In progress", "count": counts.in_progress},
+  {"id": "succeeded", "label": "Succeeded", "count": counts.succeeded},
+  {"id": "failed", "label": "Failed", "count": counts.failed},
+] %}
+
+{# Check-status → icon/colour, the same treatment the Agents overview renders (FR-016). #}
+{% set check_meta = {
+  "pass": {"cls": "ax-result--pass", "icon": "check-circle", "label": "Passed"},
+  "warn": {"cls": "ax-result--warn", "icon": "warn-tri", "label": "Failed (warning)"},
+  "fail-blocking": {"cls": "ax-result--fail", "icon": "x-circle", "label": "Failed"},
+  "not-run": {"cls": "", "icon": "check-circle", "label": "Not run"},
+} %}
+
 {% block content %}
-<div class="ax-list-view" id="ax-runs-list">
+<div class="ax-list-view" id="ax-runs-list" data-runs-base="{{ dagster_url }}">
+  <div class="ax-list-tabs">
+    {{ ui.tabs(items=tab_defs, active=state.tab, attrs={"aria-label": "Run status filters"}) }}
+  </div>
   <div class="ax-list-toolbar">
-    <form class="ax-runs-filters" method="get" action="/runs" id="ax-runs-filters">
-      <div class="ax-runs-filter">
-        <span class="ax-runs-filter-label">Agent</span>
-        {{ ui.select(name="agent", value=filters.agent or "", id="ax-runs-agent",
+    <div class="ax-list-toolbar-group">
+      {{ ui.button(label="Filter", intent="ghost", outlined=true, icon="filter",
+                   attrs={"id": "ax-runs-filter-toggle", "aria-expanded": "false",
+                          "aria-controls": "ax-runs-filters"}) }}
+      {% set has_filters = state.q or state.agent or state.date_from or state.date_to %}
+      <form class="ax-runs-filters" method="get" action="/runs" id="ax-runs-filters"
+            {% if not has_filters %}hidden{% endif %}>
+        {{ ui.text_input(name="q", value=state.q, id="ax-runs-q", placeholder="Filter runs…",
+                         attrs={"data-runs-filter": "q", "aria-label": "Filter runs"}) }}
+        {{ ui.select(name="agent", value=state.agent, id="ax-runs-agent",
                      options=[{"value": "", "label": "All agents"}] + agents,
                      attrs={"data-runs-filter": "agent"}) }}
-      </div>
-      <div class="ax-runs-filter">
-        <span class="ax-runs-filter-label">Status</span>
-        {{ ui.select(name="status", value=filters.status or "", id="ax-runs-status",
-                     options=[{"value": "", "label": "All"}] + statuses,
-                     attrs={"data-runs-filter": "status"}) }}
-      </div>
-      <div class="ax-runs-filter">
-        <span class="ax-runs-filter-label">From</span>
-        {{ ui.text_input(name="date_from", value=filters.date_from or "", placeholder="YYYY-MM-DD",
+        {{ ui.text_input(name="date_from", value=state.date_from, placeholder="YYYY-MM-DD",
                          id="ax-runs-from", attrs={"data-runs-filter": "date_from"}) }}
-      </div>
-      <div class="ax-runs-filter">
-        <span class="ax-runs-filter-label">To</span>
-        {{ ui.text_input(name="date_to", value=filters.date_to or "", placeholder="YYYY-MM-DD",
+        {{ ui.text_input(name="date_to", value=state.date_to, placeholder="YYYY-MM-DD",
                          id="ax-runs-to", attrs={"data-runs-filter": "date_to"}) }}
-      </div>
-      {{ ui.button(label="Apply", intent="primary", type="submit") }}
-    </form>
+        <input type="hidden" name="tab" value="{{ state.tab }}" data-runs-tab>
+        {{ ui.button(label="Apply", intent="primary", type="submit") }}
+      </form>
+    </div>
   </div>
 
+  {% if capped %}
+  <p class="ax-runs-cap-note">Showing the most recent {{ cap }} runs enriched from Dagster; older
+    rows show last-known status.</p>
+  {% endif %}
+
   {% if runs %}
-  <table class="ax-table ax-table--full-bleed" id="ax-runs-table">
-    <thead><tr>
-      <th scope="col">Run</th><th scope="col">Agent</th><th scope="col">Date</th>
-      <th scope="col">Time</th><th scope="col">Status</th><th scope="col">Model</th>
-      <th scope="col">Cost</th><th scope="col">Attempts</th>
-    </tr></thead>
+  {% call ui.table(full_bleed=true, attrs={"id": "ax-runs-table"}) %}
+    <thead>
+      <tr>
+        <th scope="col">Run</th>
+        <th scope="col">Status</th>
+        <th scope="col">Agent</th>
+        <th scope="col">Model</th>
+        <th scope="col">Target</th>
+        <th scope="col">Launched by</th>
+        <th scope="col">Checks</th>
+        <th scope="col">Created</th>
+        <th scope="col">Duration</th>
+        <th scope="col">Cost</th>
+      </tr>
+    </thead>
     <tbody>
       {% for r in runs %}
       <tr data-run-row>
-        <td><a href="/runs/{{ r.run_id }}" class="ax-run-link">{{ r.run_id[:8] }}</a></td>
-        <td>{{ r.agent }}</td>
-        <td>{{ r.date }}</td>
-        <td>{{ r.started_time or "—" }}</td>
-        <td>{{ ui.run_status_tag(status=({"ok": "success", "failed": "failure", "timeout": "error", "running": "running"}.get(r.status, "queued")), label=r.status) }}</td>
-        <td>{{ r.model or "—" }}</td>
-        <td>{% if r.cost_usd is not none %}${{ "%.4f"|format(r.cost_usd) }}{% else %}—{% endif %}</td>
-        <td>{% if r.attempts is not none %}{{ r.attempts }}{% else %}—{% endif %}</td>
+        <td class="ax-run-cell">
+          <a href="/runs/{{ r.run_id }}" class="ax-run-link">{{ r.run_id[:8] }}</a>
+          {% if r.dagster_url %}
+          <a class="ax-run-dagster-link" href="{{ r.dagster_url }}" target="_blank" rel="noopener"
+             title="Open this run in Dagster" aria-label="Open this run in Dagster">
+            <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#external"></use></svg>
+          </a>
+          {% endif %}
+        </td>
+        <td>
+          {{ ui.run_status_tag(status=r.status_intent, label=r.status_label) }}
+          {% if r.last_known %}{{ ui.badge("last-known", intent="last-known",
+              attrs={"title": "Dagster is unreachable or has no record for this run — showing the last known status."}) }}{% endif %}
+        </td>
+        <td>{% if r.agent %}<a class="ax-mono" href="/agents/{{ r.agent }}">{{ r.agent }}</a>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+        <td>{% if r.model %}<span class="ax-mono" title="{{ r.model }}">{{ r.model }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+        <td>{% if r.target and r.target != "—" %}{{ r.target }}{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+        <td>{% if r.launched_by and r.launched_by != "—" %}{{ r.launched_by }}{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+        <td class="ax-col-checks">
+          {% if r.checks %}
+          <div class="ax-check-grid">
+            {% for c in r.checks %}
+            {% set m = check_meta.get(c.status, check_meta["not-run"]) %}
+            <span class="ax-result {{ m.cls }}" role="img"
+                  title="{{ c.name or 'check' }} — {{ m.label }}"
+                  aria-label="{{ c.name or 'check' }} — {{ m.label }}">
+              <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#{{ m.icon }}"></use></svg>
+            </span>
+            {% endfor %}
+          </div>
+          {% else %}<span class="ax-muted">—</span>{% endif %}
+        </td>
+        <td>{% if r.created %}<span class="ax-run-created" data-created-iso="{{ r.created_iso }}" title="{{ r.created_iso }}">{{ r.created }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+        <td>{% if r.duration %}{{ r.duration }}{% else %}<span class="ax-muted">—</span>{% endif %}</td>
+        <td>{% if r.cost_usd is not none %}{{ r.cost_usd }}{% else %}<span class="ax-muted">—</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
-  </table>
+  {% endcall %}
   {% else %}
-  <div class="ax-runs-empty">No runs found{% if filters.agent or filters.status or filters.date_from or filters.date_to %} for these filters{% endif %}.</div>
+  <div class="ax-runs-empty">No runs found{% if state.q or state.agent or state.date_from or state.date_to or state.tab != "all" %} for this view{% endif %}.</div>
+  {% endif %}
+
+  {% if pages > 1 %}
+  {{ ui.pagination(page=page, pages=pages, base_query=base_query) }}
   {% endif %}
 </div>
 {% endblock %}

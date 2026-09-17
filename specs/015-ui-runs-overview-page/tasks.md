@@ -33,10 +33,10 @@ Single-package UI feature — all product code lives under `ui/` plus the design
 
 **Purpose**: Confirm the working surface; no new dependencies (plan Technical Context).
 
-- [ ] T001 Confirm the repo-root venv is present and the `ui` suite is green as a baseline: run
+- [X] T001 Confirm the repo-root venv is present and the `ui` suite is green as a baseline: run
   `python3.12 -m venv .venv && .venv/bin/pip install -r ui/requirements.txt dagster==1.13.21 dagster-pipes==1.13.21`
   then `.venv/bin/python -m pytest -q ui/tests` (record the pre-change pass; AGENTS.md → Dev environment).
-- [ ] T002 [P] Verify the reusable assets this feature depends on already exist so no new ones are
+- [X] T002 [P] Verify the reusable assets this feature depends on already exist so no new ones are
   invented: the `#external` and `#filter` icons in `ui/static/icons.svg`, the `tabs` macro
   (`ui/templates/components/macros.html:115`), the `run_status_tag` macro
   (`macros.html:161`), `_fmt_cost` (`ui/main.py:358`), and the Agents-overview ghost-Filter pattern
@@ -53,14 +53,14 @@ begin until this phase is complete.**
 
 **⚠️ CRITICAL**: US1, US2, US3 all consume this pipeline.
 
-- [ ] T003 Add the status-normalisation mapping (contract §D, research R8) as a helper in
+- [X] T003 Add the status-normalisation mapping (contract §D, research R8) as a helper in
   `ui/dagster.py` (e.g. `_present_status(dagster_status, local_status) -> str`) that folds Dagster
   `RunStatus` (`QUEUED`/`NOT_STARTED`/`STARTING`/`STARTED`/`SUCCESS`/`FAILURE`/`CANCELED`/`CANCELING`)
   and local report statuses (`ok`/`failed`/`timeout`/`running`/`unknown`) into the presented set
   {`succeeded`, `failed`, `timed_out`, `cancelled`, `queued`, `in_progress`, `unknown`}, plus a
   `_status_tab(present) -> str` mapping presented status → tab bucket (`in_progress`, `succeeded`,
   `failed`) and a `_status_intent(present)` for the `run_status_tag` intent.
-- [ ] T004 Implement `run_status(run_ids: list[str]) -> dict` in `ui/dagster.py` (contract §C,
+- [X] T004 Implement `run_status(run_ids: list[str]) -> dict` in `ui/dagster.py` (contract §C,
   research R6): exactly one GraphQL POST `runsOrError(filter:{runIds:[…]}, limit:N)` selecting
   `runId, status, startTime, endTime, assetSelection{path}, pipelineName, tags{key value}` and the
   asset-check sub-selection, parsed with the existing `_check_status`/`_parse_checks` helpers.
@@ -69,15 +69,15 @@ begin until this phase is complete.**
   `{"reachable": False, "runs": {}}` (never raise). Bound by `config.RELOAD_TIMEOUT_S`. Derive
   `target` from `assetSelection.path` (join with `/`) else `pipelineName`; `launched_by` from
   `dagster/schedule_name` → schedule, `dagster/sensor_name` → sensor, else manual.
-- [ ] T005 [P] Extend `ui/runs_store.py` with presentation helpers used by the row builder: a
+- [X] T005 [P] Extend `ui/runs_store.py` with presentation helpers used by the row builder: a
   `created` epoch accessor plus an ISO string (from the existing `started` epoch on the store row),
   and a `duration_seconds(started, ended)` helper. Do NOT add disk reads on the hot path beyond the
   existing report + context headers (plan). Keep `date`/`started_time`/`attempts` in the dict but
   they are no longer rendered (data-model "Removed from the row").
-- [ ] T006 [P] Extend the row/list filtering in `ui/runs_store.py` (or a `main.py` helper) so the
+- [X] T006 [P] Extend the row/list filtering in `ui/runs_store.py` (or a `main.py` helper) so the
   text filter `q` matches a case-insensitive substring over agent, model, run id — and target once
   enrichment supplies it (FR-009, research R3). An em-dash target never matches.
-- [ ] T007 Rework `GET /runs` in `ui/main.py` (`_runs_list_page`, contract §A) to the pipeline:
+- [X] T007 Rework `GET /runs` in `ui/main.py` (`_runs_list_page`, contract §A) to the pipeline:
   parse URL state `tab`/`q`/`agent`/`date_from`/`date_to`/`page` (unknown `tab` → `all`; `page` ≥ 1,
   clamped to last valid page); apply text+agent+date filter; enrich the filtered set via
   `dagster.run_status` (capped at N=500 newest, research R1) merging true status/target/launched-by/
@@ -85,12 +85,12 @@ begin until this phase is complete.**
   **before** partition; partition by `tab`; sort newest-first; paginate 30/page. Drop the old
   `status` dropdown query param (ignore if present, FR-007). Pass `tabs`/`counts`/`pages`/`page`/
   `reachable`/`base_query`/`dagster_url` to the template.
-- [ ] T008 Rework `GET /api/runs` in `ui/main.py` (`_api_runs`, contract §B) to accept the same
+- [X] T008 Rework `GET /api/runs` in `ui/main.py` (`_api_runs`, contract §B) to accept the same
   params and return `{runs:[…], counts:{…}, page, pages, reachable}`, each row carrying the
   data-model *Run (as presented)* fields (`run_id, status, last_known, agent, model, target,
   launched_by, checks, created, created_iso, duration, cost_usd, dagster_url`). MUST return
   `reachable:false` + last-known rows rather than failing when Dagster is down.
-- [ ] T009 [P] Add `test_dagster.py` coverage: `run_status` issues **exactly one** POST (assert call
+- [X] T009 [P] Add `test_dagster.py` coverage: `run_status` issues **exactly one** POST (assert call
   count), parses status/target/launched-by/checks, omits run ids absent from `results`, and degrades
   to `{"reachable": False, "runs": {}}` on transport/parse/`PythonError` arms (contract §C
   guarantees).
@@ -108,16 +108,16 @@ marked last-known.
 **Independent Test**: Drive one succeed/fail/timeout run and leave one in progress; confirm each
 row's Status matches Dagster. Stop Dagster; confirm the page still loads with last-known statuses.
 
-- [ ] T010 [US1] Render the true presented status in `ui/templates/runs/list.html` via the
+- [X] T010 [US1] Render the true presented status in `ui/templates/runs/list.html` via the
   `run_status_tag` macro using the normalised intent from T003 (replaces the current
   everything-maps-to-`ok` inline dict at `list.html:51`) (FR-001/FR-004).
-- [ ] T011 [US1] Render the last-known marker on rows where `last_known` is true — a visible
+- [X] T011 [US1] Render the last-known marker on rows where `last_known` is true — a visible
   badge/`title` alongside the status tag that keeps the mapped intent but signals staleness (FR-002,
   research R8, checklist CHK003). Styling via tokens/macros only (no inline style).
-- [ ] T012 [US1] Ensure Dagster's outcome wins over the run's self-reported report while reachable,
+- [X] T012 [US1] Ensure Dagster's outcome wins over the run's self-reported report while reachable,
   and that a run id Dagster has no record for is treated as last-known (already wired in T007;
   verify the merge precedence in `ui/main.py`) (FR-003, edge case).
-- [ ] T013 [P] [US1] Add `test_runs.py` cases: a run Dagster records `FAILURE` shows failed intent
+- [X] T013 [P] [US1] Add `test_runs.py` cases: a run Dagster records `FAILURE` shows failed intent
   (not `ok`); an executing run shows in-progress; a queued run shows queued; with Dagster stopped
   every row is last-known and the page returns `200`; a report-vs-Dagster disagreement resolves to
   Dagster while reachable (AC1–AC5, SC-001/SC-002).
@@ -135,21 +135,21 @@ filters; tab/filter state in the URL.
 **Independent Test**: Click each tab → only that state's runs, badges match; type into the filter →
 narrows by agent/model/target/run id; copy the URL and reopen → tab/filter/date restored.
 
-- [ ] T014 [US2] Replace the toolbar in `ui/templates/runs/list.html` with the shared `tabs` macro
+- [X] T014 [US2] Replace the toolbar in `ui/templates/runs/list.html` with the shared `tabs` macro
   header (All / In progress / Succeeded / Failed, each with a `counts`-driven badge) modelled on
   `ui/templates/agents/list.html:45-53`, and **remove the Status `<select>` dropdown** (FR-005/FR-006/
   FR-007).
-- [ ] T015 [US2] Add the ghost **Filter** button + hidden text input (placeholder `Filter runs…`),
+- [X] T015 [US2] Add the ghost **Filter** button + hidden text input (placeholder `Filter runs…`),
   keeping the existing agent `select` and `date_from`/`date_to` inputs revealed by the filter control
   (FR-008/FR-010), composed from shared macros only.
-- [ ] T016 [US2] Rewrite `ui/static/runs-list.js` modelled on `ui/static/agents-list.js`: toggle the
+- [X] T016 [US2] Rewrite `ui/static/runs-list.js` modelled on `ui/static/agents-list.js`: toggle the
   filter input, filter-as-you-type (case-insensitive substring over agent/model/target/run id),
   switch tabs, and keep `tab`/`q`/`agent`/`date_from`/`date_to`/`page` in the URL via
   `history.replaceState`, degrading to full navigation when history is unavailable; refresh rows from
   `GET /api/runs` without a full reload (FR-009/FR-011, research R3).
-- [ ] T017 [US2] Ensure changing tab, text filter, agent, or date range resets `page` to 1 — client
+- [X] T017 [US2] Ensure changing tab, text filter, agent, or date range resets `page` to 1 — client
   on control change (T016) and server clamp (T007) (FR-027; verified again in US5).
-- [ ] T018 [P] [US2] Add `test_runs.py` cases: `?tab=failed` returns only failed/timed-out/cancelled
+- [X] T018 [P] [US2] Add `test_runs.py` cases: `?tab=failed` returns only failed/timed-out/cancelled
   rows; badges count the whole filtered set (before partition, independent of page); `?q=<fragment>`
   narrows by agent/model/target/run id; a full `?tab=&q=&agent=&date_from=&date_to=&page=` URL
   round-trips identically; no Status dropdown remains in the rendered HTML (AC1–AC4, SC-003/SC-004).
@@ -168,23 +168,23 @@ from enrichment (`—` when unobtainable). Date/Time/Attempts columns gone.
 **Independent Test**: Compare a scheduled/sensor/manual run's Target + Launched by against Dagster;
 confirm a 13:15 run reads `Sep 17, 1:15 PM`; unknown cost reads `—`; Date/Time/Attempts absent.
 
-- [ ] T019 [US3] Rebuild the `<thead>`/`<tbody>` of `ui/templates/runs/list.html` to the ten columns
+- [X] T019 [US3] Rebuild the `<thead>`/`<tbody>` of `ui/templates/runs/list.html` to the ten columns
   in FR-012 order and **remove Date, Time, and Attempts** (FR-013). Preserve the run-id link to
   `/runs/{run_id}` (FR-023).
-- [ ] T020 [US3] Render Agent and Model with the Agents-overview mono treatment and link the agent
+- [X] T020 [US3] Render Agent and Model with the Agents-overview mono treatment and link the agent
   name to `/agents/{agent}` (FR-020); Model shows `—` when absent.
-- [ ] T021 [US3] Render Target and Launched by from enrichment — asset key or job name exactly as
+- [X] T021 [US3] Render Target and Launched by from enrichment — asset key or job name exactly as
   Dagster lists it (FR-014); schedule name / sensor name / manual launch (FR-015); `—` when
   enrichment could not supply either for a historical run, never a guess (FR-021).
-- [ ] T022 [US3] Render Checks the same way the Agents overview does (reuse its Checks cell treatment
+- [X] T022 [US3] Render Checks the same way the Agents overview does (reuse its Checks cell treatment
   driven by `_check_status`) (FR-016).
-- [ ] T023 [US3] Render Created as `Sep 17, 1:15 PM` in operator-local time with the full ISO
+- [X] T023 [US3] Render Created as `Sep 17, 1:15 PM` in operator-local time with the full ISO
   timestamp on `title=` hover, and Duration as elapsed run time (`end−start`, or `now−start` for
   in-progress; `—` when unknown; no live ticker) — local-time formatting done template/JS-side
   against the browser tz (FR-017/FR-018, research R7, SC-005).
-- [ ] T024 [US3] Render Cost via `_fmt_cost` so unknown shows `—` and a real `0` still shows a value
+- [X] T024 [US3] Render Cost via `_fmt_cost` so unknown shows `—` and a real `0` still shows a value
   (FR-019).
-- [ ] T045 [US3] Surface the enrichment-cap note (FR-035, research R1). In `ui/main.py` (T007) flag
+- [X] T045 [US3] Surface the enrichment-cap note (FR-035, research R1). In `ui/main.py` (T007) flag
   when the filtered set exceeds N=500 so only the most-recent N are enriched (rows beyond the cap
   stay last-known, never dropped); in `ui/templates/runs/list.html` render a visible note ("Showing
   the most recent 500 runs enriched from Dagster; older rows show last-known status.") composed from
@@ -193,7 +193,7 @@ confirm a 13:15 run reads `Sep 17, 1:15 PM`; unknown cost reads `—`; Date/Time
   template (T014/T019) and the T007 cap flag — hence placed in US3 (owns the table render), not the
   Foundational phase. FR-035 is a cross-cutting enrichment-bound requirement with no dedicated user
   story; it is tagged `[US3]` because it renders on the US3 table.
-- [ ] T025 [P] [US3] Add `test_runs.py` cases: header is exactly the ten columns in order with no
+- [X] T025 [P] [US3] Add `test_runs.py` cases: header is exactly the ten columns in order with no
   Date/Time/Attempts; a 13:15-on-17-Sep run's Created reads `Sep 17, 1:15 PM`; unknown cost reads
   `—` while `$0` shows a value; an in-progress Duration shows elapsed-so-far; agent cell links to
   `/agents/<agent>`; Target/Launched by fall back to `—` when enrichment is absent (AC1–AC6,
@@ -219,13 +219,13 @@ no icon (and no dead link) when Dagster is not configured.
 **Independent Test**: With Dagster configured, the icon opens the correct run in a new tab and the id
 opens the AgentBox page; with Dagster not configured, the icon is absent.
 
-- [ ] T026 [US4] Add the right-justified `#external` link icon to the Run column in
+- [X] T026 [US4] Add the right-justified `#external` link icon to the Run column in
   `ui/templates/runs/list.html`, `href="{{ r.dagster_url }}" target="_blank" rel="noopener"`, in the
   indigo/accent ramp, rendered **only when `r.dagster_url` is set** (FR-022/FR-024). `dagster_url` is
   built from `public_dagster_url(request)` + run id in `ui/main.py` (T007/T008).
-- [ ] T027 [P] [US4] Style `.ax-run-dagster-link` (indigo ramp, right-justified) in
+- [X] T027 [P] [US4] Style `.ax-run-dagster-link` (indigo ramp, right-justified) in
   `ui/static/app.css` using tokens only — no literal colours/pixels, no inline style (FR-033).
-- [ ] T028 [P] [US4] Add `test_runs.py` cases: with Dagster configured the row contains a
+- [X] T028 [P] [US4] Add `test_runs.py` cases: with Dagster configured the row contains a
   `target="_blank"` link to `{dagster_url}/runs/{run_id}` and the id links to `/runs/{run_id}`; with
   Dagster not configured no such icon/link is rendered (AC1–AC3).
 
@@ -245,41 +245,41 @@ page.
 
 ### Design-system-first (FR-034 — blocks the macro and the page use)
 
-- [ ] T029 [US5] Add the Pagination component source under
+- [X] T029 [US5] Add the Pagination component source under
   `ui/design-system/components/navigation/`: `Pagination.jsx`, `Pagination.d.ts`,
   `Pagination.prompt.md`, and a `pagination.card.html` specimen — matching the `Tabs.*` file set in
   the same folder (contract §A.1–A.2).
-- [ ] T030 [US5] Register Pagination in `ui/design-system/_ds_manifest.json` (a `components` entry
+- [X] T030 [US5] Register Pagination in `ui/design-system/_ds_manifest.json` (a `components` entry
   `{"name":"Pagination","sourcePath":"components/navigation/Pagination.jsx"}` and a matching
   `startingPoints` entry: section `Components`, subtitle, viewport) and rebuild
   `ui/design-system/_ds_bundle.js` so the manifest↔bundle parity check holds (contract §A.3–A.4).
-- [ ] T031 [P] [US5] Document Pagination in `ui/design-system/readme.md`: purpose, anatomy
+- [X] T031 [P] [US5] Document Pagination in `ui/design-system/readme.md`: purpose, anatomy
   (Prev · indicator · Next), first/last-page disabling, and that page state lives in the URL
   (contract §A.5).
 
 ### Shared macro (second)
 
-- [ ] T032 [US5] Add `pagination(page=1, pages=1, base_query="", attrs={})` to
+- [X] T032 [US5] Add `pagination(page=1, pages=1, base_query="", attrs={})` to
   `ui/templates/components/macros.html` (contract §B): a `<nav class="ax-pagination"
   aria-label="Pagination">` with a shared-button-styled Prev link to `?{base_query}&page={page-1}`
   (`aria-disabled`/non-navigating on page 1), a `Page {page} of {pages}` indicator, and a Next link
   (`aria-disabled` on the last page). Works without JS; `pages` always ≥ 1.
-- [ ] T033 [P] [US5] Style `.ax-pagination` and its parts in `ui/static/app.css` using tokens only —
+- [X] T033 [P] [US5] Style `.ax-pagination` and its parts in `ui/static/app.css` using tokens only —
   the accent ramp for active/hover, no literal colours/pixels/`font-family`, no inline style
   (contract §C, FR-033).
 
 ### Use on the page
 
-- [ ] T034 [US5] Use the `pagination` macro below the table in `ui/templates/runs/list.html` when
+- [X] T034 [US5] Use the `pagination` macro below the table in `ui/templates/runs/list.html` when
   `pages > 1`, passing `page`, `pages`, and `base_query` (tab + filters) so Prev/Next preserve view
   state (FR-025/FR-028).
-- [ ] T035 [US5] Enhance pagination in `ui/static/runs-list.js` — intercept Prev/Next and sync the
+- [X] T035 [US5] Enhance pagination in `ui/static/runs-list.js` — intercept Prev/Next and sync the
   `page` param via `history`, but do not require JS for correctness (contract §B, FR-028).
-- [ ] T036 [P] [US5] Add `test_runs.py` cases: ≥31 matching rows → page 1 has 30 newest-first and
+- [X] T036 [P] [US5] Add `test_runs.py` cases: ≥31 matching rows → page 1 has 30 newest-first and
   pagination renders; page 2 has the remainder; changing tab/filter returns to page 1; a copied
   `?…&page=2` URL reopens on page 2; `?page=` past the end clamps to a valid page; badges reflect the
   whole filtered set (AC1–AC4, SC-006).
-- [ ] T037 [P] [US5] Extend `test_design_system_sync.py` and `test_design_system_docs.py` (and
+- [X] T037 [P] [US5] Extend `test_design_system_sync.py` and `test_design_system_docs.py` (and
   confirm `test_conformance.py`) so Pagination is covered by manifest↔bundle↔macro parity and the
   readme requirement (contract §D, SC-009).
 
@@ -296,15 +296,15 @@ visible keyboard focus state.
 **Independent Test**: Nav reads Runs, rule, Agents; one Settings entry opens the modal; the logo
 returns home from any page including collapsed, with a visible focus ring.
 
-- [ ] T038 [US6] Reorder the primary nav in `ui/templates/base.html` to Runs first, then the
+- [X] T038 [US6] Reorder the primary nav in `ui/templates/base.html` to Runs first, then the
   `.ax-nav-divider` keyline, then Agents, and **remove the Settings nav item** (`base.html:63-66`) so
   the foot button (`#ax-settings-link`) is the single Settings entry; `/settings` is no longer a nav
   destination (FR-029/FR-030). The foot modal links to the retained `/settings` page for the
   server-backed controls per the staged path (FR-031, research R4).
-- [ ] T039 [US6] Wrap the brand mark/lockup (`base.html:42-48`) in a home link (`href="/"`) active in
+- [X] T039 [US6] Wrap the brand mark/lockup (`base.html:42-48`) in a home link (`href="/"`) active in
   both expanded and collapsed nav, with a visible keyboard focus state styled via tokens in
   `ui/static/app.css` (FR-032).
-- [ ] T040 [P] [US6] Update tests (`ui/tests/test_ui_consistency.py` and/or `test_api.py`): nav order
+- [X] T040 [P] [US6] Update tests (`ui/tests/test_ui_consistency.py` and/or `test_api.py`): nav order
   is Runs · rule · Agents; exactly one Settings entry and no `/settings` nav link; the logo is an
   `href="/"` link present when collapsed; keep the `/settings` route reachable (still `200`) as the
   modal's fallback (AC1–AC5, SC-008).
@@ -317,13 +317,13 @@ returns home from any page including collapsed, with a visible focus ring.
 
 **Purpose**: Docs track reality (constitution VI) and the whole gate is green (SC-009).
 
-- [ ] T041 [P] Update `README.md` — the Runs overview section (new columns, tabs, filter, Dagster
+- [X] T041 [P] Update `README.md` — the Runs overview section (new columns, tabs, filter, Dagster
   link, pagination) and the nav/Settings change (constitution VI, plan Constitution Check).
-- [ ] T042 [P] Confirm `ui/design-system/readme.md` and the served gallery reflect Pagination
+- [X] T042 [P] Confirm `ui/design-system/readme.md` and the served gallery reflect Pagination
   end-to-end (thumbnail + starting point render) — cross-check with T031 (constitution VI).
-- [ ] T043 Run the full gate `.venv/bin/python -m pytest -q ui/tests` and fix any failure — routes,
+- [X] T043 Run the full gate `.venv/bin/python -m pytest -q ui/tests` and fix any failure — routes,
   runs, dagster, conformance, ds-sync, docs must all pass (SC-009).
-- [ ] T044 Walk quickstart.md US1–US6 blocks against the running app (or TestClient where a live
+- [X] T044 Walk quickstart.md US1–US6 blocks against the running app (or TestClient where a live
   Dagster is not needed) and confirm each acceptance criterion (quickstart Automated validation +
   per-story blocks).
 

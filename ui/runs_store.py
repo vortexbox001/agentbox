@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import config
@@ -30,6 +30,62 @@ def _time_of_day(started: float) -> str:
         return datetime.fromtimestamp(started).strftime("%H:%M")
     except (OverflowError, OSError, ValueError):
         return ""
+
+
+# ── Runs-overview presentation helpers (spec 015) ───────────────────────────
+# Built at render time from the store row's `started` epoch (dir mtime) and, where the
+# Dagster enrichment supplies them, its start/end times. No new disk reads on the hot path.
+
+def created_iso(started: float) -> str:
+    """The full ISO-8601 timestamp (UTC) for a `started` epoch, or ``""`` when unknown.
+
+    The machine-readable companion to the `Sep 17, 1:15 PM` label: runs-list.js re-localises
+    it to the browser timezone on first paint, and it is the `title=` hover value (FR-017,
+    research R7). UTC + offset so a browser parses it as an unambiguous instant.
+    """
+    if not started:
+        return ""
+    try:
+        return datetime.fromtimestamp(started, tz=timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def created_label(started: float) -> str:
+    """The server-rendered `Sep 17, 1:15 PM` fallback label in the server's local time
+    (research R7); ``""`` when unknown. runs-list.js replaces it with the browser-local
+    rendering on first paint."""
+    if not started:
+        return ""
+    try:
+        return datetime.fromtimestamp(started).strftime("%b %-d, %-I:%M %p")
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def duration_seconds(started, ended) -> Optional[float]:
+    """Elapsed seconds between two epochs: `ended − started` for a finished run, or
+    `now − started` for an in-progress run (ended is None/0). None when start is unknown
+    (FR-018). No live ticker: an in-progress duration advances only on refresh."""
+    if not started:
+        return None
+    end = ended if ended else datetime.now(tz=timezone.utc).timestamp()
+    delta = end - started
+    return delta if delta >= 0 else None
+
+
+def matches_text(row: dict, q: Optional[str]) -> bool:
+    """Whether a presented row matches the case-insensitive text filter `q` — a substring over
+    agent, model, run id, and (once enrichment supplies it) target (FR-009, research R3). An
+    absent/em-dash target never matches."""
+    if not q:
+        return True
+    needle = q.lower()
+    hay = [row.get("agent"), row.get("model"), row.get("run_id")]
+    target = row.get("target")
+    if target and target != "—":
+        hay.append(target)
+    return any(needle in str(h).lower() for h in hay if h)
 
 
 # The four per-run filenames come from config (mirrored from orchestrator/paths, parity-tested).

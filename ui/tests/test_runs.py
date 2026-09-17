@@ -142,11 +142,15 @@ def test_runs_list_renders_from_disk(settings, three_runs, client):
         assert f"/runs/{rid}" in html
 
 
-def test_runs_list_has_all_fr017_columns(settings, three_runs, client):
-    # FR-017: the list surfaces agent, time, status, model, cost, and attempts.
+def test_runs_list_has_the_ten_columns_in_order(settings, three_runs, client):
+    # FR-012: exactly ten columns, in order; FR-013: no Date/Time/Attempts.
     html = client.get("/runs").text
-    for col in ("Agent", "Time", "Status", "Model", "Cost", "Attempts"):
-        assert f">{col}</th>" in html
+    order = ["Run", "Status", "Agent", "Model", "Target", "Launched by", "Checks",
+             "Created", "Duration", "Cost"]
+    positions = [html.index(f">{c}</th>") for c in order]
+    assert positions == sorted(positions), "columns are not in the FR-012 order"
+    for gone in ("Date", "Time", "Attempts"):
+        assert f">{gone}</th>" not in html
 
 
 def test_runs_list_filters_by_agent(settings, three_runs, client):
@@ -155,11 +159,21 @@ def test_runs_list_filters_by_agent(settings, three_runs, client):
     assert "/runs/r1" not in html and "/runs/r2" not in html
 
 
-def test_runs_list_filters_by_status_and_date(settings, three_runs, client):
+def test_runs_list_ignores_removed_status_param_and_filters_by_date(settings, three_runs, client):
+    # FR-007: the old Status dropdown query param is ignored (tabs replace it).
     html = client.get("/runs?status=failed").text
-    assert "/runs/r2" in html and "/runs/r1" not in html
+    for rid in ("r1", "r2", "r3"):
+        assert f"/runs/{rid}" in html          # status= no longer filters anything out
+    # The date range still filters (FR-010).
     html2 = client.get("/runs?date_from=2026-09-15&date_to=2026-09-15").text
     assert "/runs/r2" in html2 and "/runs/r3" in html2 and "/runs/r1" not in html2
+
+
+def test_runs_list_has_no_status_dropdown(settings, three_runs, client):
+    # FR-007: the Status <select> is gone; tabs partition instead.
+    html = client.get("/runs").text
+    assert 'name="status"' not in html
+    assert "ax-tabs" in html and "ax-tab-count" in html
 
 
 def test_api_runs_json(settings, three_runs, client):
@@ -174,3 +188,232 @@ def test_context_tab_complete_for_pi(settings, tmp_runs, client):
     write_run(tmp_runs, "hello", "2026-09-15", "ctx-pi", report={"status": "ok"}, context=ctx)
     html = client.get("/runs/ctx-pi").text
     assert "Complete — pi adds no vendor prompt." in html
+
+
+# ── spec 015: Runs overview enrichment + tabs + columns + pagination ────────────────────────
+
+@pytest.fixture
+def stub_run_status(monkeypatch):
+    """Stub dagster.run_status so tests drive true status/target/launched-by/checks. Set
+    ``box["payload"]`` to the enrichment shape before the request."""
+    import dagster
+    box = {"payload": {"reachable": True, "runs": {}}}
+
+    async def fake(run_ids):
+        return box["payload"]
+
+    monkeypatch.setattr(dagster, "run_status", fake)
+    return box
+
+
+def _enrich(**runs):
+    return {"reachable": True, "runs": runs}
+
+
+# --- US1: truthful status + last-known fallback -----------------------------
+
+def test_us1_dagster_failure_shows_failed_not_ok(settings, tmp_runs, client, stub_run_status):
+    write_run(tmp_runs, "hello", "2026-09-15", "r1", report={"status": "ok"}, context={})
+    stub_run_status["payload"] = _enrich(r1={"status": "FAILURE", "start_time": None,
+        "end_time": None, "target": None, "launched_by": {"kind": "manual", "name": None},
+        "checks": None})
+    html = client.get("/runs").text
+    assert 'data-status="failure"' in html and ">failed<" in html
+    assert ">ok<" not in html                      # the everything-maps-to-ok bug is dead
+
+
+def test_us1_states_map_to_tabs(settings, tmp_runs, client, stub_run_status):
+    write_run(tmp_runs, "run-x", "2026-09-15", "x", report={"status": "running"}, context={})
+    write_run(tmp_runs, "run-q", "2026-09-15", "q", report={"status": "unknown"}, context={})
+    stub_run_status["payload"] = _enrich(
+        x={"status": "STARTED", "start_time": 1.0, "end_time": None, "target": None,
+           "launched_by": {"kind": "manual", "name": None}, "checks": None},
+        q={"status": "QUEUED", "start_time": None, "end_time": None, "target": None,
+           "launched_by": {"kind": "manual", "name": None}, "checks": None})
+    html = client.get("/runs").text
+    assert ">in progress<" in html and ">queued<" in html
+
+
+def test_us1_page_loads_last_known_when_dagster_down(settings, three_runs, client, stub_run_status):
+    stub_run_status["payload"] = {"reachable": False, "runs": {}}
+    resp = client.get("/runs")
+    assert resp.status_code == 200
+    # Every row is marked last-known and still shows its local status.
+    assert "last-known" in resp.text
+    for rid in ("r1", "r2", "r3"):
+        assert f"/runs/{rid}" in resp.text
+
+
+def test_us1_dagster_wins_over_report(settings, tmp_runs, client, stub_run_status):
+    # report says ok, Dagster says FAILURE while reachable → failed (FR-003).
+    write_run(tmp_runs, "hello", "2026-09-15", "r1", report={"status": "ok"}, context={})
+    stub_run_status["payload"] = _enrich(r1={"status": "FAILURE", "start_time": None,
+        "end_time": None, "target": None, "launched_by": {"kind": "manual", "name": None},
+        "checks": None})
+    html = client.get("/runs").text
+    assert ">failed<" in html
+    assert "last-known" not in html                # reachable + has record → not last-known
+
+
+# --- US2: tabs + filter + URL round-trip ------------------------------------
+
+@pytest.fixture
+def mixed_runs(tmp_runs):
+    write_run(tmp_runs, "alpha", "2026-09-14", "ok1", report={"status": "ok"}, context={})
+    write_run(tmp_runs, "beta", "2026-09-15", "fail1", report={"status": "failed"}, context={})
+    write_run(tmp_runs, "beta", "2026-09-16", "run1", report={"status": "running"}, context={})
+    return tmp_runs
+
+
+def test_us2_failed_tab_shows_only_failed(settings, mixed_runs, client, stub_run_status):
+    stub_run_status["payload"] = _enrich(
+        ok1={"status": "SUCCESS", "start_time": 1.0, "end_time": 2.0, "target": None,
+             "launched_by": {"kind": "manual", "name": None}, "checks": None},
+        fail1={"status": "FAILURE", "start_time": 1.0, "end_time": 2.0, "target": None,
+               "launched_by": {"kind": "manual", "name": None}, "checks": None},
+        run1={"status": "STARTED", "start_time": 1.0, "end_time": None, "target": None,
+              "launched_by": {"kind": "manual", "name": None}, "checks": None})
+    html = client.get("/runs?tab=failed").text
+    assert "/runs/fail1" in html
+    assert "/runs/ok1" not in html and "/runs/run1" not in html
+
+
+def test_us2_counts_cover_whole_filtered_set(settings, mixed_runs, client, stub_run_status):
+    stub_run_status["payload"] = _enrich(
+        ok1={"status": "SUCCESS", "start_time": 1.0, "end_time": 2.0, "target": None,
+             "launched_by": {"kind": "manual", "name": None}, "checks": None},
+        fail1={"status": "FAILURE", "start_time": 1.0, "end_time": 2.0, "target": None,
+               "launched_by": {"kind": "manual", "name": None}, "checks": None},
+        run1={"status": "STARTED", "start_time": 1.0, "end_time": None, "target": None,
+              "launched_by": {"kind": "manual", "name": None}, "checks": None})
+    data = client.get("/api/runs?tab=failed").json()
+    assert data["counts"] == {"all": 3, "in_progress": 1, "succeeded": 1, "failed": 1}
+
+
+def test_us2_text_filter_narrows_by_agent_model_runid(settings, three_runs, client, stub_run_status):
+    # q matches agent/model/run id (target absent here). "other" is the r3 agent name.
+    html = client.get("/runs?q=other").text
+    assert "/runs/r3" in html and "/runs/r1" not in html
+
+
+def test_us2_url_state_round_trips(settings, three_runs, client, stub_run_status):
+    url = "/runs?tab=succeeded&q=hello&agent=hello&date_from=2026-09-14&date_to=2026-09-15&page=1"
+    assert client.get(url).status_code == 200
+
+
+# --- US3: columns + formatting ----------------------------------------------
+
+def test_us3_created_label_and_cost_and_agent_link(settings, tmp_runs, client, stub_run_status):
+    import os
+    from datetime import datetime
+    d = write_run(tmp_runs, "hello", "2026-09-17", "r1",
+                  report={"status": "ok", "cost_usd": 0.0, "model": "cheap"},
+                  context={"model": {"model": "cheap"}})
+    # Pin the dir mtime to 13:15 local on 2026-09-17 so Created reads the R7 label.
+    epoch = datetime(2026, 9, 17, 13, 15, 0).timestamp()
+    os.utime(d, (epoch, epoch))
+    stub_run_status["payload"] = _enrich(r1={"status": "SUCCESS", "start_time": epoch,
+        "end_time": epoch + 63, "target": "refined/daily",
+        "launched_by": {"kind": "schedule", "name": "sched_hello"}, "checks": None})
+    html = client.get("/runs").text
+    assert datetime.fromtimestamp(epoch).strftime("%b %-d, %-I:%M %p") in html  # e.g. Sep 17, 1:15 PM
+    assert "$0.0000" in html                        # a real 0 shows a value, not em-dash (FR-019)
+    assert '<a class="ax-mono" href="/agents/hello">' in html   # agent links to /agents/<agent>
+    assert "refined/daily" in html                  # Target from enrichment
+    assert "sched_hello" in html                    # Launched by from enrichment
+
+
+def test_us3_unknown_cost_and_missing_enrichment_are_em_dashes(settings, tmp_runs, client,
+                                                                stub_run_status):
+    write_run(tmp_runs, "hello", "2026-09-15", "r1",
+              report={"status": "ok"}, context={})   # no cost_usd, no model
+    stub_run_status["payload"] = _enrich(r1={"status": "SUCCESS", "start_time": None,
+        "end_time": None, "target": None, "launched_by": {"kind": "manual", "name": None},
+        "checks": None})
+    row = client.get("/api/runs").json()["runs"][0]
+    assert row["cost_usd"] is None                  # unknown cost → em-dash in the cell (FR-019)
+    assert row["target"] == "—" and row["model"] is None
+    assert "—" in client.get("/runs").text          # rendered as the em-dash placeholder
+
+
+def test_us3_in_progress_duration_shows_elapsed(settings, tmp_runs, client, stub_run_status):
+    write_run(tmp_runs, "hello", "2026-09-15", "r1", report={"status": "running"}, context={})
+    stub_run_status["payload"] = _enrich(r1={"status": "STARTED", "start_time": 1000.0,
+        "end_time": None, "target": None, "launched_by": {"kind": "manual", "name": None},
+        "checks": None})
+    data = client.get("/api/runs").json()
+    row = data["runs"][0]
+    assert row["status"] == "in_progress"
+    assert row["duration"] is not None              # elapsed-so-far (now − start)
+
+
+# --- US4: Dagster deep link -------------------------------------------------
+
+def test_us4_dagster_link_present_when_configured(settings, three_runs, client, stub_run_status):
+    html = client.get("/runs").text
+    assert 'class="ax-run-dagster-link"' in html
+    assert 'target="_blank"' in html
+    assert "/runs/r1" in html                       # the id links to the AgentBox run page
+    assert 'href="http://testserver:3000/runs/r1"' in html   # icon → {dagster_url}/runs/{id}
+
+
+def test_us4_no_dagster_link_when_not_configured(settings, three_runs, client, stub_run_status,
+                                                 monkeypatch):
+    import main
+    monkeypatch.setattr(main, "public_dagster_url", lambda request: "")
+    html = client.get("/runs").text
+    assert "ax-run-dagster-link" not in html
+    assert "/runs/r1" in html                       # the run id still links to the AgentBox page
+
+
+# --- US5: pagination --------------------------------------------------------
+
+@pytest.fixture
+def many_runs(tmp_runs):
+    for i in range(31):
+        write_run(tmp_runs, "hello", "2026-09-15", f"r{i:02d}",
+                  report={"status": "ok"}, context={})
+    return tmp_runs
+
+
+def test_us5_page_one_has_thirty_and_pagination(settings, many_runs, client, stub_run_status):
+    data = client.get("/api/runs").json()
+    assert len(data["runs"]) == 30 and data["pages"] == 2 and data["page"] == 1
+    html = client.get("/runs").text
+    assert "ax-pagination" in html
+
+
+def test_us5_page_two_has_remainder(settings, many_runs, client, stub_run_status):
+    data = client.get("/api/runs?page=2").json()
+    assert len(data["runs"]) == 1 and data["page"] == 2
+
+
+def test_us5_page_past_end_clamps(settings, many_runs, client, stub_run_status):
+    data = client.get("/api/runs?page=99").json()
+    assert data["page"] == data["pages"] == 2
+
+
+def test_us5_badges_reflect_whole_filtered_set(settings, many_runs, client, stub_run_status):
+    data = client.get("/api/runs?page=2").json()
+    assert data["counts"]["all"] == 31             # independent of the current page
+
+
+# --- FR-035: enrichment cap note (T045) -------------------------------------
+
+def test_fr035_cap_note_and_older_rows_last_known(settings, tmp_runs, client, stub_run_status,
+                                                  monkeypatch):
+    import dagster
+    monkeypatch.setattr(dagster, "RUNS_STATUS_CAP", 3)   # small cap so the test stays fast
+    for i in range(5):
+        write_run(tmp_runs, "hello", "2026-09-15", f"r{i:02d}",
+                  report={"status": "ok"}, context={})
+    # Enrichment only covers the newest 3 (the caller caps the id list); the payload here
+    # returns those, and older rows must stay present + last-known, never dropped.
+    stub_run_status["payload"] = _enrich(**{f"r0{i}": {"status": "SUCCESS", "start_time": 1.0,
+        "end_time": 2.0, "target": None, "launched_by": {"kind": "manual", "name": None},
+        "checks": None} for i in (2, 3, 4)})
+    html = client.get("/runs?tab=all").text
+    assert "most recent 3 runs" in html            # the cap note renders (FR-035)
+    for i in range(5):
+        assert f"/runs/r0{i}" in html              # older rows present, not truncated
+    assert "last-known" in html                    # rows beyond the cap are last-known

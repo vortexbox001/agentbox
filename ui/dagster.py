@@ -359,6 +359,186 @@ async def activity(agents: list[dict]) -> dict:
     return {"reachable": True, "agents": out}
 
 
+# ── Runs-overview status normalisation (contract §D, research R8) ───────────
+# One table folds Dagster RunStatus + the local report status into the presented set,
+# and derives each presented status' tab bucket and run_status_tag intent. Read-path only:
+# nothing here writes or mutates run data (constitution V).
+_DAGSTER_PRESENT = {
+    "SUCCESS": "succeeded",
+    "FAILURE": "failed",
+    "CANCELED": "cancelled",
+    "CANCELING": "cancelled",
+    "STARTED": "in_progress",
+    "STARTING": "in_progress",
+    "QUEUED": "queued",
+    "NOT_STARTED": "queued",
+}
+_LOCAL_PRESENT = {
+    "ok": "succeeded",
+    "failed": "failed",
+    "timeout": "timed_out",
+    "running": "in_progress",
+    "unknown": "unknown",
+}
+# Presented status → tab bucket. `unknown` maps to "" (counted under All only, never a
+# sub-tab), so all ≥ in_progress + succeeded + failed (data-model, FR-005).
+_TAB_OF_PRESENT = {
+    "succeeded": "succeeded",
+    "failed": "failed",
+    "timed_out": "failed",
+    "cancelled": "failed",
+    "in_progress": "in_progress",
+    "queued": "in_progress",
+    "unknown": "",
+}
+# Presented status → run_status_tag intent (the tag's `status` arg). queued/unknown both
+# render the neutral gray idle dot.
+_INTENT_OF_PRESENT = {
+    "succeeded": "success",
+    "failed": "failure",
+    "timed_out": "error",
+    "cancelled": "error",
+    "in_progress": "running",
+    "queued": "queued",
+    "unknown": "queued",
+}
+_LABEL_OF_PRESENT = {
+    "succeeded": "succeeded",
+    "failed": "failed",
+    "timed_out": "timed out",
+    "cancelled": "cancelled",
+    "in_progress": "in progress",
+    "queued": "queued",
+    "unknown": "unknown",
+}
+
+
+def _present_status(dagster_status, local_status) -> str:
+    """Fold a Dagster RunStatus (preferred, when known) + the local report status into the
+    presented set {succeeded, failed, timed_out, cancelled, queued, in_progress, unknown}."""
+    ds = str(dagster_status or "").upper()
+    if ds in _DAGSTER_PRESENT:
+        return _DAGSTER_PRESENT[ds]
+    return _LOCAL_PRESENT.get(str(local_status or "").lower() or "unknown", "unknown")
+
+
+def _status_tab(present: str) -> str:
+    """The tab bucket for a presented status; `""` means All-only (not a sub-tab)."""
+    return _TAB_OF_PRESENT.get(present, "")
+
+
+def _status_intent(present: str) -> str:
+    """The run_status_tag intent (`status` arg) for a presented status."""
+    return _INTENT_OF_PRESENT.get(present, "queued")
+
+
+def _status_label(present: str) -> str:
+    """A human label for a presented status (e.g. `timed_out` → "timed out")."""
+    return _LABEL_OF_PRESENT.get(present, present)
+
+
+# ── Runs-overview enrichment read (contract §C, research R6) ────────────────
+# One bounded, batched read of specific run ids → true status + Target + Launched by +
+# Checks. Capped at N so a very large filtered history cannot make a single render
+# unbounded (research R1); rows beyond the cap stay last-known. Every transport/parse/
+# non-Runs arm collapses to plain data so the caller never sees an exception.
+RUNS_STATUS_CAP = 500
+
+_RUN_STATUS_FIELDS = (
+    "runId status startTime endTime "
+    "assetSelection { path } "
+    "pipelineName "
+    "tags { key value } "
+    "assetChecks { name executionForLatestMaterialization { status evaluation { severity } } }"
+)
+
+
+def _run_target(run: dict):
+    """Target for a run: the asset key (`a/b`) when it materialised one, else the job name."""
+    for sel in run.get("assetSelection") or []:
+        if isinstance(sel, dict) and sel.get("path"):
+            return "/".join(sel["path"])
+    return run.get("pipelineName") or None
+
+
+def _run_launched_by(tags) -> dict:
+    """Launched-by from run tags: dagster/schedule_name → schedule, sensor_name → sensor,
+    else a manual launch (data-model)."""
+    by = {}
+    for t in tags or []:
+        if isinstance(t, dict):
+            by[t.get("key")] = t.get("value")
+    if by.get("dagster/schedule_name"):
+        return {"kind": "schedule", "name": by["dagster/schedule_name"]}
+    if by.get("dagster/sensor_name"):
+        return {"kind": "sensor", "name": by["dagster/sensor_name"]}
+    return {"kind": "manual", "name": None}
+
+
+def _parse_run_checks(node):
+    """[{name, status}] from a run's asset-check list; None on any unexpected arm (contract §C)."""
+    if not isinstance(node, list):
+        return None
+    out = []
+    for c in node:
+        if not isinstance(c, dict):
+            continue
+        out.append({
+            "name": c.get("name"),
+            "status": _check_status(c.get("executionForLatestMaterialization")),
+        })
+    return out or None
+
+
+async def run_status(run_ids: list[str]) -> dict:
+    """One bounded, batched read of specific run ids → status/target/launched-by/checks
+    (contract §C, research R6). Returns the *Enrichment payload*
+    ``{"reachable": bool, "runs": {run_id: {...}}}``. Exactly ONE GraphQL POST per call;
+    every transport/parse/non-``Runs`` arm collapses to ``{"reachable": False, "runs": {}}``
+    so the caller falls back to last-known for every row. A requested id absent from the
+    results is simply omitted (the caller treats it as last-known)."""
+    ids = [r for r in (run_ids or []) if r][:RUNS_STATUS_CAP]
+    if not ids:
+        return {"reachable": True, "runs": {}}
+    id_list = ", ".join(_q(r) for r in ids)
+    query = (
+        "query { runsOrError(filter: {runIds: [" + id_list + "]}, limit: "
+        + str(RUNS_STATUS_CAP) + ") { __typename ... on Runs { results { "
+        + _RUN_STATUS_FIELDS + " } } } }"
+    )
+    url = f"{config.DAGSTER_URL}/graphql"
+    try:
+        async with httpx.AsyncClient(timeout=config.RELOAD_TIMEOUT_S) as client:
+            resp = await client.post(url, json={"query": query})
+            resp.raise_for_status()
+            payload = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return {"reachable": False, "runs": {}}
+
+    data = (payload or {}).get("data")
+    if not isinstance(data, dict):
+        return {"reachable": False, "runs": {}}
+    node = data.get("runsOrError")
+    if not isinstance(node, dict) or node.get("__typename") != "Runs" or "results" not in node:
+        # A PythonError / non-Runs arm, or top-level errors: degrade rather than fabricate.
+        return {"reachable": False, "runs": {}}
+
+    out = {}
+    for r in node.get("results") or []:
+        rid = r.get("runId")
+        if not rid:
+            continue
+        out[rid] = {
+            "status": r.get("status"),
+            "start_time": r.get("startTime"),
+            "end_time": r.get("endTime"),
+            "target": _run_target(r),
+            "launched_by": _run_launched_by(r.get("tags")),
+            "checks": _parse_run_checks(r.get("assetChecks")),
+        }
+    return {"reachable": True, "runs": out}
+
+
 # ── Schedule / sensor toggle (start / stop one instigator) ──────────────────
 # The contract's failure signals are exactly PythonError, UnauthorizedError, and top-level
 # GraphQL errors (dagster-activity.md §B); anything else is a successful flip. Start is
