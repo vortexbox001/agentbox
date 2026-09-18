@@ -298,6 +298,102 @@
 </div>
 {%- endmacro %}
 
+{# ── disclosure / section_card (spec 017, run-detail) ────
+   A bordered section card with a full-width, keyboard-operable disclosure header (chevron
+   reflecting state, title, right-aligned muted closed-state note). `open` is the server default
+   (run-detail.js may override from localStorage). The body is the {% call %} block. Used for all
+   five run-detail sections (FR-003, Disclosure component). #}
+{% macro disclosure(id="", title="", note=none, open=true, attrs={}) -%}
+<section class="ax-section" data-section data-section-id="{{ id }}"{% if not open %} data-collapsed{% endif %}{{ attrs|xmlattr }}>
+  <button type="button" class="ax-btn ax-section-head" data-section-toggle aria-expanded="{{ 'true' if open else 'false' }}" aria-controls="section-body-{{ id }}">
+    <svg class="ax-section-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    <span class="ax-section-title">{{ title }}</span>
+    {%- if note is not none %}<span class="ax-section-note">{{ note }}</span>{% endif %}
+  </button>
+  <div class="ax-section-body" id="section-body-{{ id }}"{% if not open %} hidden{% endif %}>
+    {%- if caller %}{{ caller() }}{% endif %}
+  </div>
+</section>
+{%- endmacro %}
+
+{# ── tool_card (spec 017, IN/OUT transcript card) ────────
+   Head line (name, ellipsised description, right-aligned mono marker) over IN and OUT rows
+   clamped to 3 lines with a token-background fade + "Show all N lines" link when overflowing.
+   Diff OUT rows render expanded (never clamped, colouring preserved); a failed/missing OUT reads
+   in the failed/warning colour. run-detail.js toggles per-row expansion (FR-021–FR-027). #}
+{% macro tool_card(name="", description=none, marker=none, in_text=none, out_text=none,
+                   in_overflow=false, out_overflow=false, in_lines=0, out_lines=0,
+                   is_diff=false, out_intent=none, attrs={}) -%}
+<div class="ax-toolcard" data-toolcard{{ attrs|xmlattr }}>
+  <div class="ax-toolcard-head">
+    <span class="ax-toolcard-name">{{ name }}</span>
+    {%- if description %}<span class="ax-toolcard-desc">{{ description }}</span>{% endif %}
+    {%- if marker %}<span class="ax-toolcard-marker">{{ marker }}</span>{% endif %}
+  </div>
+  {%- if in_text %}
+  <div class="ax-io-row{% if in_overflow %} is-overflow{% endif %}" data-io-row data-io-lines="{{ in_lines }}">
+    <span class="ax-io-label">IN</span>
+    <div class="ax-io-body">
+      <div class="ax-io-content">{{ in_text }}</div>
+      {%- if in_overflow %}<div class="ax-io-fade" aria-hidden="true"></div>{% endif %}
+    </div>
+    {%- if in_overflow %}<button type="button" class="ax-btn ax-io-toggle" data-io-toggle aria-expanded="false">Show all {{ in_lines }} lines</button>{% endif %}
+  </div>
+  {%- endif %}
+  {%- if out_text or is_diff %}
+  <div class="ax-io-row{% if out_overflow %} is-overflow{% endif %}{% if is_diff %} ax-io-row--diff{% endif %}" data-io-row data-io-lines="{{ out_lines }}">
+    <span class="ax-io-label">OUT</span>
+    <div class="ax-io-body{% if out_intent %} ax-io-body--{{ out_intent }}{% endif %}">
+      <div class="ax-io-content">{% if is_diff %}{% for line in out_text.split("\n") %}{% if line.startswith("+") %}<span class="ax-diff-add">{{ line }}</span>{% elif line.startswith("-") %}<span class="ax-diff-del">{{ line }}</span>{% else %}<span>{{ line }}</span>{% endif %}
+{% endfor %}{% else %}{{ out_text }}{% endif %}</div>
+      {%- if out_overflow %}<div class="ax-io-fade" aria-hidden="true"></div>{% endif %}
+    </div>
+    {%- if out_overflow %}<button type="button" class="ax-btn ax-io-toggle" data-io-toggle aria-expanded="false">Show all {{ out_lines }} lines</button>{% endif %}
+  </div>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# ── check_row (spec 017, Checks section) ────────────────
+   One recorded check in the Agents-overview mark language — reuses the existing `ax-result` mark
+   + CHECK_META vocabulary (pass/warn/fail-blocking/not-run) so the mark matches the overview
+   (FR-015/FR-016). name + one-line detail + right-aligned recorded time. #}
+{% macro check_row(status="not-run", name="", detail=none, recorded=none, attrs={}) -%}
+{%- set meta = {"pass": {"cls": "ax-result--pass", "icon": "check-circle", "label": "Passed"},
+                "warn": {"cls": "ax-result--warn", "icon": "warn-tri", "label": "Failed (warning)"},
+                "fail-blocking": {"cls": "ax-result--fail", "icon": "x-circle", "label": "Failed"},
+                "not-run": {"cls": "", "icon": "check-circle", "label": "Not run"}}.get(status,
+                {"cls": "", "icon": "check-circle", "label": "Not run"}) -%}
+<div class="ax-checkrow"{{ attrs|xmlattr }}>
+  <span class="ax-checkrow-mark"><span class="ax-result {{ meta.cls }}" role="img" aria-label="{{ meta.label }}"><svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#{{ meta.icon }}"></use></svg></span></span>
+  <span class="ax-checkrow-name">{{ name }}</span>
+  <span class="ax-checkrow-detail">{{ detail if detail else "—" }}</span>
+  <span class="ax-checkrow-time">{{ recorded if recorded else "—" }}</span>
+</div>
+{%- endmacro %}
+
+{# ── produced_row (spec 017, Output → Produced elsewhere) ─
+   A best-effort "produced elsewhere" row: kind label (Pull request / Commit / File), the
+   identifier in mono, and an Open/Preview action when derivable (FR-012). #}
+{% macro produced_row(kind="", identifier="", action=none, attrs={}) -%}
+{%- set label = {"pull_request": "Pull request", "commit": "Commit", "file": "File"}.get(kind, kind) -%}
+<div class="ax-produced-row"{{ attrs|xmlattr }}>
+  <span class="ax-produced-kind">{{ label }}</span>
+  <span class="ax-produced-id ax-mono">{{ identifier }}</span>
+  {%- if action %}{{ button(label=("Preview" if kind == "file" else "Open"), intent="ghost", outlined=true, icon="external", href=action, attrs={"target": "_blank", "rel": "noopener"}) }}{% endif %}
+</div>
+{%- endmacro %}
+
+{# ── summary (spec 017, Summary section) ─────────────────
+   The visual treatment for the FR-007 markdown subset produced by ui/markdown.render_summary —
+   `html` is pre-rendered, escaped, safe subset markup; `fallback` is the foot-line fallback when
+   no final message exists (FR-007/FR-008). #}
+{% macro summary(html=none, fallback=none, attrs={}) -%}
+<div class="ax-summary{% if not html %} ax-summary--empty{% endif %}"{{ attrs|xmlattr }}>
+  {%- if html %}{{ html }}{% else %}{{ fallback }}{% endif %}
+</div>
+{%- endmacro %}
+
 {# ── run_stat_strip (spec 012, run-detail) ───────────────
    The horizontal stat strip on the run-detail header. `stats`: list of {label, value, sub?} —
    `sub` renders as a dimmed suffix (e.g. "5 / 40"). A None value renders the em-dash placeholder

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -455,6 +456,193 @@ def read_transcript(run_id: str, max_bytes: int = _RAW_MAX_BYTES):
         return None, False
     truncated = len(data) > max_bytes
     return data[:max_bytes].decode("utf-8", "replace"), truncated
+
+
+# ── Run-detail section view-model helpers (spec 017) ────────────────────────
+# All pure functions over data the page already loads (read_events → conversation_entries,
+# read_output_files, read_run); nothing here writes the run record or reads new disk (FR-035).
+
+_WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+_PR_URL_RE = re.compile(r"https://github\.com/[^\s\"')]+/pull/\d+", re.I)
+_COMMIT_MARKER_RE = re.compile(r"\b(?:commit|committed|push|pushed)\b", re.I)
+# The `[branch sha] message` form git commit/push prints, e.g. `[main 1a2b3c4] wire it up`.
+_COMMIT_BRACKET_RE = re.compile(r"\[[\w./-]+\s+([0-9a-f]{7,40})\]", re.I)
+_SHA_RE = re.compile(r"\b([0-9a-f]{7,40})\b", re.I)
+_EXIT_RE = re.compile(r"\bexit(?:\s*code)?[:\s]+(\d+)", re.I)
+_REFUSAL_RE = re.compile(
+    r"permission denied|not permitted|operation not permitted|permission to use|"
+    r"\brefused\b|blocked by (?:the )?permission", re.I)
+
+
+def produced_elsewhere(events: list[dict]) -> list[dict]:
+    """Best-effort miner over the normalized event stream (contract §B, R4).
+
+    Returns ``{kind, identifier, action}`` rows grouped **pull_request → commit → file**, event
+    order preserved within each kind. Pure; ``[]`` when nothing matches; never raises (FR-013).
+    """
+    prs: list[dict] = []
+    commits: list[dict] = []
+    files: list[dict] = []
+    for e in events or []:
+        kind = e.get("kind")
+        if kind == "tool_result":
+            result = e.get("result") or ""
+            m = _PR_URL_RE.search(result)
+            if m:
+                prs.append({"kind": "pull_request", "identifier": m.group(0), "action": m.group(0)})
+                continue
+            bracket = _COMMIT_BRACKET_RE.search(result)
+            if bracket:
+                commits.append({"kind": "commit", "identifier": bracket.group(1), "action": None})
+            elif _COMMIT_MARKER_RE.search(result):
+                sm = _SHA_RE.search(result)
+                if sm:
+                    commits.append({"kind": "commit", "identifier": sm.group(1), "action": None})
+        elif kind == "tool_call" and (e.get("tool") or "") in _WRITE_TOOLS:
+            args = e.get("args") if isinstance(e.get("args"), dict) else {}
+            path = args.get("file_path") or args.get("path")
+            if path:
+                files.append({"kind": "file", "identifier": str(path), "action": None})
+    return prs + commits + files
+
+
+def _line_count(text: str) -> int:
+    return len(text.splitlines()) if text else 0
+
+
+def _derive_marker(tool: dict):
+    """(marker, out_intent) for a tool card head (FR-022, R6). The event schema has no exit
+    field, so the marker is derived from the result text: ``failed`` for a missing/refused result,
+    ``exit N`` only when the text carries a recognizable exit code, else neither."""
+    if tool.get("missing"):
+        return "failed", "missing"
+    result = tool.get("result") or ""
+    if _REFUSAL_RE.search(result):
+        return "failed", "failed"
+    m = _EXIT_RE.search(result)
+    if m:
+        n = m.group(1)
+        return f"exit {n}", ("failed" if n != "0" else None)
+    return None, None
+
+
+def enrich_tool_cards(entries: list[dict]) -> list[dict]:
+    """Add IN/OUT tool-card presentation fields to each tool in ``conversation_entries`` output
+    (contract §C). Clamp height is fixed at 3 lines; diff OUT rows never clamp (expanded by
+    default, FR-026). Mutates and returns ``entries``."""
+    for entry in entries:
+        for t in entry.get("tools") or []:
+            diff = t.get("diff")
+            is_diff = diff is not None
+            in_text = t.get("arg") or ""
+            out_text = diff if is_diff else (t.get("result") or "")
+            if t.get("missing") and not out_text:
+                out_text = "result not captured — recorded as missing"
+            in_lines = _line_count(in_text)
+            out_lines = _line_count(out_text)
+            marker, out_intent = _derive_marker(t)
+            t["name"] = t.get("tool") or ""
+            t["description"] = t.get("arg")
+            t["marker"] = marker
+            t["in_text"] = in_text
+            t["out_text"] = out_text
+            t["in_lines"] = in_lines
+            t["out_lines"] = out_lines
+            t["in_overflow"] = in_lines > 3
+            t["out_overflow"] = out_lines > 3 and not is_diff
+            t["is_diff"] = is_diff
+            t["out_intent"] = out_intent
+    return entries
+
+
+def dedup_final(entries: list[dict]) -> list[dict]:
+    """Collapse a final assistant message that duplicates the final event into a single Result
+    (FR-032): drop the assistant entry immediately preceding a ``final`` entry when their text
+    matches and the assistant entry carries no tools. Mutates and returns ``entries``."""
+    if len(entries) < 2 or entries[-1].get("kind") != "final":
+        return entries
+    final_text = (entries[-1].get("text") or "").strip()
+    if not final_text:
+        return entries
+    for i in range(len(entries) - 2, -1, -1):
+        e = entries[i]
+        if e.get("kind") == "assistant":
+            if (e.get("text") or "").strip() == final_text and not e.get("tools"):
+                entries.pop(i)
+            break
+    return entries
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def section_note_output(files: list, produced: list) -> str:
+    """Output closed-state note: "N files · M pull request(s)" — the files part always shows,
+    the pull-request part only when non-zero; "0 files" alone when nothing was produced (FR-014)."""
+    n_prs = sum(1 for p in (produced or []) if p.get("kind") == "pull_request")
+    parts = [_plural(len(files or []), "file")]
+    if n_prs:
+        parts.append(_plural(n_prs, "pull request"))
+    return " · ".join(parts)
+
+
+def section_note_checks(checks: list) -> str:
+    """Checks note counting outcomes across the full vocabulary; "—" when zero recorded checks
+    (a not-run check still counts and does not yield "—") (FR-017/FR-018)."""
+    if not checks:
+        return "—"
+    passed = sum(1 for c in checks if c.get("status") == "pass")
+    warn = sum(1 for c in checks if c.get("status") == "warn")
+    failed = sum(1 for c in checks if c.get("status") == "fail-blocking")
+    not_run = sum(1 for c in checks if c.get("status") == "not-run")
+    parts = []
+    if passed:
+        parts.append(f"{passed} passed")
+    if warn:
+        parts.append(_plural(warn, "warning"))
+    if failed:
+        parts.append(f"{failed} failed")
+    if not_run:
+        parts.append(f"{not_run} not run")
+    return " · ".join(parts) if parts else "—"
+
+
+def section_note_context(context: dict) -> str:
+    """Context note: "prompt · appended · N instruction file(s)" (FR-020)."""
+    context = context or {}
+    prompt = context.get("prompt") or {}
+    parts = []
+    if prompt.get("prompt_text"):
+        parts.append("prompt")
+    if prompt.get("append_system_prompt"):
+        parts.append("appended")
+    parts.append(_plural(len(context.get("instruction_files") or []), "instruction file"))
+    return " · ".join(parts)
+
+
+def section_note_transcript(entries: list, report: dict) -> str:
+    """Transcript note: "N turns · M tool calls" (FR-034)."""
+    report = report or {}
+    tool_calls = sum(len(e.get("tools") or []) for e in entries)
+    turns = report.get("turns")
+    if turns is None:
+        turns = sum(1 for e in entries if e.get("kind") in ("user", "assistant", "final"))
+    return f"{turns} turns · {_plural(tool_calls, 'tool call')}"
+
+
+def foot_line(report: dict, tool_calls: Optional[int] = None) -> str:
+    """The run foot line: status · turns · files written [· M tool calls]. Three fields for the
+    Summary fallback (FR-008); pass ``tool_calls`` for the four-field Transcript foot (FR-033)."""
+    report = report or {}
+    bits = [report.get("status") or "unknown"]
+    if report.get("turns") is not None:
+        bits.append(f"{report['turns']} turns")
+    if report.get("files_written") is not None:
+        bits.append(f"{report['files_written']} files written")
+    if tool_calls is not None:
+        bits.append(_plural(tool_calls, "tool call"))
+    return " · ".join(bits)
 
 
 def read_events(run_id: str) -> list[dict]:

@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"AgentBoxDesignSystem_463fbd","components":[{"name":"Button","sourcePath":"components/buttons/Button.jsx"},{"name":"Table","sourcePath":"components/data/Table.jsx"},{"name":"Alert","sourcePath":"components/feedback/Alert.jsx"},{"name":"Badge","sourcePath":"components/feedback/Badge.jsx"},{"name":"RunStatusTag","sourcePath":"components/feedback/RunStatusTag.jsx"},{"name":"SchedulePill","sourcePath":"components/feedback/SchedulePill.jsx"},{"name":"Spinner","sourcePath":"components/feedback/Spinner.jsx"},{"name":"StatusDot","sourcePath":"components/feedback/StatusDot.jsx"},{"name":"Checkbox","sourcePath":"components/forms/Checkbox.jsx"},{"name":"Select","sourcePath":"components/forms/Select.jsx"},{"name":"TextInput","sourcePath":"components/forms/TextInput.jsx"},{"name":"Toggle","sourcePath":"components/forms/Toggle.jsx"},{"name":"Card","sourcePath":"components/layout/Card.jsx"},{"name":"Dialog","sourcePath":"components/layout/Dialog.jsx"},{"name":"Tabs","sourcePath":"components/navigation/Tabs.jsx"},{"name":"Tab","sourcePath":"components/navigation/Tabs.jsx"},{"name":"Pagination","sourcePath":"components/navigation/Pagination.jsx"}],"sourceHashes":{"components/buttons/Button.jsx":"e5c09169e13c","components/data/Table.jsx":"ec89ce49f825","components/feedback/Alert.jsx":"a8e9b189d966","components/feedback/Badge.jsx":"dcd2e315e7ee","components/feedback/RunStatusTag.jsx":"9bbfb16297bc","components/feedback/SchedulePill.jsx":"fd6ce3d3d2d6","components/feedback/Spinner.jsx":"ec7ee75319fc","components/feedback/StatusDot.jsx":"a238cf172490","components/forms/Checkbox.jsx":"1b36a86a1d79","components/forms/Select.jsx":"9344fce9702f","components/forms/TextInput.jsx":"a31075e0a82c","components/forms/Toggle.jsx":"9073dbbfcfd8","components/layout/Card.jsx":"d9a3d477352c","components/layout/Dialog.jsx":"3f642a39861e","components/navigation/Tabs.jsx":"6acb218ddf74","static/dropdown.js":"dc2966e327c9","components/navigation/Pagination.jsx":"e70ca85c42e2"},"inlinedExternals":[],"unexposedExports":[{"name":"enhanceSelect","sourcePath":"static/dropdown.js"},{"name":"enhanceSelects","sourcePath":"static/dropdown.js"}]} */
+/* @ds-bundle: {"format":4,"namespace":"AgentBoxDesignSystem_463fbd","components":[{"name":"Button","sourcePath":"components/buttons/Button.jsx"},{"name":"Table","sourcePath":"components/data/Table.jsx"},{"name":"Alert","sourcePath":"components/feedback/Alert.jsx"},{"name":"Badge","sourcePath":"components/feedback/Badge.jsx"},{"name":"RunStatusTag","sourcePath":"components/feedback/RunStatusTag.jsx"},{"name":"SchedulePill","sourcePath":"components/feedback/SchedulePill.jsx"},{"name":"Spinner","sourcePath":"components/feedback/Spinner.jsx"},{"name":"StatusDot","sourcePath":"components/feedback/StatusDot.jsx"},{"name":"Checkbox","sourcePath":"components/forms/Checkbox.jsx"},{"name":"Select","sourcePath":"components/forms/Select.jsx"},{"name":"TextInput","sourcePath":"components/forms/TextInput.jsx"},{"name":"Toggle","sourcePath":"components/forms/Toggle.jsx"},{"name":"Card","sourcePath":"components/layout/Card.jsx"},{"name":"Dialog","sourcePath":"components/layout/Dialog.jsx"},{"name":"Tabs","sourcePath":"components/navigation/Tabs.jsx"},{"name":"Tab","sourcePath":"components/navigation/Tabs.jsx"},{"name":"Pagination","sourcePath":"components/navigation/Pagination.jsx"},{"name":"Disclosure","sourcePath":"components/layout/Disclosure.jsx"},{"name":"ToolCard","sourcePath":"components/data/ToolCard.jsx"},{"name":"CheckRow","sourcePath":"components/data/CheckRow.jsx"},{"name":"ProducedRow","sourcePath":"components/data/ProducedRow.jsx"},{"name":"Summary","sourcePath":"components/data/Summary.jsx"}],"sourceHashes":{"components/buttons/Button.jsx":"e5c09169e13c","components/data/Table.jsx":"ec89ce49f825","components/feedback/Alert.jsx":"a8e9b189d966","components/feedback/Badge.jsx":"dcd2e315e7ee","components/feedback/RunStatusTag.jsx":"9bbfb16297bc","components/feedback/SchedulePill.jsx":"fd6ce3d3d2d6","components/feedback/Spinner.jsx":"ec7ee75319fc","components/feedback/StatusDot.jsx":"a238cf172490","components/forms/Checkbox.jsx":"1b36a86a1d79","components/forms/Select.jsx":"9344fce9702f","components/forms/TextInput.jsx":"a31075e0a82c","components/forms/Toggle.jsx":"9073dbbfcfd8","components/layout/Card.jsx":"d9a3d477352c","components/layout/Dialog.jsx":"3f642a39861e","components/navigation/Tabs.jsx":"6acb218ddf74","static/dropdown.js":"dc2966e327c9","components/navigation/Pagination.jsx":"e70ca85c42e2"},"inlinedExternals":[],"unexposedExports":[{"name":"enhanceSelect","sourcePath":"static/dropdown.js"},{"name":"enhanceSelects","sourcePath":"static/dropdown.js"}]} */
 
 (() => {
 
@@ -1101,6 +1101,116 @@ function Pagination({
 Object.assign(__ds_scope, { Pagination });
 })(); } catch (e) { __ds_ns.__errors.push({ path: "components/navigation/Pagination.jsx", error: String((e && e.message) || e) }); }
 
+// components/layout/Disclosure.jsx
+try { (() => {
+function Disclosure({ title, note, open = true, id, children, ...rest }) {
+  const head = React.createElement('button', {
+    type: 'button', className: 'ax-section-head', 'aria-expanded': open ? 'true' : 'false',
+    'aria-controls': id ? `section-body-${id}` : undefined,
+  }, [
+    React.createElement('span', { key: 'chev', className: 'ax-section-chevron', 'aria-hidden': 'true' }),
+    React.createElement('span', { key: 'title', className: 'ax-section-title' }, title),
+    note ? React.createElement('span', { key: 'note', className: 'ax-section-note' }, note) : null,
+  ]);
+  const body = React.createElement('div', {
+    className: 'ax-section-body', id: id ? `section-body-${id}` : undefined, hidden: !open,
+  }, children);
+  return React.createElement('section', {
+    className: 'ax-section', 'data-section': '', 'data-section-id': id, ...rest,
+  }, [head, body]);
+}
+Object.assign(__ds_scope, { Disclosure });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/layout/Disclosure.jsx", error: String((e && e.message) || e) }); }
+
+// components/data/ToolCard.jsx
+try { (() => {
+function IoRow({ label, text, overflow, lines, intent }) {
+  return React.createElement('div', {
+    className: 'ax-io-row' + (overflow ? ' is-overflow' : ''), 'data-io-row': '',
+  }, [
+    React.createElement('span', { key: 'l', className: 'ax-io-label' }, label),
+    React.createElement('div', { key: 'b', className: 'ax-io-body' + (intent ? ' ax-io-body--' + intent : '') }, [
+      React.createElement('div', { key: 'c', className: 'ax-io-content' }, text),
+      overflow ? React.createElement('div', { key: 'f', className: 'ax-io-fade', 'aria-hidden': 'true' }) : null,
+    ]),
+    overflow ? React.createElement('button', {
+      key: 't', type: 'button', className: 'ax-io-toggle', 'data-io-toggle': '', 'aria-expanded': 'false',
+    }, `Show all ${lines} lines`) : null,
+  ]);
+}
+function ToolCard({ name, description, marker, in_text, out_text, in_overflow, out_overflow,
+  in_lines, out_lines, is_diff, out_intent }) {
+  const head = React.createElement('div', { className: 'ax-toolcard-head' }, [
+    React.createElement('span', { key: 'n', className: 'ax-toolcard-name' }, name),
+    description ? React.createElement('span', { key: 'd', className: 'ax-toolcard-desc' }, description) : null,
+    marker ? React.createElement('span', { key: 'm', className: 'ax-toolcard-marker' }, marker) : null,
+  ]);
+  return React.createElement('div', { className: 'ax-toolcard', 'data-toolcard': '' }, [
+    head,
+    in_text ? React.createElement(IoRow, { key: 'in', label: 'IN', text: in_text, overflow: in_overflow, lines: in_lines }) : null,
+    (out_text || is_diff) ? React.createElement(IoRow, {
+      key: 'out', label: 'OUT', text: out_text, overflow: out_overflow, lines: out_lines, intent: out_intent,
+    }) : null,
+  ]);
+}
+Object.assign(__ds_scope, { ToolCard });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/data/ToolCard.jsx", error: String((e && e.message) || e) }); }
+
+// components/data/CheckRow.jsx
+try { (() => {
+const CHECK_META = {
+  'pass': { cls: 'ax-result--pass', icon: 'check-circle' },
+  'warn': { cls: 'ax-result--warn', icon: 'warn-tri' },
+  'fail-blocking': { cls: 'ax-result--fail', icon: 'x-circle' },
+  'not-run': { cls: '', icon: 'check-circle' },
+};
+function CheckRow({ status, name, detail, recorded }) {
+  const meta = CHECK_META[status] || CHECK_META['not-run'];
+  const mark = React.createElement('span', { className: 'ax-result ' + meta.cls, role: 'img' },
+    React.createElement('svg', { className: 'ax-icon', width: 16, height: 16, 'aria-hidden': 'true' },
+      React.createElement('use', { href: '#' + meta.icon })));
+  return React.createElement('div', { className: 'ax-checkrow' }, [
+    React.createElement('span', { key: 'm', className: 'ax-checkrow-mark' }, mark),
+    React.createElement('span', { key: 'n', className: 'ax-checkrow-name' }, name),
+    React.createElement('span', { key: 'd', className: 'ax-checkrow-detail' }, detail || '—'),
+    React.createElement('span', { key: 'r', className: 'ax-checkrow-time' }, recorded || '—'),
+  ]);
+}
+Object.assign(__ds_scope, { CheckRow });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/data/CheckRow.jsx", error: String((e && e.message) || e) }); }
+
+// components/data/ProducedRow.jsx
+try { (() => {
+const KIND_LABEL = { pull_request: 'Pull request', commit: 'Commit', file: 'File' };
+function ProducedRow({ kind, identifier, action }) {
+  const children = [
+    React.createElement('span', { key: 'k', className: 'ax-produced-kind' }, KIND_LABEL[kind] || kind),
+    React.createElement('span', { key: 'i', className: 'ax-produced-id ax-mono' }, identifier),
+  ];
+  if (action) {
+    children.push(React.createElement('a', {
+      key: 'a', className: 'ax-btn ax-btn--ghost ax-btn--outlined', href: action,
+      target: '_blank', rel: 'noopener',
+    }, React.createElement('span', null, kind === 'file' ? 'Preview' : 'Open')));
+  }
+  return React.createElement('div', { className: 'ax-produced-row' }, children);
+}
+Object.assign(__ds_scope, { ProducedRow });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/data/ProducedRow.jsx", error: String((e && e.message) || e) }); }
+
+// components/data/Summary.jsx
+try { (() => {
+function Summary({ html, fallback }) {
+  if (html) {
+    return React.createElement('div', {
+      className: 'ax-summary', dangerouslySetInnerHTML: { __html: html },
+    });
+  }
+  return React.createElement('div', { className: 'ax-summary ax-summary--empty' }, fallback);
+}
+Object.assign(__ds_scope, { Summary });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/data/Summary.jsx", error: String((e && e.message) || e) }); }
+
 // static/dropdown.js
 try { (() => {
 // Custom dropdown — a progressive enhancement over a native <select>.
@@ -1622,5 +1732,15 @@ __ds_ns.Tabs = __ds_scope.Tabs;
 __ds_ns.Tab = __ds_scope.Tab;
 
 __ds_ns.Pagination = __ds_scope.Pagination;
+
+__ds_ns.Disclosure = __ds_scope.Disclosure;
+
+__ds_ns.ToolCard = __ds_scope.ToolCard;
+
+__ds_ns.CheckRow = __ds_scope.CheckRow;
+
+__ds_ns.ProducedRow = __ds_scope.ProducedRow;
+
+__ds_ns.Summary = __ds_scope.Summary;
 
 })();

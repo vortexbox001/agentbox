@@ -645,8 +645,18 @@ Given a Dagster run id:
   ```
   The Dagster log itself streams every stdout line live and logs a one-line result summary.
 - **GraphQL** at `http://<host>:3000/graphql` for status and events, or the run page in the UI
-  (`/runs` lists runs from disk; `/runs/<run-id>` opens the Conversation / Context / Report / Files
-  tabs — see Run retention below).
+  (`/runs` lists runs from disk; `/runs/<run-id>` opens the run detail page — see Run retention
+  below). The detail page (spec 017) presents each run as **five collapsible sections** in the
+  order an operator asks the questions — **Summary, Output, Checks, Context, Transcript** (Summary/
+  Output/Checks/Transcript open by default, Context collapsed; each section's open/closed state is
+  remembered per browser). **Summary** renders the agent's final message as a small safe markdown
+  subset; **Output** lists `/output` artifacts and, when there are none, a best-effort **Produced
+  elsewhere** list (pull requests, commits, workspace files) mined from the run's own event stream;
+  **Checks** surfaces the recorded checks in the Agents-overview mark language (degrading to an
+  empty state when Dagster is unreachable); **Context** reuses the context card; **Transcript**
+  renders each tool call as a compact **IN/OUT card** (clamped to 3 lines, expand-on-click) and
+  keeps search (now also matching tool IN/OUT content) and the Readable/Raw-log toggle in its
+  header. The page is presentation and read-path only — it writes nothing to the run record.
 - **Run retention.** By default every run is kept forever. The **Settings** page has a Retention
   section (keep forever / prune after N days) persisted to `$AGENTBOX_CONFIG/settings.yaml`; a
   nightly Dagster schedule (`sched_prune_runs`) then removes only `events.jsonl` +

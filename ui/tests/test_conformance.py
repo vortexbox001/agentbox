@@ -261,3 +261,14 @@ def test_project_status_surface_uses_no_external_url_literal():
         urls = [u for u in re.findall(r"https?://[^\s\"')]+", text)
                 if not _NS_ALLOW.match(u)]
         assert urls == [], f"{rel} carries external URL literal(s): {urls}"
+
+
+# ── spec 017 SC-009: the clamp fade colour follows the background token ──
+
+def test_017_clamp_fade_follows_background_token():
+    css = open(os.path.join(_STATIC, "app.css"), encoding="utf-8").read()
+    m = re.search(r"\.ax-io-fade\s*\{[^}]*\}", css)
+    assert m, "no .ax-io-fade rule in app.css"
+    rule = m.group(0)
+    assert "linear-gradient" in rule and "var(--color-background-light)" in rule, \
+        "the clamp fade must resolve from the background token, not a literal (SC-009)"

@@ -478,11 +478,32 @@ _RUN_STATUS_FIELDS = (
 # the Agents-overview read (contract §C) but also pulls the execution's `runId` so each check
 # attaches to the exact run that produced the latest materialization — older runs of the same
 # asset correctly show `—` rather than borrowing the newest run's result.
+# spec 017 R5: additive selection of each execution's timestamp + one-line detail (evaluation
+# description → severity) so the run-detail Checks section can show a recorded time and detail.
+# Additive/best-effort — absent fields degrade to "—" and every failure arm still collapses to {}.
 _ASSET_CHECKS_SUBQUERY = (
     "{ __typename ... on AssetNode { assetChecksOrError { __typename "
     "... on AssetChecks { checks { name executionForLatestMaterialization "
-    "{ runId status evaluation { severity } } } } } } }"
+    "{ runId status timestamp evaluation { severity description } } } } } } }"
 )
+
+
+def _check_detail(execution: dict) -> str:
+    """One-line detail for a check row (spec 017): evaluation description → severity → "—"."""
+    evaluation = execution.get("evaluation") if isinstance(execution, dict) else None
+    evaluation = evaluation or {}
+    return evaluation.get("description") or evaluation.get("severity") or "—"
+
+
+def _check_recorded(execution: dict) -> str:
+    """Recorded time for a check row (spec 017), or "—" when the timestamp is absent."""
+    ts = execution.get("timestamp") if isinstance(execution, dict) else None
+    if not ts:
+        return "—"
+    try:
+        return datetime.datetime.fromtimestamp(float(ts)).strftime("%b %-d, %-I:%M %p")
+    except (OverflowError, OSError, ValueError, TypeError):
+        return "—"
 
 
 def _run_target(run: dict):
@@ -552,6 +573,8 @@ async def _run_checks_by_id(asset_keys: list[list[str]]) -> dict:
             by_run.setdefault(rid, []).append({
                 "name": c.get("name"),
                 "status": _check_status(ex),
+                "detail": _check_detail(ex),
+                "recorded": _check_recorded(ex),
             })
     return by_run
 

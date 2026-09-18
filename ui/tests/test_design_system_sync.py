@@ -40,3 +40,23 @@ def test_served_asset_matches_design_system(name):
         f"ui/static/{name} has drifted from ui/design-system/static/{name} beyond the "
         f"documented icon-href substitution; bring the served copy level (FR-024)."
     )
+
+
+# ── spec 017: the five new run-detail components are registered manifest ↔ bundle ──
+import json  # noqa: E402
+
+_DESIGN = os.path.join(UI_DIR, "design-system")
+_NEW_017 = ["Disclosure", "ToolCard", "CheckRow", "ProducedRow", "Summary"]
+
+
+@pytest.mark.parametrize("name", _NEW_017)
+def test_new_component_manifest_bundle_parity(name):
+    manifest = json.loads(open(os.path.join(_DESIGN, "_ds_manifest.json"), encoding="utf-8").read())
+    entry = next((c for c in manifest["components"] if c["name"] == name), None)
+    assert entry, f"{name} missing from _ds_manifest.json components"
+    assert any(sp["name"] == name for sp in manifest["startingPoints"]), \
+        f"{name} missing a startingPoints specimen"
+    bundle = open(os.path.join(_DESIGN, "_ds_bundle.js"), encoding="utf-8").read()
+    assert entry["sourcePath"] in bundle, f"{name} source not in the rebuilt bundle"
+    assert f"__ds_ns.{name} = __ds_scope.{name};" in bundle, \
+        f"{name} not exposed by the bundle namespace"

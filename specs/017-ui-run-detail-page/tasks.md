@@ -42,9 +42,9 @@ scripts change. Never write tasks against `config/` or `/data/…` (instance con
 
 **Purpose**: Working dev environment and a known-green baseline before any change.
 
-- [ ] T001 Set up the repo-root venv and install UI deps per AGENTS.md → Dev environment:
+- [X] T001 Set up the repo-root venv and install UI deps per AGENTS.md → Dev environment:
   `python3.12 -m venv .venv && .venv/bin/pip install -r ui/requirements.txt dagster==1.13.21 dagster-pipes==1.13.21`.
-- [ ] T002 Record the green baseline: run `.venv/bin/python -m pytest -q ui/tests` and confirm it passes
+- [X] T002 Record the green baseline: run `.venv/bin/python -m pytest -q ui/tests` and confirm it passes
   before any change (so regressions are attributable).
 
 ---
@@ -57,26 +57,26 @@ every story test reads.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 Add a shared golden run fixture that exercises **every** section, under `ui/tests/` (extend
+- [X] T003 Add a shared golden run fixture that exercises **every** section, under `ui/tests/` (extend
   `ui/tests/conftest.py` and/or a `ui/tests/fixtures/` run tree): a `report.json` with a markdown
   `notes` final message (heading, bold, code span, bullet list, URL); an `events.jsonl` with tool calls
   whose IN/OUT exceed 3 lines, a diff result, a `missing`/refused result, a GitHub `pull/N` `html_url`
   result, a git commit result with a short SHA, and a workspace write; a `context.json` with prompt +
   appended system prompt + ≥1 instruction file; plus a legacy run variant with neither report notes nor
   a final event (SC-010, quickstart "Automated validation"). Blocks all story tests.
-- [ ] T004 [P] Add the **Disclosure / section-card** design-system component:
+- [X] T004 [P] Add the **Disclosure / section-card** design-system component:
   `ui/design-system/components/layout/Disclosure.jsx` (+ `Disclosure.d.ts`, `Disclosure.prompt.md`) — a
   bordered card with a full-width, keyboard-operable disclosure header (chevron reflecting state, title,
   right-aligned muted closed-state note, `aria-expanded`, Enter/Space) — and a specimen in the layout
   category `*.card.html` (FR-003, contract design-system.md §1).
-- [ ] T005 Register Disclosure in `ui/design-system/_ds_manifest.json` (name + sourcePath + a
+- [X] T005 Register Disclosure in `ui/design-system/_ds_manifest.json` (name + sourcePath + a
   `startingPoints` specimen), rebuild `ui/design-system/_ds_bundle.js`, and document it in
   `ui/design-system/readme.md` (FR-037, SC-010). (Depends on T004.)
-- [ ] T006 Add the shared `disclosure` / `section_card` macro in
+- [X] T006 Add the shared `disclosure` / `section_card` macro in
   `ui/templates/components/macros.html` mirroring the Disclosure component (bordered card, disclosure
   header with chevron, title, right-aligned muted `note`, body slot, stable `id`/`aria-controls`)
   (FR-003). (Depends on T005.)
-- [ ] T007 [P] Add tokens-only styling for the section card / header / chevron / note in
+- [X] T007 [P] Add tokens-only styling for the section card / header / chevron / note in
   `ui/static/app.css` — colours, spacing, type, radius, border all via `var(--…)` tokens, no literals,
   no inline styles (FR-036, SC-009).
 
@@ -99,26 +99,26 @@ chevron, title, and right-aligned note; collapse a section, reload → state rem
 run → same choice applies (shared per browser); fresh profile / disabled localStorage → defaults, no
 error; header + six-stat strip unchanged.
 
-- [ ] T008 [P] [US1] Add the section-note builder helpers in `ui/runs_store.py` (or a small
+- [X] T008 [P] [US1] Add the section-note builder helpers in `ui/runs_store.py` (or a small
   `_section_notes` block) for the plumbing US1 owns — Context note "prompt · appended · N instruction
   file(s)" and Transcript note "N turns · M tool calls" — plus signatures for the Summary/Output/Checks
   notes that US3/US4/US5 fill in (FR-020/FR-034/FR-009/FR-014/FR-018).
-- [ ] T009 [US1] Rework `_run_detail_page` in `ui/main.py` to build an ordered list of five Section
+- [X] T009 [US1] Rework `_run_detail_page` in `ui/main.py` to build an ordered list of five Section
   view models (`id`, `title`, `default_open`, `note`, `body`) — Summary/Output/Checks/Transcript
   `default_open=True`, Context `default_open=False` — each body wrapping today's content as a starting
   point, and pass the list to the template. No route-signature change; still disk-first via
   `runs_store.read_run` (FR-001/FR-002, contract run-detail.md §A). (Depends on T003.)
-- [ ] T010 [US1] Replace the two-view main column in `ui/templates/runs/detail.html` with the five
+- [X] T010 [US1] Replace the two-view main column in `ui/templates/runs/detail.html` with the five
   section cards rendered from the `disclosure` macro over the section list, preserving the page header,
   crumb, status tag, agent/date chips, "View in Dagster" link and the six-stat strip unchanged
   (FR-001/FR-005). (Depends on T006, T009.)
-- [ ] T011 [US1] Implement section disclosure toggle + persistence in `ui/static/run-detail.js`: a
+- [X] T011 [US1] Implement section disclosure toggle + persistence in `ui/static/run-detail.js`: a
   single shared `localStorage` key `agentbox.runDetail.sections` mapping section id → open (NOT keyed
   per run id), applying saved state over server defaults on load, keyboard (Enter/Space) toggle with
   `aria-expanded` updates, and a safe fallback to the FR-002 defaults when localStorage is unavailable
   (no error) (FR-003/FR-004). This behaviour is JS-only and is validated **manually via quickstart US1**
   (SC-002) — see the Test-surface note (C1). (Depends on T010.)
-- [ ] T012 [US1] Tests in `ui/tests/test_runs.py` (rendered-markup hooks only — see the Test-surface
+- [X] T012 [US1] Tests in `ui/tests/test_runs.py` (rendered-markup hooks only — see the Test-surface
   note, C1): exactly five sections in the fixed order; the FR-002 open/closed defaults present in the
   rendered markup (`aria-expanded` / default-open attributes); each closed section renders a chevron +
   title + right-aligned note; the shared `agentbox.runDetail.sections` storage-key wiring is present in
@@ -142,41 +142,41 @@ expands and shows "Show less"; a ≤3-line call shows no fade/link; Expand-all e
 becomes Collapse-all, an individual card still collapses while "all" is on; a refused write shows
 `failed` and its OUT reads in the failed colour; a diff preserves its colouring; reload → cards clamped.
 
-- [ ] T013 [P] [US2] Add the **IN/OUT tool card** design-system component
+- [X] T013 [P] [US2] Add the **IN/OUT tool card** design-system component
   `ui/design-system/components/data/ToolCard.jsx` (+ `ToolCard.d.ts`, `ToolCard.prompt.md`) and a
   specimen in the data category `*.card.html`: head line (name, ellipsised description, right-aligned
   mono marker), IN/OUT rows clamped to 3 lines with a token-**background** fade only when overflowing,
   diff OUT expanded by default, missing/failed OUT intents (FR-021–FR-027, contract design-system.md
   §2). (Depends on T004 pattern; independent file.)
-- [ ] T014 [US2] Register ToolCard in `ui/design-system/_ds_manifest.json`, rebuild
+- [X] T014 [US2] Register ToolCard in `ui/design-system/_ds_manifest.json`, rebuild
   `ui/design-system/_ds_bundle.js`, document it in `ui/design-system/readme.md` (FR-037). (Depends on
   T013.)
-- [ ] T015 [US2] Add the `tool_card` macro in `ui/templates/components/macros.html` (props: `name`,
+- [X] T015 [US2] Add the `tool_card` macro in `ui/templates/components/macros.html` (props: `name`,
   `description`, `marker`, `in_text`/`out_text`, `in_overflow`/`out_overflow`, `in_lines`/`out_lines`,
   `is_diff`, `out_intent`) — leaving the existing `tool_call`/`timeline`/`diff_block`/`tool_out` macros
   untouched for the compare page (FR-037). (Depends on T014.)
-- [ ] T016 [US2] Add tool-card enrichment in `ui/runs_store.py` over each tool from
+- [X] T016 [US2] Add tool-card enrichment in `ui/runs_store.py` over each tool from
   `conversation_entries(events)`: `description` (call description → file path for read/write/edit → arg
   summary), `marker` (`failed` when `missing` or a permission-refusal marker; `exit N` only when the
   result text carries a recognizable exit code; else none), `in_text`/`out_text`,
   `in_overflow`/`out_overflow` (`line_count > 3`), `in_lines`/`out_lines`, `is_diff` (expanded by
   default), `out_intent` (failed/warning colour). Pure, read-path only (FR-021–FR-027, R6/R7, contract
   run-detail.md §C).
-- [ ] T017 [US2] Render the Transcript section's tool invocations with the `tool_card` macro in
+- [X] T017 [US2] Render the Transcript section's tool invocations with the `tool_card` macro in
   `ui/templates/runs/detail.html` (replacing US1's minimal transcript body for tool entries) and add a
   transcript toolbar with the outlined ghost **Expand all / Collapse all output** control (FR-028).
   (Depends on T015, T016, T010.)
-- [ ] T018 [US2] Add clamp/expand behaviour in `ui/static/run-detail.js`: per-card `is-expanded` toggle
+- [X] T018 [US2] Add clamp/expand behaviour in `ui/static/run-detail.js`: per-card `is-expanded` toggle
   on row/link click and via keyboard (Enter/Space, `aria-expanded`), flip "Show all N lines" ↔ "Show
   less", and the Expand-all/Collapse-all toolbar toggle that is **view-only and does not persist**
   (resets to clamped on reload) while still allowing single-card collapse (FR-025/FR-028). This
   behaviour is JS-only and is validated **manually via quickstart US2** — see the Test-surface note
   (C1); the automated tests (T020) assert only the rendered clamp/overflow markup hooks. (Depends on
   T017.)
-- [ ] T019 [P] [US2] Add tokens-only styling for the tool card (head, IN/OUT box ground, 3-line clamp,
+- [X] T019 [P] [US2] Add tokens-only styling for the tool card (head, IN/OUT box ground, 3-line clamp,
   fade following the **background** token, marker mono, failed/warning OUT intents) in
   `ui/static/app.css` (FR-024/FR-026/FR-027/FR-036, SC-009).
-- [ ] T020 [US2] Tests in `ui/tests/test_runs_store.py` (clamp overflow > 3 lines; `exit`/`failed`
+- [X] T020 [US2] Tests in `ui/tests/test_runs_store.py` (clamp overflow > 3 lines; `exit`/`failed`
   derivation; description fallback order) and `ui/tests/test_runs.py` (a card renders with `exit N`/
   `failed`, an overflowing OUT shows the "Show all N lines" affordance, a ≤3-line row shows none, a diff
   OUT is expanded) (SC-005/SC-006, FR-022/FR-024). (Depends on T016, T017.)
@@ -196,32 +196,32 @@ formatted text with no raw markup; a run with no notes but a final event shows t
 run with neither shows the foot line + "No final message was captured."; the rail's Usage block no
 longer shows the notes.
 
-- [ ] T021 [P] [US3] Add **`ui/markdown.py`** — a dependency-free `render_summary(text) -> Markup` that
+- [X] T021 [P] [US3] Add **`ui/markdown.py`** — a dependency-free `render_summary(text) -> Markup` that
   escapes all input first, then emits only the FR-007 subset (paragraphs, `##`/`###` → small uppercase
   labels, `**bold**`, `` `inline code` ``, `-`/`*` bullet lists, bare/`[label](url)` URLs → links) and
   renders everything else as escaped plain text — **no raw HTML pass-through** (FR-007, R2, contract
   run-detail.md §D).
-- [ ] T022 [P] [US3] Add the **Summary** design-system component
+- [X] T022 [P] [US3] Add the **Summary** design-system component
   `ui/design-system/components/data/Summary.jsx` (+ `.d.ts`, `.prompt.md`) and a data-category specimen:
   headings as small uppercase labels, bold, inline-code chips, bullet lists, links, plus a `fallback`
   slot — tokens only (FR-007, contract design-system.md §5). (Depends on T004 pattern; independent
   file.)
-- [ ] T023 [US3] Register Summary in `ui/design-system/_ds_manifest.json`, rebuild
+- [X] T023 [US3] Register Summary in `ui/design-system/_ds_manifest.json`, rebuild
   `ui/design-system/_ds_bundle.js`, document it in `ui/design-system/readme.md` (FR-037). (Depends on
   T022.)
-- [ ] T024 [US3] Add the `summary` macro in `ui/templates/components/macros.html` (props: `html`,
+- [X] T024 [US3] Add the `summary` macro in `ui/templates/components/macros.html` (props: `html`,
   optional `fallback`) (FR-007). (Depends on T023.)
-- [ ] T025 [US3] Build the Summary view model in `ui/main.py`: source precedence `report.notes` →
+- [X] T025 [US3] Build the Summary view model in `ui/main.py`: source precedence `report.notes` →
   final event text → none; when none, the run **foot line** (status · turns · files written) + note
   "No final message was captured."; otherwise render via `render_summary` and set the note "final
   message from the agent" (FR-008/FR-009, R3). (Depends on T021, T009.)
-- [ ] T026 [US3] Render the Summary section body with the `summary` macro in
+- [X] T026 [US3] Render the Summary section body with the `summary` macro in
   `ui/templates/runs/detail.html`, and **remove the `report.notes` line** from the rail's Usage block in
   `ui/templates/runs/_rail.html` (it now lives only in the Summary) (FR-006/US3-AC4). (Depends on T024,
   T025.)
-- [ ] T027 [P] [US3] Add tokens-only styling for the rendered summary (heading label, code chip, list,
+- [X] T027 [P] [US3] Add tokens-only styling for the rendered summary (heading label, code chip, list,
   link) in `ui/static/app.css` (FR-036, SC-009).
-- [ ] T028 [US3] Tests: `ui/tests/test_runs.py` — the three fallback cases render correctly and the
+- [X] T028 [US3] Tests: `ui/tests/test_runs.py` — the three fallback cases render correctly and the
   rail no longer carries the notes; add a golden/byte assertion for the reference-message rendering (no
   raw markup, `<script>`/tables not passed through) covering `ui/markdown.py` (SC-003/SC-008, FR-007).
   (Depends on T025, T026.)
@@ -242,33 +242,33 @@ a commit shows "No output artifacts" then a Produced-elsewhere list (Pull reques
 SHA) each with an Open action and the note "0 files · 1 pull request"; a run with no minable evidence
 shows the file list / "No output artifacts" alone.
 
-- [ ] T029 [US4] Add `produced_elsewhere(events) -> list[dict]` to `ui/runs_store.py` — a pure,
+- [X] T029 [US4] Add `produced_elsewhere(events) -> list[dict]` to `ui/runs_store.py` — a pure,
   best-effort miner returning `{kind, identifier, action}` grouped **pull_request → commit → file**,
   event order within each kind: PR = a `tool_result` whose `result` contains a `https://github.com/…/
   pull/N` URL; commit = a git result with a 7–40 hex short SHA after a commit/push marker; file = a
   Write/Edit/MultiEdit/NotebookEdit `tool_call` with a `file_path`/`path` arg. Returns `[]` when nothing
   matches; never raises (FR-011/FR-012/FR-013, R4, contract run-detail.md §B).
-- [ ] T030 [US4] Add the Output note builder in `ui/runs_store.py`: "N files · M pull request(s)", each
+- [X] T030 [US4] Add the Output note builder in `ui/runs_store.py`: "N files · M pull request(s)", each
   part only when non-zero, "0 files" alone when nothing produced (FR-014).
-- [ ] T031 [P] [US4] Add the **Produced-elsewhere row** design-system component
+- [X] T031 [P] [US4] Add the **Produced-elsewhere row** design-system component
   `ui/design-system/components/data/ProducedRow.jsx` (+ `.d.ts`, `.prompt.md`) and a data-category
   specimen: kind label (Pull request / Commit / File), identifier in mono, Open/Preview action
   (FR-012, contract design-system.md §4). (Independent file.)
-- [ ] T032 [US4] Register ProducedRow in `ui/design-system/_ds_manifest.json`, rebuild
+- [X] T032 [US4] Register ProducedRow in `ui/design-system/_ds_manifest.json`, rebuild
   `ui/design-system/_ds_bundle.js`, document it in `ui/design-system/readme.md` (FR-037). (Depends on
   T031.)
-- [ ] T033 [US4] Add the `produced_row` macro in `ui/templates/components/macros.html` (props: `kind`,
+- [X] T033 [US4] Add the `produced_row` macro in `ui/templates/components/macros.html` (props: `kind`,
   `identifier`, `action`) (FR-012). (Depends on T032.)
-- [ ] T034 [US4] Build the Output view model in `ui/main.py` (files via `read_output_files`; `produced`
+- [X] T034 [US4] Build the Output view model in `ui/main.py` (files via `read_output_files`; `produced`
   via `produced_elsewhere` shown when files empty and evidence exists; the Output note) (FR-010–FR-014).
   (Depends on T029, T030, T009.)
-- [ ] T035 [US4] Render the Output section in `ui/templates/runs/detail.html` — the existing `file_row`
+- [X] T035 [US4] Render the Output section in `ui/templates/runs/detail.html` — the existing `file_row`
   macro for artifacts, then "No output artifacts" + the `produced_row` list when applicable — and
   **remove the Output-artifacts block** from `ui/templates/runs/_rail.html` (FR-006/FR-010/FR-011).
   (Depends on T033, T034.)
-- [ ] T036 [P] [US4] Add tokens-only styling for the produced-elsewhere row (kind label, mono
+- [X] T036 [P] [US4] Add tokens-only styling for the produced-elsewhere row (kind label, mono
   identifier, action) in `ui/static/app.css` (FR-036, SC-009).
-- [ ] T037 [US4] Tests: `ui/tests/test_runs_store.py` (`produced_elsewhere` PR/commit/file detection,
+- [X] T037 [US4] Tests: `ui/tests/test_runs_store.py` (`produced_elsewhere` PR/commit/file detection,
   grouping order, `[]` on no evidence, no raise on garbage; the Output note builder) and
   `ui/tests/test_runs.py` (the Output section renders file rows / the produced list / "No output
   artifacts" alone; the note reads "0 files · 1 pull request"; the rail no longer carries artifacts)
@@ -289,35 +289,35 @@ commits made outside `/output`.
 recorded time, and the note counts outcomes (e.g. "4 passed · 1 warning"); a run with no checks (or
 Dagster stopped) shows "No checks were configured for this agent." and the note reads "—".
 
-- [ ] T038 [US5] Extend the check sub-selection in `ui/dagster.py` (`_ASSET_CHECKS_SUBQUERY` and its
+- [X] T038 [US5] Extend the check sub-selection in `ui/dagster.py` (`_ASSET_CHECKS_SUBQUERY` and its
   parse in `_run_checks_by_id`) to **additively** select each execution's **timestamp** and a one-line
   **detail** (evaluation description → severity), so each check becomes `{name, status, detail,
   recorded}`; absent fields degrade to `—`; every existing failure arm still collapses to plain data so
   the section degrades to empty when Dagster is unreachable (FR-015/FR-016, R5, contract run-detail.md
   §E). No new query, no new check types, read-only.
-- [ ] T039 [US5] Add the Checks note builder in `ui/runs_store.py` (or the notes block): count outcomes
+- [X] T039 [US5] Add the Checks note builder in `ui/runs_store.py` (or the notes block): count outcomes
   across the full status vocabulary — "K passed · L warning(s)" / "P failed" (with `fail-blocking`
   counted as failed) / "Q not run" — each part shown only when non-zero; "—" only when the run has zero
   recorded checks (a `not-run` check still counts and does not yield "—") (FR-017/FR-018).
-- [ ] T040 [P] [US5] Add the **Check row** design-system component
+- [X] T040 [P] [US5] Add the **Check row** design-system component
   `ui/design-system/components/data/CheckRow.jsx` (+ `.d.ts`, `.prompt.md`) and a data-category
   specimen, reusing the existing `ax-result` mark + `CHECK_META` vocabulary (pass/warn/fail-blocking/
   not-run) so the mark matches the Agents overview; props `status`, `name`, `detail`, `recorded`
   (FR-015/FR-016, contract design-system.md §3). (Independent file.)
-- [ ] T041 [US5] Register CheckRow in `ui/design-system/_ds_manifest.json`, rebuild
+- [X] T041 [US5] Register CheckRow in `ui/design-system/_ds_manifest.json`, rebuild
   `ui/design-system/_ds_bundle.js`, document it in `ui/design-system/readme.md` (FR-037). (Depends on
   T040.)
-- [ ] T042 [US5] Add the `check_row` macro in `ui/templates/components/macros.html` (a row around the
+- [X] T042 [US5] Add the `check_row` macro in `ui/templates/components/macros.html` (a row around the
   existing `ax-result` mark; props `status`, `name`, `detail`, `recorded`) (FR-015). (Depends on T041.)
-- [ ] T043 [US5] Build the Checks view model in `ui/main.py`: fetch checks best-effort via
+- [X] T043 [US5] Build the Checks view model in `ui/main.py`: fetch checks best-effort via
   `dagster.run_status([run_id])`, map to `{status, name, detail, recorded}`, compute the note, and set
   the empty text "No checks were configured for this agent." when empty; the page still renders with
   Dagster stopped (FR-015/FR-017/FR-018, R5). (Depends on T038, T039, T009.)
-- [ ] T044 [US5] Render the Checks section in `ui/templates/runs/detail.html` with the `check_row` macro
+- [X] T044 [US5] Render the Checks section in `ui/templates/runs/detail.html` with the `check_row` macro
   (or the empty-state line) (FR-015/FR-017). (Depends on T042, T043.)
-- [ ] T045 [P] [US5] Add tokens-only styling for the check row (mark, name, one-line detail,
+- [X] T045 [P] [US5] Add tokens-only styling for the check row (mark, name, one-line detail,
   right-aligned recorded time) in `ui/static/app.css` (FR-036, SC-009).
-- [ ] T046 [US5] Tests: `ui/tests/test_dagster.py` (the additive time + detail fields parse; the Checks
+- [X] T046 [US5] Tests: `ui/tests/test_dagster.py` (the additive time + detail fields parse; the Checks
   read still degrades to `{}`/"—" when Dagster is unreachable) and `ui/tests/test_runs.py` (checks
   render with mark/name/detail/time and the outcome-count note across the full vocabulary — including a
   `fail-blocking` check counted as "failed" and a `not-run` check counted separately and NOT yielding
@@ -339,13 +339,13 @@ counting instruction files; harness/container/inputs/completeness stay in the ra
 with click-to-expand rows exactly as today; the note counts instruction files; harness/container/
 inputs/completeness remain in the rail in order.
 
-- [ ] T047 [US6] Nest the existing `ui/templates/runs/_context_card.html` verbatim inside the Context
+- [X] T047 [US6] Nest the existing `ui/templates/runs/_context_card.html` verbatim inside the Context
   section body in `ui/templates/runs/detail.html`, keeping its interaction unchanged, and confirm the
   Context section is collapsed by default (FR-002/FR-019). (Depends on T010.)
-- [ ] T048 [US6] Wire the Context note "prompt · appended · N instruction file(s)" (counting
+- [X] T048 [US6] Wire the Context note "prompt · appended · N instruction file(s)" (counting
   `context.instruction_files`) into the Context Section view model in `ui/main.py` using the US1 note
   helper (FR-020). (Depends on T008, T009.)
-- [ ] T049 [US6] Tests in `ui/tests/test_runs.py`: the Context section contains the context card content
+- [X] T049 [US6] Tests in `ui/tests/test_runs.py`: the Context section contains the context card content
   and is collapsed by default; the note counts instruction files; the rail still contains
   Configuration/Container/Inputs/Completeness/Asset run/Issue/Usage in order (FR-019/FR-020/US6-AC3).
   (Depends on T047, T048.)
@@ -367,21 +367,21 @@ and the card's clamped state; the Readable/Raw-log toggle switches to the unchan
 view and back; the last assistant message + final event render once as a Result; the foot line sits at
 the bottom.
 
-- [ ] T050 [US7] Move the **Readable / Raw-log** control and the **search box + match count** into the
+- [X] T050 [US7] Move the **Readable / Raw-log** control and the **search box + match count** into the
   Transcript section header in `ui/templates/runs/detail.html` (no longer page-level chrome); keep the
   raw `transcript.jsonl` view unchanged; ensure the last assistant message + final event dedupe to a
   single **Result** entry and the run **foot line** (status · turns · files written · tool calls)
   renders at the bottom of the section (FR-030/FR-031/FR-032/FR-033). (Depends on T017.)
-- [ ] T051 [US7] Extend the transcript search in `ui/static/run-detail.js` to match message text **and**
+- [X] T051 [US7] Extend the transcript search in `ui/static/run-detail.js` to match message text **and**
   tool IN/OUT content, hide non-matching entries, report the match count, **auto-expand** a card that
   matches only on clamped IN/OUT while the search is active and restore its prior clamped state when the
   search is cleared; wire the relocated Readable/Raw-log toggle (FR-029/FR-030). The hide / auto-expand-
   on-match behaviour is JS-only and is validated **manually via quickstart US7** (SC-007) — see the
   Test-surface note (C1). (Depends on T050, T018.)
-- [ ] T052 [US7] Ensure `_run_detail_page`/`runs_store` expose the Result-dedup flag and the transcript
+- [X] T052 [US7] Ensure `_run_detail_page`/`runs_store` expose the Result-dedup flag and the transcript
   foot line (status · turns · files written · tool calls) to the template in `ui/main.py`
   (FR-032/FR-033). (Depends on T009.)
-- [ ] T053 [US7] Tests in `ui/tests/test_runs.py` (rendered-markup hooks only — see the Test-surface
+- [X] T053 [US7] Tests in `ui/tests/test_runs.py` (rendered-markup hooks only — see the Test-surface
   note, C1): the IN/OUT text is present in the markup so it is searchable, the match-count element and
   search box render inside the Transcript header, the raw-log toggle is inside the Transcript header,
   the duplicate final message renders as a single Result, and the foot line sits at the bottom of the
@@ -397,28 +397,33 @@ skimmable transcript.
 
 **Purpose**: Conformance, docs, and the full-suite gate across all sections.
 
-- [ ] T054 [P] Refresh the run-detail description in `README.md` (five sections, the IN/OUT card,
+- [X] T054 [P] Refresh the run-detail description in `README.md` (five sections, the IN/OUT card,
   produced-elsewhere) so docs track reality (Principle VI, FR — plan.md).
-- [ ] T055 Extend `ui/tests/test_design_system_sync.py` to assert manifest ↔ macro ↔ bundle parity for
+- [X] T055 Extend `ui/tests/test_design_system_sync.py` to assert manifest ↔ macro ↔ bundle parity for
   all five new components (Disclosure, ToolCard, CheckRow, ProducedRow, Summary) and
   `ui/tests/test_design_system_docs.py` to assert the readme documents each (SC-010, FR-037). (Depends
   on T005, T014, T023, T032, T041.)
-- [ ] T056 Extend `ui/tests/test_conformance.py` so the new markup stays tokens-only, macro-composed,
+- [X] T056 Extend `ui/tests/test_conformance.py` so the new markup stays tokens-only, macro-composed,
   with no inline styles and no literal colours/pixels — including that the clamp fade colour follows the
   **background** token (FR-036, SC-009, SC-010).
-- [ ] T057 Run the full gate `.venv/bin/python -m pytest -q ui/tests` and confirm every suite passes
+- [X] T057 Run the full gate `.venv/bin/python -m pytest -q ui/tests` and confirm every suite passes
   (runs, runs_store, dagster, conformance, ds-sync, ds-docs), including the golden fixture rendering
   every section (SC-010, quickstart "Automated validation"). **Note (finding C1):** a green `pytest`
   run is **not by itself** sufficient acceptance — SC-002, SC-005 (runtime half) and SC-007 have no
   automated coverage (no JS test harness; see the Test-surface note) and are signed off only by the
   required manual walk-through in T058.
-- [ ] T058 **Required acceptance gate (not optional — finding C1).** Walk quickstart.md US1–US7 + the
+- [!] T058 **Required acceptance gate (not optional — finding C1).** Walk quickstart.md US1–US7 + the
   theme check against the reference run (`speckit-open-pr`, 2026-09-18) in light/dark/Indigo, confirming
   the section borders, IN/OUT box ground + fade, muted OUT text and check marks all read correctly
   (SC-009). This walk-through is the **sole** sign-off for the client-only behaviours SC-002 (per-browser
   section persistence), SC-005 (clamp expand-on-click, runtime half) and SC-007 (search hide +
   auto-expand-on-match); acceptance is incomplete until both T057 (automated) and T058 (manual) pass.
-- [ ] T059 [P] Add a read-path/no-write guard test in `ui/tests/` (e.g. `test_runs.py` or a small
+  **BLOCKED (unattended agent):** this is a manual browser walk-through requiring a live Compose
+  stack (`ui`, `dagster-webserver`) plus the reference run in a data root, in three themes — none of
+  which is available in this headless environment. The automated half (T057) passes; the server-side
+  markup hooks these client-only behaviours act on are covered by T012/T020/T053. A human must run
+  this walk-through before final sign-off.
+- [X] T059 [P] Add a read-path/no-write guard test in `ui/tests/` (e.g. `test_runs.py` or a small
   `test_scope.py`) that makes the FR-035 "presentation and read-path only" guarantee verifiable rather
   than policy-only: assert `ui.schema.SCHEMA_VERSION` is unchanged, that `ui/requirements.txt` gains no
   new dependency, and that rendering the run detail page writes nothing to the run record (no new

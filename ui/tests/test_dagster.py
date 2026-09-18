@@ -211,7 +211,10 @@ def test_run_status_batches_reads_and_parses(settings, monkeypatch):
     assert out["runs"]["a"]["status"] == "SUCCESS"
     assert out["runs"]["a"]["target"] == "refined/daily"
     assert out["runs"]["a"]["launched_by"] == {"kind": "schedule", "name": "sched_x"}
-    assert out["runs"]["a"]["checks"] == [{"name": "freshness", "status": "pass"}]
+    # spec 017 R5: each check now additively carries a one-line detail + recorded time; absent
+    # here (the payload has no evaluation/timestamp) so both degrade to "—".
+    assert out["runs"]["a"]["checks"] == [
+        {"name": "freshness", "status": "pass", "detail": "—", "recorded": "—"}]
     assert out["runs"]["b"]["target"] == "agent_hello"          # falls back to the job name
     assert out["runs"]["b"]["launched_by"] == {"kind": "sensor", "name": "autocond_hello"}
     assert out["runs"]["b"]["checks"] is None                   # no asset → no checks
@@ -248,6 +251,57 @@ def test_run_status_degrades_on_python_error_arm(settings, monkeypatch):
                         lambda *a, **k: _CountingClient(payload, calls))
     out = asyncio.run(dagster.run_status(["a"]))
     assert out == {"reachable": False, "runs": {}}
+
+
+# ── spec 017 R5: the additive check fields (time + one-line detail) parse ──
+
+def test_run_checks_carry_detail_and_recorded(settings, monkeypatch):
+    import dagster
+    calls = []
+    runs_payload = {"data": {"runsOrError": {"__typename": "Runs", "results": [
+        _run_result("a", "SUCCESS", asset=["refined", "daily"], tags=[])]}}}
+    # The additive selection pulls timestamp + evaluation.description off the execution.
+    checks_payload = {"data": {"c0": {"__typename": "AssetNode", "assetChecksOrError": {
+        "__typename": "AssetChecks", "checks": [
+            {"name": "freshness", "executionForLatestMaterialization": {
+                "runId": "a", "status": "SUCCEEDED",
+                "timestamp": 1_600_000_000.0,
+                "evaluation": {"severity": "ERROR", "description": "materialized within 24h"}}}]}}}}
+
+    def dispatch(query):
+        # The subquery must request the new fields so they can be parsed.
+        if "assetNodeOrError" in query:
+            assert "timestamp" in query and "description" in query
+            return checks_payload
+        return runs_payload
+
+    monkeypatch.setattr(dagster.httpx, "AsyncClient",
+                        lambda *a, **k: _CountingClient(dispatch, calls))
+    out = asyncio.run(dagster.run_status(["a"]))
+    check = out["runs"]["a"]["checks"][0]
+    assert check["name"] == "freshness" and check["status"] == "pass"
+    assert check["detail"] == "materialized within 24h"
+    assert check["recorded"] != "—"          # a real timestamp formats to a label
+
+
+def test_run_checks_absent_fields_degrade_to_emdash(settings, monkeypatch):
+    import dagster
+    calls = []
+    runs_payload = {"data": {"runsOrError": {"__typename": "Runs", "results": [
+        _run_result("a", "SUCCESS", asset=["refined", "daily"], tags=[])]}}}
+    checks_payload = {"data": {"c0": {"__typename": "AssetNode", "assetChecksOrError": {
+        "__typename": "AssetChecks", "checks": [
+            {"name": "freshness", "executionForLatestMaterialization": {
+                "runId": "a", "status": "SUCCEEDED"}}]}}}}  # no timestamp / evaluation
+
+    def dispatch(query):
+        return checks_payload if "assetNodeOrError" in query else runs_payload
+
+    monkeypatch.setattr(dagster.httpx, "AsyncClient",
+                        lambda *a, **k: _CountingClient(dispatch, calls))
+    out = asyncio.run(dagster.run_status(["a"]))
+    check = out["runs"]["a"]["checks"][0]
+    assert check["detail"] == "—" and check["recorded"] == "—"
 
 
 # ── spec 016: the project_status sensor's held-issue report surfaces (FR-025) ─

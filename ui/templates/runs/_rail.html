@@ -68,19 +68,8 @@
 {% endcall %}
 {% endif %}
 
-{% call ui.context_section(title="Output artifacts", note=(output_files|length ~ " file(s)")) %}
-  {% if not output_files %}
-  <div class="ax-run-kv-val ax-dim">No output artifacts.</div>
-  {% else %}
-  <div class="ax-file-list">
-    {% for f in output_files %}
-    {{ ui.file_row(name=f.name, size=(f.size ~ " B"), previewable=f.previewable,
-                   href="/api/runs/" ~ run.run_id ~ "/files/" ~ f.name) }}
-    {% endfor %}
-  </div>
-  {% endif %}
-{% endcall %}
-
+{# Output artifacts (moved to the Output section, spec 017 FR-010) and the final-message notes
+   (moved to the Summary section, FR-006/US3-AC4) no longer live in the rail. #}
 {% call ui.context_section(title="Usage") %}
   {{ ui.context_kv(key="Input tokens", value=report.get("tokens_in"), mono=true, dim=(report.get("tokens_in") is none)) }}
   {{ ui.context_kv(key="Output tokens", value=report.get("tokens_out"), mono=true, dim=(report.get("tokens_out") is none)) }}
@@ -88,5 +77,4 @@
   {{ ui.context_kv(key="Files written", value=report.get("files_written"), mono=true, dim=(report.get("files_written") is none)) }}
   <div class="ax-run-kv ax-run-total"><span class="ax-run-kv-key">Total cost</span><span class="ax-run-kv-val ax-mono">{{ ("$%.4f"|format(cost)) if cost is not none else "—" }}</span></div>
   {% if report.get("error") %}<div class="ax-tool-out ax-tool-out--fail">{{ report.error }}</div>{% endif %}
-  {% if report.get("notes") %}<div class="ax-report-notes">{{ report.notes }}</div>{% endif %}
 {% endcall %}

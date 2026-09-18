@@ -178,3 +178,32 @@ def test_pagination_is_registered_end_to_end():
 def test_pagination_documented_in_readme():
     readme = _read(os.path.join(DESIGN_DIR, "readme.md"))
     assert "Pagination" in readme, "readme.md does not document the Pagination component"
+
+
+# ── spec 017 / FR-037: the five run-detail components are design-system-first ──
+_NEW_017 = [
+    ("Disclosure", "disclosure", "components/layout/Disclosure.jsx", "components/layout"),
+    ("ToolCard", "tool_card", "components/data/ToolCard.jsx", "components/data"),
+    ("CheckRow", "check_row", "components/data/CheckRow.jsx", "components/data"),
+    ("ProducedRow", "produced_row", "components/data/ProducedRow.jsx", "components/data"),
+    ("Summary", "summary", "components/data/Summary.jsx", "components/data"),
+]
+
+
+@pytest.mark.parametrize("name,macro,src,folder", _NEW_017)
+def test_017_component_registered_end_to_end(name, macro, src, folder):
+    manifest = json.loads(_read(MANIFEST))
+    assert any(c["name"] == name for c in manifest["components"])
+    assert any(sp["name"] == name for sp in manifest["startingPoints"])
+    assert macro in _macro_names(), f"no shared `{macro}` macro for {name}"
+    bundle = _read(os.path.join(DESIGN_DIR, "_ds_bundle.js"))
+    assert src in bundle and f"__ds_ns.{name} = __ds_scope.{name};" in bundle
+    stem = src.split("/")[-1][:-4]
+    for f in (stem + ".jsx", stem + ".d.ts", stem + ".prompt.md"):
+        assert os.path.exists(os.path.join(DESIGN_DIR, folder, f)), f"missing {f}"
+
+
+@pytest.mark.parametrize("name", [n for n, _, _, _ in _NEW_017])
+def test_017_component_documented_in_readme(name):
+    readme = _read(os.path.join(DESIGN_DIR, "readme.md"))
+    assert name in readme, f"readme.md does not document {name}"

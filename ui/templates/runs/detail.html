@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% import "components/macros.html" as ui %}
 
-{# Full-bleed run-detail page (spec 012, composed as the design-system run-detail specimen): the
-   run-view is the sole scroller with its own header + stat strip, then a two-column body — the
-   transcript timeline (Readable / Raw-log toggle) beside a configuration rail. #}
+{# Full-bleed run-detail page (spec 017): the run-view is the sole scroller with its own header +
+   stat strip, then a two-column body — five collapsible sections (Summary, Output, Checks,
+   Context, Transcript) beside a configuration rail. Each section is a `disclosure` card; the
+   Transcript keeps the Readable/Raw-log toggle and search, moved into its own header. #}
 {% block content_class %}ax-content--flush{% endblock %}
 {% block page_header %}{% endblock %}
 
@@ -36,60 +37,106 @@
 
   <div class="ax-run-body{% if not context %} ax-run-body--solo{% endif %}">
     <div class="ax-run-main">
-      <div class="ax-transcript-head">
-        <h2>Conversation</h2>
-        <div class="ax-segmented" role="tablist" aria-label="Transcript view" data-segmented>
-          <button type="button" class="ax-btn ax-seg is-active" role="tab" data-view="readable">Readable</button>
-          <button type="button" class="ax-btn ax-seg" role="tab" data-view="raw">Raw log</button>
-        </div>
-      </div>
+      <div class="ax-sections">
+        {%- for s in sections %}
+        {% call ui.disclosure(id=s.id, title=s.title, note=s.note, open=s.default_open) %}
 
-      {# Readable view: an optional "context given to the agent" card, then the threaded timeline. #}
-      <div data-view-panel="readable">
-        {% if context and ((context.prompt and context.prompt.prompt_text) or context.instruction_files) %}
-        {% include "runs/_context_card.html" %}
-        {% endif %}
+          {%- if s.id == "summary" %}
+          {{ ui.summary(html=summary.html, fallback=summary.fallback) }}
 
-        {% if run.conversation_available %}
-        <div class="ax-conv-toolbar">
-          {{ ui.text_input(name="conv-search", placeholder="Search this conversation…", id="ax-conv-search") }}
-          <span class="ax-conv-count" data-conv-count></span>
-        </div>
-        {% call ui.timeline(attrs={"data-conversation": true}) %}
-          {%- for entry in entries %}
-          {% call ui.timeline_entry(role=entry.role, meta=entry.meta, state=entry.state) %}
-            {%- if entry.text %}<p class="ax-entry-msg">{{ entry.text }}</p>{% endif %}
-            {%- for t in entry.tools %}
-            {% call ui.tool_call(tool=t.tool, arg=t.arg, exit=t.exit, state=t.state, missing=t.missing) %}
-              {%- if t.diff %}{{ ui.diff_block(t.diff, fail=(t.state == "error")) }}
-              {%- elif t.result %}{{ ui.tool_out(t.result, fail=(t.state == "error")) }}{% endif %}
-            {% endcall %}
+          {%- elif s.id == "output" %}
+          {% if output_files %}
+          <div class="ax-file-list">
+            {%- for f in output_files %}
+            {{ ui.file_row(name=f.name, size=(f.size ~ " B"), previewable=f.previewable,
+                           href="/api/runs/" ~ run.run_id ~ "/files/" ~ f.name) }}
             {%- endfor %}
-          {% endcall %}
-          {%- endfor %}
+          </div>
+          {% else %}
+          <div class="ax-run-kv-val ax-dim">No output artifacts</div>
+          {% if produced %}
+          <div class="ax-produced-list">
+            {%- for p in produced %}
+            {{ ui.produced_row(kind=p.kind, identifier=p.identifier, action=p.action) }}
+            {%- endfor %}
+          </div>
+          {% endif %}
+          {% endif %}
+
+          {%- elif s.id == "checks" %}
+          {% if checks %}
+          <div class="ax-check-rows">
+            {%- for c in checks %}
+            {{ ui.check_row(status=c.status, name=c.name, detail=c.detail, recorded=c.recorded) }}
+            {%- endfor %}
+          </div>
+          {% else %}
+          <div class="ax-run-kv-val ax-dim">{{ checks_empty }}</div>
+          {% endif %}
+
+          {%- elif s.id == "context" %}
+          {% if context and ((context.prompt and context.prompt.prompt_text) or context.instruction_files) %}
+          {% include "runs/_context_card.html" %}
+          {% else %}
+          <div class="ax-run-kv-val ax-dim">No context was captured.</div>
+          {% endif %}
+
+          {%- elif s.id == "transcript" %}
+          <div class="ax-transcript-controls">
+            <div class="ax-segmented" role="tablist" aria-label="Transcript view" data-segmented>
+              <button type="button" class="ax-btn ax-seg is-active" role="tab" data-view="readable">Readable</button>
+              <button type="button" class="ax-btn ax-seg" role="tab" data-view="raw">Raw log</button>
+            </div>
+            {% if run.conversation_available %}
+            <div class="ax-conv-toolbar">
+              {{ ui.button(label="Expand all output", intent="ghost", outlined=true,
+                           attrs={"data-expand-all": "", "aria-pressed": "false"}) }}
+              {{ ui.text_input(name="conv-search", placeholder="Search this conversation…", id="ax-conv-search") }}
+              <span class="ax-conv-count" data-conv-count></span>
+            </div>
+            {% endif %}
+          </div>
+
+          {# Readable view: the threaded timeline with IN/OUT tool cards. #}
+          <div data-view-panel="readable">
+            {% if run.conversation_available %}
+            {% call ui.timeline(attrs={"data-conversation": true}) %}
+              {%- for entry in entries %}
+              {% call ui.timeline_entry(role=entry.role, meta=entry.meta, state=entry.state) %}
+                {%- if entry.text %}<p class="ax-entry-msg">{{ entry.text }}</p>{% endif %}
+                {%- for t in entry.tools %}
+                {{ ui.tool_card(name=t.name, description=t.description, marker=t.marker,
+                                in_text=t.in_text, out_text=t.out_text,
+                                in_overflow=t.in_overflow, out_overflow=t.out_overflow,
+                                in_lines=t.in_lines, out_lines=t.out_lines,
+                                is_diff=t.is_diff, out_intent=t.out_intent) }}
+                {%- endfor %}
+              {% endcall %}
+              {%- endfor %}
+            {% endcall %}
+            {% else %}
+            <div class="ax-conv-empty">
+              {% if run.legacy or run.transcript_available %}Conversation only — this run predates event capture, so there is no threaded history (context unavailable).
+              {% else %}Conversation pruned — the event stream was removed by retention; the context and report remain.{% endif %}
+            </div>
+            {% endif %}
+
+            <div class="ax-run-foot">{{ transcript_foot }}</div>
+          </div>
+
+          {# Raw-log view: the native transcript.jsonl, already redacted on disk. #}
+          <div data-view-panel="raw" hidden>
+            {% if raw_transcript %}
+            <pre class="ax-raw-log">{{ raw_transcript }}</pre>
+            {% if raw_truncated %}<div class="ax-conv-empty">Transcript truncated for display — see the file on disk for the full stream.</div>{% endif %}
+            {% else %}
+            <div class="ax-conv-empty">Native transcript not available (pruned or not captured).</div>
+            {% endif %}
+          </div>
+          {%- endif %}
+
         {% endcall %}
-        {% else %}
-        <div class="ax-conv-empty">
-          {% if run.legacy or run.transcript_available %}Conversation only — this run predates event capture, so there is no threaded history (context unavailable).
-          {% else %}Conversation pruned — the event stream was removed by retention; the context and report remain.{% endif %}
-        </div>
-        {% endif %}
-
-        <div class="ax-run-foot">
-          {{ (report.get("status") or "unknown") }}
-          {%- if report.get("turns") is not none %} · {{ report.turns }} turns{% endif %}
-          {%- if report.get("files_written") is not none %} · {{ report.files_written }} files written{% endif %}
-        </div>
-      </div>
-
-      {# Raw-log view: the native transcript.jsonl, already redacted on disk. #}
-      <div data-view-panel="raw" hidden>
-        {% if raw_transcript %}
-        <pre class="ax-raw-log">{{ raw_transcript }}</pre>
-        {% if raw_truncated %}<div class="ax-conv-empty">Transcript truncated for display — see the file on disk for the full stream.</div>{% endif %}
-        {% else %}
-        <div class="ax-conv-empty">Native transcript not available (pruned or not captured).</div>
-        {% endif %}
+        {%- endfor %}
       </div>
     </div>
 

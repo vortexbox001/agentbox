@@ -55,6 +55,9 @@ def test_file_api_rejects_traversal(settings, run_with_outputs, client):
 
 def test_report_tab_renders_fields_and_notes(settings, run_with_outputs, client):
     html = client.get("/runs/run-out").text
-    assert "ax-report-notes" in html
-    assert "Wrote the **report**." in html  # notes rendered
-    assert "files_written" in html.lower() or "Files written" in html
+    # spec 017 US3: the final-message notes now render in the Summary section as the markdown
+    # subset (bold → <strong>), no longer as the rail's ax-report-notes block (FR-006/US3-AC4).
+    assert "ax-report-notes" not in html
+    assert "ax-summary" in html
+    assert "<strong>report</strong>" in html   # **report** rendered, not raw markup
+    assert "Files written" in html             # Usage still carries the numeric fields

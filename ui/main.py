@@ -23,6 +23,7 @@ import agents_store
 import config
 import cron_text
 import dagster
+import markdown
 import prompts_store
 import runs_store
 import schema
@@ -642,6 +643,23 @@ async def _runs_compare_page(request: Request):
     )
 
 
+def _summary_view(report: dict, entries: list[dict]) -> dict:
+    """The Summary section view model (spec 017 FR-007/FR-008, R3): render report.notes, else the
+    final event's text, as the markdown subset; when neither exists, the foot-line fallback + note
+    "No final message was captured."."""
+    text = (report.get("notes") or "").strip()
+    if not text:
+        for e in reversed(entries):
+            if e.get("kind") == "final" and (e.get("text") or "").strip():
+                text = e["text"].strip()
+                break
+    if text:
+        return {"html": markdown.render_summary(text), "fallback": None,
+                "note": "final message from the agent"}
+    return {"html": None, "fallback": runs_store.foot_line(report),
+            "note": "No final message was captured."}
+
+
 @app.get("/runs/{run_id}")
 async def _run_detail_page(request: Request, run_id: str):
     # The run-detail page (Conversation / Context / Report / Files), read entirely from disk so it
@@ -668,6 +686,45 @@ async def _run_detail_page(request: Request, run_id: str):
     status_view = _run_status_view(report.get("status") or "unknown")
     dagster_base = public_dagster_url(request)
     raw_transcript, raw_truncated = runs_store.read_transcript(run_id)
+
+    # ── Five section view models (spec 017, contract run-detail §A). All built at request time
+    # from data the page already reads; nothing is written (FR-035). ──
+    events = runs_store.read_events(run_id) if detail.get("conversation_available") else []
+    entries = runs_store.conversation_entries(events)
+
+    # Summary — report.notes → final event text → foot-line fallback (FR-008, R3).
+    summary_view = _summary_view(report, entries)
+
+    # Transcript — enrich tool cards, compute the note/foot, then dedup the final message (FR-032).
+    runs_store.enrich_tool_cards(entries)
+    tool_calls = sum(len(e.get("tools") or []) for e in entries)
+    transcript_note = runs_store.section_note_transcript(entries, report)
+    transcript_foot = runs_store.foot_line(report, tool_calls)
+    runs_store.dedup_final(entries)
+
+    # Output — /output artifacts, plus a produced-elsewhere list when there are none (FR-010–FR-014).
+    output_files = runs_store.read_output_files(run_id)
+    produced = runs_store.produced_elsewhere(events) if not output_files else []
+    output_note = runs_store.section_note_output(output_files, produced)
+
+    # Checks — best-effort from the same per-run read the Agents overview uses; degrades to the
+    # empty state + "—" note when Dagster is unreachable (FR-015/FR-017, R5).
+    enrich = await dagster.run_status([run_id])
+    run_info = (enrich.get("runs") or {}).get(run_id) or {}
+    checks = run_info.get("checks") or []
+    checks_note = runs_store.section_note_checks(checks)
+
+    # Context — the existing context card, collapsed by default (FR-019/FR-020).
+    context_note = runs_store.section_note_context(context)
+
+    sections = [
+        {"id": "summary", "title": "Summary", "default_open": True, "note": summary_view["note"]},
+        {"id": "output", "title": "Output", "default_open": True, "note": output_note},
+        {"id": "checks", "title": "Checks", "default_open": True, "note": checks_note},
+        {"id": "context", "title": "Context", "default_open": False, "note": context_note},
+        {"id": "transcript", "title": "Transcript", "default_open": True, "note": transcript_note},
+    ]
+
     return templates.TemplateResponse(
         request,
         "runs/detail.html",
@@ -680,11 +737,16 @@ async def _run_detail_page(request: Request, run_id: str):
             secret_env_names=secret_env_names,
             status_view=status_view,
             stats=_run_stats(detail),
-            entries=(runs_store.conversation_entries(runs_store.read_events(run_id))
-                     if detail.get("conversation_available") else []),
+            sections=sections,
+            summary=summary_view,
+            entries=entries,
+            transcript_foot=transcript_foot,
             raw_transcript=raw_transcript,
             raw_truncated=raw_truncated,
-            output_files=runs_store.read_output_files(run_id),
+            output_files=output_files,
+            produced=produced,
+            checks=checks,
+            checks_empty="No checks were configured for this agent.",
             dagster_run_url=f"{dagster_base}/runs/{run_id}",
         ),
     )

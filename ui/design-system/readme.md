@@ -221,6 +221,11 @@ No emoji in the product UI. No custom icon font. Unicode characters are not used
 | Card | `components/layout/` | Content container with border, no shadow. |
 | Dialog | `components/layout/` | Modal dialog with backdrop blur. |
 | Table | `components/data/` | Grid-based data table with header + rows. |
+| Disclosure | `components/layout/` | Bordered section card with a keyboard-operable collapsible header (chevron + title + right-aligned muted note). The five run-detail sections are built from it. |
+| ToolCard | `components/data/` | Compact IN/OUT transcript tool card: head line (name, description, marker) over IN/OUT rows clamped to 3 lines with a token-background fade and "Show all N lines" expand; diffs render expanded. |
+| CheckRow | `components/data/` | One recorded check in the Agents-overview mark language (pass/warn/fail-blocking/not-run mark + icon), name, one-line detail, right-aligned recorded time. Reuses the `ax-result` mark — no new check type. |
+| ProducedRow | `components/data/` | Best-effort "produced elsewhere" row (Pull request / Commit / File): kind label, mono identifier, Open/Preview action. |
+| Summary | `components/data/` | The rendered final message — the FR-007 markdown subset (heading labels, bold, inline-code chips, bullet lists, links) with no raw markup, or a foot-line fallback. |
 
 ## UI Kits
 

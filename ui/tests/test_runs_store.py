@@ -144,3 +144,121 @@ def test_read_events(settings, seeded):
 def test_list_empty_tree_is_empty(settings, tmp_runs):
     import runs_store
     assert runs_store.list_runs() == []
+
+
+# ── spec 017: produced-elsewhere miner, tool-card enrichment, note builders ──
+
+def test_produced_elsewhere_detects_pr_commit_file_and_groups(settings):
+    import runs_store
+    events = [
+        {"kind": "tool_call", "tool": "Write", "args": {"file_path": "/workspace/a.py"}},
+        {"kind": "tool_result", "result": "ok"},
+        {"kind": "tool_call", "tool": "Bash", "args": {"command": "git commit"}},
+        {"kind": "tool_result", "result": "[main 1a2b3c4] wire it up\n 1 file changed"},
+        {"kind": "tool_call", "tool": "Bash", "args": {"command": "gh pr create"}},
+        {"kind": "tool_result",
+         "result": "Created https://github.com/octo/repo/pull/7 for review"},
+        {"kind": "tool_call", "tool": "Edit", "args": {"path": "/workspace/b.py"}},
+        {"kind": "tool_result", "result": ""},
+    ]
+    out = runs_store.produced_elsewhere(events)
+    # grouped PRs → commits → files, event order within each kind
+    assert [r["kind"] for r in out] == ["pull_request", "commit", "file", "file"]
+    assert out[0]["identifier"] == "https://github.com/octo/repo/pull/7"
+    assert out[0]["action"] == out[0]["identifier"]
+    assert out[1]["identifier"] == "1a2b3c4" and out[1]["action"] is None
+    assert [r["identifier"] for r in out if r["kind"] == "file"] == \
+        ["/workspace/a.py", "/workspace/b.py"]
+
+
+def test_produced_elsewhere_empty_and_never_raises(settings):
+    import runs_store
+    assert runs_store.produced_elsewhere([]) == []
+    # garbage / no minable evidence contributes no row and does not raise
+    assert runs_store.produced_elsewhere(
+        [{"kind": "tool_result", "result": "just some text"},
+         {"kind": "assistant", "text": "thinking"}]) == []
+
+
+def test_enrich_tool_cards_clamp_overflow_and_diff(settings):
+    import runs_store
+    entries = runs_store.conversation_entries([
+        {"kind": "tool_call", "tool": "Bash", "args": {"command": "npm test"}},
+        {"kind": "tool_result", "result": "l1\nl2\nl3\nl4\nl5"},          # 5 lines → overflow
+        {"kind": "tool_call", "tool": "Bash", "args": {"command": "echo hi"}},
+        {"kind": "tool_result", "result": "one\ntwo"},                     # 2 lines → no overflow
+        {"kind": "tool_call", "tool": "Edit", "args": {"file_path": "p.py"}},
+        {"kind": "tool_result", "result": "", "diff": "+a\n-b\n c\n+d"},   # diff → expanded
+    ])
+    runs_store.enrich_tool_cards(entries)
+    tools = [t for e in entries for t in e["tools"]]
+    assert tools[0]["out_overflow"] is True and tools[0]["out_lines"] == 5
+    assert tools[1]["out_overflow"] is False
+    # a diff OUT is expanded by default (never clamped), colouring preserved
+    assert tools[2]["is_diff"] is True and tools[2]["out_overflow"] is False
+
+
+def test_enrich_tool_cards_marker_derivation(settings):
+    import runs_store
+    entries = runs_store.conversation_entries([
+        {"kind": "tool_call", "tool": "Bash", "args": {"command": "run"}},
+        {"kind": "tool_result", "result": "boom\nexit code: 2"},           # exit N
+        {"kind": "tool_call", "tool": "Write", "args": {"file_path": "x"}},
+        {"kind": "tool_result", "missing": True},                          # failed / missing
+        {"kind": "tool_call", "tool": "Bash", "args": {"command": "cat secret"}},
+        {"kind": "tool_result", "result": "Permission denied: cannot read"},  # failed / refusal
+        {"kind": "tool_call", "tool": "Bash", "args": {"command": "ls"}},
+        {"kind": "tool_result", "result": "file-a\nfile-b"},               # neither
+    ])
+    runs_store.enrich_tool_cards(entries)
+    tools = [t for e in entries for t in e["tools"]]
+    assert tools[0]["marker"] == "exit 2" and tools[0]["out_intent"] == "failed"
+    assert tools[1]["marker"] == "failed" and tools[1]["out_intent"] == "missing"
+    assert tools[2]["marker"] == "failed" and tools[2]["out_intent"] == "failed"
+    assert tools[3]["marker"] is None and tools[3]["out_intent"] is None
+
+
+def test_section_note_builders(settings):
+    import runs_store
+    # Output note: files part always shows; PR part only when non-zero
+    assert runs_store.section_note_output([], []) == "0 files"
+    assert runs_store.section_note_output(
+        [], [{"kind": "pull_request"}]) == "0 files · 1 pull request"
+    assert runs_store.section_note_output([1, 2, 3], []) == "3 files"
+    # Checks note across the full vocabulary; fail-blocking counts as failed; not-run counts
+    assert runs_store.section_note_checks([]) == "—"
+    assert runs_store.section_note_checks(
+        [{"status": "pass"}, {"status": "pass"}, {"status": "pass"},
+         {"status": "pass"}, {"status": "warn"}]) == "4 passed · 1 warning"
+    assert runs_store.section_note_checks([{"status": "not-run"}]) == "1 not run"
+    assert runs_store.section_note_checks(
+        [{"status": "fail-blocking"}]) == "1 failed"
+    # Context + Transcript notes
+    ctx = {"prompt": {"prompt_text": "p", "append_system_prompt": "a"},
+           "instruction_files": [{"path": "x"}]}
+    assert runs_store.section_note_context(ctx) == "prompt · appended · 1 instruction file"
+    entries = runs_store.conversation_entries([
+        {"kind": "tool_call", "tool": "Bash", "args": {}},
+        {"kind": "tool_result", "result": "x"}])
+    assert runs_store.section_note_transcript(entries, {"turns": 24}) == "24 turns · 1 tool call"
+
+
+def test_foot_line_three_and_four_field(settings):
+    import runs_store
+    report = {"status": "ok", "turns": 3, "files_written": 0}
+    assert runs_store.foot_line(report) == "ok · 3 turns · 0 files written"
+    assert runs_store.foot_line(report, tool_calls=5) == \
+        "ok · 3 turns · 0 files written · 5 tool calls"
+
+
+def test_dedup_final_collapses_duplicate(settings):
+    import runs_store
+    entries = runs_store.conversation_entries([
+        {"kind": "user", "text": "go"},
+        {"kind": "assistant", "text": "Done."},
+        {"kind": "final", "text": "Done."},
+    ])
+    runs_store.dedup_final(entries)
+    # the duplicate assistant message is dropped; the final renders once as Result
+    roles = [e["role"] for e in entries]
+    assert roles == ["Task", "Result"]

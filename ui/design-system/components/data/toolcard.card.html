@@ -1,0 +1,28 @@
+<!-- @dsCard group="Components" viewport="700x260" name="ToolCard" subtitle="IN/OUT tool card" -->
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../static/app.css">
+</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
+<!-- Production markup: the `tool_card` macro → `ax-toolcard`, styled by /static/app.css. -->
+<div class="ax-toolcard" data-toolcard>
+  <div class="ax-toolcard-head">
+    <span class="ax-toolcard-name">Bash</span>
+    <span class="ax-toolcard-desc">npm test</span>
+    <span class="ax-toolcard-marker">exit 1</span>
+  </div>
+  <div class="ax-io-row" data-io-row>
+    <span class="ax-io-label">IN</span>
+    <div class="ax-io-body"><div class="ax-io-content">npm test</div></div>
+  </div>
+  <div class="ax-io-row is-overflow" data-io-row>
+    <span class="ax-io-label">OUT</span>
+    <div class="ax-io-body ax-io-body--failed"><div class="ax-io-content">line 1
+line 2
+line 3
+line 4
+line 5</div><div class="ax-io-fade" aria-hidden="true"></div></div>
+    <button type="button" class="ax-io-toggle" data-io-toggle aria-expanded="false">Show all 5 lines</button>
+  </div>
+</div>
+</body></html>
