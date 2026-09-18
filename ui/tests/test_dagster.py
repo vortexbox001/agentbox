@@ -161,7 +161,10 @@ class _CountingClient:
         self._calls.append(json)
         if self._raise is not None:
             raise self._raise
-        return _FakeResp(self._payload)
+        p = self._payload
+        if callable(p):
+            p = p(json["query"])
+        return _FakeResp(p)
 
 
 def _run_result(run_id, status, *, start=None, end=None, asset=None, pipeline=None,
@@ -175,23 +178,34 @@ def _run_result(run_id, status, *, start=None, end=None, asset=None, pipeline=No
     return r
 
 
-def test_run_status_issues_exactly_one_post_and_parses(settings, monkeypatch):
+def test_run_status_batches_reads_and_parses(settings, monkeypatch):
     import dagster
     calls = []
-    payload = {"data": {"runsOrError": {"__typename": "Runs", "results": [
+    runs_payload = {"data": {"runsOrError": {"__typename": "Runs", "results": [
         _run_result("a", "SUCCESS", start=100.0, end=160.0, asset=["refined", "daily"],
-                    tags=[{"key": "dagster/schedule_name", "value": "sched_x"}],
-                    checks=[{"name": "freshness",
-                             "executionForLatestMaterialization": {"status": "SUCCEEDED"}}]),
+                    tags=[{"key": "dagster/schedule_name", "value": "sched_x"}]),
         _run_result("b", "FAILURE", pipeline="agent_hello",
                     tags=[{"key": "dagster/sensor_name", "value": "autocond_hello"}]),
         _run_result("c", "STARTED", pipeline="agent_hello", tags=[]),
     ]}}}
+    # Checks live on the AssetNode, not the Run: the second read returns the latest check
+    # execution, tagged with the run that produced it (only run "a" has an asset here).
+    checks_payload = {"data": {"c0": {"__typename": "AssetNode", "assetChecksOrError": {
+        "__typename": "AssetChecks", "checks": [
+            {"name": "freshness",
+             "executionForLatestMaterialization": {"runId": "a", "status": "SUCCEEDED"}}]}}}}
+
+    def dispatch(query):
+        return checks_payload if "assetNodeOrError" in query else runs_payload
+
     monkeypatch.setattr(dagster.httpx, "AsyncClient",
-                        lambda *a, **k: _CountingClient(payload, calls))
+                        lambda *a, **k: _CountingClient(dispatch, calls))
     out = asyncio.run(dagster.run_status(["a", "b", "c", "absent"]))
-    # Exactly one GraphQL POST — never one request per run (contract guarantee).
-    assert len(calls) == 1
+    # Two batched POSTs — one for run status/target/launched-by, one for Checks — never one
+    # request per run (contract guarantee): the run read, then a single aliased asset-node read.
+    assert len(calls) == 2
+    assert "runsOrError" in calls[0]["query"]
+    assert "assetNodeOrError" in calls[1]["query"]
     assert out["reachable"] is True
     # status / target (asset key vs job name) / launched-by / checks are parsed.
     assert out["runs"]["a"]["status"] == "SUCCESS"
@@ -200,6 +214,7 @@ def test_run_status_issues_exactly_one_post_and_parses(settings, monkeypatch):
     assert out["runs"]["a"]["checks"] == [{"name": "freshness", "status": "pass"}]
     assert out["runs"]["b"]["target"] == "agent_hello"          # falls back to the job name
     assert out["runs"]["b"]["launched_by"] == {"kind": "sensor", "name": "autocond_hello"}
+    assert out["runs"]["b"]["checks"] is None                   # no asset → no checks
     assert out["runs"]["c"]["launched_by"] == {"kind": "manual", "name": None}
     # A requested id absent from results is simply omitted (caller treats it as last-known).
     assert "absent" not in out["runs"]

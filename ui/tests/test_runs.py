@@ -145,7 +145,7 @@ def test_runs_list_renders_from_disk(settings, three_runs, client):
 def test_runs_list_has_the_ten_columns_in_order(settings, three_runs, client):
     # FR-012: exactly ten columns, in order; FR-013: no Date/Time/Attempts.
     html = client.get("/runs").text
-    order = ["Run", "Status", "Agent", "Model", "Target", "Launched by", "Checks",
+    order = ["Run", "Agent", "Model", "Target", "Launched by", "Checks", "Status",
              "Created", "Duration", "Cost"]
     positions = [html.index(f">{c}</th>") for c in order]
     assert positions == sorted(positions), "columns are not in the FR-012 order"

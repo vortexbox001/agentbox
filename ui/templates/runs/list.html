@@ -59,12 +59,12 @@
     <thead>
       <tr>
         <th scope="col">Run</th>
-        <th scope="col">Status</th>
         <th scope="col">Agent</th>
         <th scope="col">Model</th>
         <th scope="col">Target</th>
         <th scope="col">Launched by</th>
         <th scope="col">Checks</th>
+        <th scope="col">Status</th>
         <th scope="col">Created</th>
         <th scope="col">Duration</th>
         <th scope="col">Cost</th>
@@ -81,11 +81,6 @@
             <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#external"></use></svg>
           </a>
           {% endif %}
-        </td>
-        <td>
-          {{ ui.run_status_tag(status=r.status_intent, label=r.status_label) }}
-          {% if r.last_known %}{{ ui.badge("last-known", intent="last-known",
-              attrs={"title": "Dagster is unreachable or has no record for this run — showing the last known status."}) }}{% endif %}
         </td>
         <td>{% if r.agent %}<a class="ax-mono" href="/agents/{{ r.agent }}">{{ r.agent }}</a>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
         <td>{% if r.model %}<span class="ax-mono" title="{{ r.model }}">{{ r.model }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
@@ -104,6 +99,11 @@
             {% endfor %}
           </div>
           {% else %}<span class="ax-muted">—</span>{% endif %}
+        </td>
+        <td>
+          {{ ui.run_status_tag(status=r.status_intent, label=r.status_label) }}
+          {% if r.last_known %}{{ ui.badge("last-known", intent="last-known",
+              attrs={"title": "Dagster is unreachable or has no record for this run — showing the last known status."}) }}{% endif %}
         </td>
         <td>{% if r.created %}<span class="ax-run-created" data-created-iso="{{ r.created_iso }}" title="{{ r.created_iso }}">{{ r.created }}</span>{% else %}<span class="ax-muted">—</span>{% endif %}</td>
         <td>{% if r.duration %}{{ r.duration }}{% else %}<span class="ax-muted">—</span>{% endif %}</td>

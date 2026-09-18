@@ -103,9 +103,9 @@ function rowHtml(r) {
   const cost = r.cost_usd != null ? esc(r.cost_usd) : muted();
   return (
     `<tr data-run-row>` +
-    runCell(r) + statusCell(r) +
+    runCell(r) +
     `<td>${agent}</td><td>${model}</td><td>${target}</td><td>${launched}</td>` +
-    checksCell(r) +
+    checksCell(r) + statusCell(r) +
     `<td>${created}</td><td>${duration}</td><td>${cost}</td></tr>`
   );
 }

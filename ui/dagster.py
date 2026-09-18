@@ -448,8 +448,18 @@ _RUN_STATUS_FIELDS = (
     "runId status startTime endTime "
     "assetSelection { path } "
     "pipelineName "
-    "tags { key value } "
-    "assetChecks { name executionForLatestMaterialization { status evaluation { severity } } }"
+    "tags { key value }"
+)
+
+# Per-run Checks come from a SECOND read: a Run only carries check *handles* (name + assetKey),
+# never their execution status, so the status lives on the AssetNode. This sub-selection mirrors
+# the Agents-overview read (contract §C) but also pulls the execution's `runId` so each check
+# attaches to the exact run that produced the latest materialization — older runs of the same
+# asset correctly show `—` rather than borrowing the newest run's result.
+_ASSET_CHECKS_SUBQUERY = (
+    "{ __typename ... on AssetNode { assetChecksOrError { __typename "
+    "... on AssetChecks { checks { name executionForLatestMaterialization "
+    "{ runId status evaluation { severity } } } } } } }"
 )
 
 
@@ -475,27 +485,63 @@ def _run_launched_by(tags) -> dict:
     return {"kind": "manual", "name": None}
 
 
-def _parse_run_checks(node):
-    """[{name, status}] from a run's asset-check list; None on any unexpected arm (contract §C)."""
-    if not isinstance(node, list):
-        return None
-    out = []
-    for c in node:
-        if not isinstance(c, dict):
+async def _run_checks_by_id(asset_keys: list[list[str]]) -> dict:
+    """Second bounded read: for each distinct asset key among the enriched runs, the latest
+    check executions grouped by the run that produced them → ``{run_id: [{name, status}]}``.
+    One GraphQL POST (aliased per distinct key); every transport/parse/non-``AssetChecks`` arm
+    collapses to ``{}`` so Checks simply degrade to ``—`` and never break status/target/launched-by."""
+    seen: list[list[str]] = []
+    for k in asset_keys:
+        if k and k not in seen:
+            seen.append(k)
+    if not seen:
+        return {}
+    fields = []
+    for i, path in enumerate(seen):
+        p = ", ".join(_q(s) for s in path)
+        fields.append(f"c{i}: assetNodeOrError(assetKey: {{path: [{p}]}}) {_ASSET_CHECKS_SUBQUERY}")
+    query = "query {\n" + "\n".join(fields) + "\n}"
+    url = f"{config.DAGSTER_URL}/graphql"
+    try:
+        async with httpx.AsyncClient(timeout=config.RELOAD_TIMEOUT_S) as client:
+            resp = await client.post(url, json={"query": query})
+            resp.raise_for_status()
+            payload = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return {}
+    data = (payload or {}).get("data")
+    if not isinstance(data, dict):
+        return {}
+    by_run: dict[str, list] = {}
+    for i in range(len(seen)):
+        node = data.get(f"c{i}")
+        if not isinstance(node, dict):
             continue
-        out.append({
-            "name": c.get("name"),
-            "status": _check_status(c.get("executionForLatestMaterialization")),
-        })
-    return out or None
+        checks_or_error = node.get("assetChecksOrError")
+        if not isinstance(checks_or_error, dict) or "checks" not in checks_or_error:
+            continue
+        for c in checks_or_error.get("checks") or []:
+            ex = c.get("executionForLatestMaterialization")
+            if not isinstance(ex, dict):
+                continue
+            rid = ex.get("runId")
+            if not rid:
+                continue
+            by_run.setdefault(rid, []).append({
+                "name": c.get("name"),
+                "status": _check_status(ex),
+            })
+    return by_run
 
 
 async def run_status(run_ids: list[str]) -> dict:
-    """One bounded, batched read of specific run ids → status/target/launched-by/checks
-    (contract §C, research R6). Returns the *Enrichment payload*
-    ``{"reachable": bool, "runs": {run_id: {...}}}``. Exactly ONE GraphQL POST per call;
-    every transport/parse/non-``Runs`` arm collapses to ``{"reachable": False, "runs": {}}``
-    so the caller falls back to last-known for every row. A requested id absent from the
+    """One bounded, batched read of specific run ids → status/target/launched-by, plus a second
+    bounded read for per-run Checks (contract §C, research R6). Returns the *Enrichment payload*
+    ``{"reachable": bool, "runs": {run_id: {...}}}``. The first POST fetches run status/target/
+    launched-by; a second POST (see ``_run_checks_by_id``) resolves Checks, which live on the
+    AssetNode rather than the Run. Every transport/parse/non-``Runs`` arm of the first read
+    collapses to ``{"reachable": False, "runs": {}}`` so the caller falls back to last-known for
+    every row; a failed second read only degrades Checks to ``—``. A requested id absent from the
     results is simply omitted (the caller treats it as last-known)."""
     ids = [r for r in (run_ids or []) if r][:RUNS_STATUS_CAP]
     if not ids:
@@ -524,6 +570,7 @@ async def run_status(run_ids: list[str]) -> dict:
         return {"reachable": False, "runs": {}}
 
     out = {}
+    asset_keys = []
     for r in node.get("results") or []:
         rid = r.get("runId")
         if not rid:
@@ -534,8 +581,16 @@ async def run_status(run_ids: list[str]) -> dict:
             "end_time": r.get("endTime"),
             "target": _run_target(r),
             "launched_by": _run_launched_by(r.get("tags")),
-            "checks": _parse_run_checks(r.get("assetChecks")),
+            "checks": None,
         }
+        for sel in r.get("assetSelection") or []:
+            if isinstance(sel, dict) and sel.get("path"):
+                asset_keys.append(sel["path"])
+    # Second bounded read: resolve per-run Checks off the AssetNode and attach by run id.
+    checks_by_id = await _run_checks_by_id(asset_keys)
+    for rid, checks in checks_by_id.items():
+        if rid in out:
+            out[rid]["checks"] = checks or None
     return {"reachable": True, "runs": out}
 
 

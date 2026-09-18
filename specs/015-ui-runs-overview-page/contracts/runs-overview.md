@@ -21,7 +21,7 @@ The removed `status` param MUST NOT drive filtering; if present it is ignored (F
 **Response**: `200 text/html` rendering `runs/list.html` with:
 - the shared `tabs` header (four tabs, each a count badge over the filtered set — FR-005/FR-006);
 - the ghost **Filter** button + text input, plus agent and date-range controls (FR-008/FR-010);
-- a table with columns, in order: **Run, Status, Agent, Model, Target, Launched by, Checks, Created,
+- a table with columns, in order: **Run, Agent, Model, Target, Launched by, Checks, Status, Created,
   Duration, Cost** (FR-012); no Date, Time, or Attempts columns (FR-013);
 - the `pagination` macro below the table when `pages > 1` (FR-025);
 - for each row: run id linking to `/runs/{run_id}` (FR-023) and, when Dagster is configured, a
@@ -87,25 +87,29 @@ query {
         assetSelection { path }        # → Target (asset key) when present
         pipelineName                   # → Target (job name) otherwise
         tags { key value }             # → Launched by (dagster/schedule_name | dagster/sensor_name)
-        assetChecks {                  # → Checks (mapped via _check_status)
-          name
-          executionForLatestMaterialization { status evaluation { severity } }
-        }
       }
     }
   }
 }
 ```
 
-> The exact check sub-selection mirrors the Agents overview read; the precise GraphQL field names
-> are verified against this Dagster version during implementation (as `dagster.activity` did) and
-> the parser degrades to `checks: null` on any unexpected arm.
+> **Checks are a second read.** On Dagster 1.13.21 a `Run`'s `assetChecks` field returns only check
+> *handles* (`name`, `assetKey`) — it carries no execution status, and selecting
+> `executionForLatestMaterialization` under it is a GraphQL error that 400s the whole request. Check
+> status lives on the **AssetNode**, so a second bounded POST (aliased per distinct asset key among
+> the enriched runs, mirroring the Agents-overview read) resolves it:
+> `assetNodeOrError(assetKey){ assetChecksOrError { ... on AssetChecks { checks { name
+> executionForLatestMaterialization { runId status evaluation { severity } } } } } }`. Each check is
+> attached to the run whose id equals the execution's `runId`, so a run shows only the checks it
+> actually produced (older runs of the same asset correctly show `—`). Any transport/parse/non-
+> `AssetChecks` arm of the second read degrades Checks to `—` **without** disturbing status / Target /
+> Launched by from the first read; the first read still degrades everything to last-known on failure.
 
 **Response shape**: the *Enrichment payload* in [data-model.md](../data-model.md):
 `{"reachable": bool, "runs": {run_id: {status, start_time, end_time, target, launched_by, checks}}}`.
 
 **Guarantees**
-- Exactly **one** GraphQL POST per call — never one request per run.
+- At most **two** bounded GraphQL POSTs per call (run status, then Checks) — never one request per run.
 - Failure (`httpx.HTTPError`, `ValueError`, `PythonError`/non-`Runs` arm, no `data`) →
   `{"reachable": False, "runs": {}}`.
 - A run id present in the request but absent from `results` is simply omitted from `runs` (caller
