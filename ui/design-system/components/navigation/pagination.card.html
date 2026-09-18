@@ -1,0 +1,15 @@
+<!-- @dsCard group="Components" viewport="700x80" name="Pagination" subtitle="Prev · page indicator · Next, with first/last-page disabling" -->
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../static/app.css">
+</head><body style="margin:0;padding:var(--space-6);background:var(--color-background-default);font-family:var(--font-default)">
+<!-- Production markup: the `pagination` macro → `ax-pagination` nav with shared-button-styled
+     Prev/Next links and a page indicator, styled by /static/app.css. Prev is aria-disabled on
+     page 1; Next is aria-disabled on the last page. Page state lives in the URL (?page=). -->
+<nav class="ax-pagination" aria-label="Pagination">
+  <span class="ax-btn ax-btn--ghost ax-btn--outlined ax-pagination-prev" aria-disabled="true">Prev</span>
+  <span class="ax-pagination-indicator">Page 1 of 4</span>
+  <a class="ax-btn ax-btn--ghost ax-btn--outlined ax-pagination-next" rel="next" href="?page=2">Next</a>
+</nav>
+</body></html>

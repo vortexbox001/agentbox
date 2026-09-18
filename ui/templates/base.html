@@ -38,31 +38,31 @@
   {{ icon_sprite|safe }}
   <div class="ax-app">
     <aside class="ax-sidebar">
-      <div class="ax-brand">
-        <!-- Expanded: the theme-aware 130px horizontal lockup (mark + wordmark in one
-             SVG); the light variant shows on the light ground, the dark variant under
-             [data-theme="dark"] — toggled by CSS on the pre-painted theme attribute so
-             there is no wrong-theme flash. Collapsed (68px): only the standalone mark. -->
-        <img class="ax-brand-mark" src="/design-system/assets/logo.svg" alt="" aria-hidden="true" width="24" height="24">
-        <img class="ax-brand-lockup ax-brand-lockup--light" src="/design-system/assets/logo-light.svg" alt="agentbox">
-        <img class="ax-brand-lockup ax-brand-lockup--dark" src="/design-system/assets/logo-dark.svg" alt="agentbox">
-      </div>
-      {# Primary nav links only to pages that exist: Agents + Runs (contract shell-and-modal §A,
-         FR-001; the Runs viewer ships in spec 012). The .ax-nav-divider keyline is retained so
-         the group lands where the mock places it. #}
+      {# The brand mark/lockup links home (FR-032), active in both expanded and collapsed nav,
+         with a visible keyboard focus ring styled from tokens in app.css. #}
+      <a class="ax-brand-home" href="/" aria-label="agentbox — home">
+        <div class="ax-brand">
+          <!-- Expanded: the theme-aware 130px horizontal lockup (mark + wordmark in one
+               SVG); the light variant shows on the light ground, the dark variant under
+               [data-theme="dark"] — toggled by CSS on the pre-painted theme attribute so
+               there is no wrong-theme flash. Collapsed (68px): only the standalone mark. -->
+          <img class="ax-brand-mark" src="/design-system/assets/logo.svg" alt="" aria-hidden="true" width="24" height="24">
+          <img class="ax-brand-lockup ax-brand-lockup--light" src="/design-system/assets/logo-light.svg" alt="agentbox">
+          <img class="ax-brand-lockup ax-brand-lockup--dark" src="/design-system/assets/logo-dark.svg" alt="agentbox">
+        </div>
+      </a>
+      {# Primary nav (spec 015 US6, FR-029/FR-030): Runs leads, then the .ax-nav-divider keyline,
+         then Agents. Settings is no longer a nav destination — the foot button below is the
+         single Settings entry; /settings remains a route only as the modal's staged fallback. #}
       <nav class="ax-nav" aria-label="Primary">
-        <div class="ax-nav-divider" aria-hidden="true"></div>
-        <a class="ax-nav-item" href="/agents" data-nav="/agents">
-          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#agents"></use></svg>
-          <span class="ax-nav-label">Agents</span>
-        </a>
         <a class="ax-nav-item" href="/runs" data-nav="/runs">
           <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#runs"></use></svg>
           <span class="ax-nav-label">Runs</span>
         </a>
-        <a class="ax-nav-item" href="/settings" data-nav="/settings">
-          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#settings"></use></svg>
-          <span class="ax-nav-label">Settings</span>
+        <div class="ax-nav-divider" aria-hidden="true"></div>
+        <a class="ax-nav-item" href="/agents" data-nav="/agents">
+          <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#agents"></use></svg>
+          <span class="ax-nav-label">Agents</span>
         </a>
       </nav>
       {# Foot (contract §B, FR-002/003/004): Dagster status block (indigo, a Dagster
@@ -131,6 +131,16 @@
               {"value": "dark", "label": "Dark", "icon": "theme-dark"},
               {"value": "system", "label": "Use system setting", "icon": "theme-system"}
           ]) }}
+        </div>
+      </div>
+      {# Staged consolidation (FR-031, research R4): the server-backed Retention + Governors
+         controls still live on the /settings page. The modal links to it rather than moving
+         those POST flows here; /settings is reachable only through this link, not the nav. #}
+      <div class="ax-settings-section">
+        <div class="ax-settings-heading">Instance settings</div>
+        <div class="ax-settings-row">
+          <span>Retention &amp; governors</span>
+          <a class="ax-btn ax-btn--ghost ax-btn--outlined" href="/settings">Open settings page</a>
         </div>
       </div>
       <div class="ax-modal-actions">

@@ -255,3 +255,47 @@ def test_agents_list_after_paint_columns_are_placeholders(client, tmp_agents):
     for cls in ("ax-col-latest", "ax-col-checks", "ax-col-history"):
         assert cls in html
     assert "/static/agents-list.js" in html
+
+
+# ── spec 015 US6 / SC-008: the navigation shell reads as one finished product ──
+
+def _primary_nav(base_text):
+    m = re.search(r'<nav class="ax-nav"[^>]*>(.*?)</nav>', base_text, re.DOTALL)
+    assert m, "primary nav not found"
+    return m.group(1)
+
+
+def test_nav_order_is_runs_rule_agents():
+    # FR-029: Runs leads, then the .ax-nav-divider keyline, then Agents.
+    base = open(os.path.join(_TEMPLATES, "base.html"), encoding="utf-8").read()
+    nav = _primary_nav(base)
+    pos_runs = nav.index('href="/runs"')
+    pos_rule = nav.index("ax-nav-divider")
+    pos_agents = nav.index('href="/agents"')
+    assert pos_runs < pos_rule < pos_agents, "nav order must be Runs · rule · Agents"
+
+
+def test_nav_has_no_settings_destination():
+    # FR-030: /settings is no longer a nav destination; the foot button is the single entry.
+    base = open(os.path.join(_TEMPLATES, "base.html"), encoding="utf-8").read()
+    nav = _primary_nav(base)
+    assert 'href="/settings"' not in nav, "/settings must not be a primary-nav link"
+    # Exactly one Settings entry overall — the foot modal button.
+    assert base.count('id="ax-settings-link"') == 1
+
+
+def test_logo_is_a_home_link_present_when_collapsed():
+    # FR-032: the brand lockup links home, active in expanded and collapsed nav, with a focus ring.
+    base = open(os.path.join(_TEMPLATES, "base.html"), encoding="utf-8").read()
+    home = re.search(r'<a class="ax-brand-home"[^>]*href="/"[^>]*>', base)
+    assert home, "the brand lockup must be an href=\"/\" home link"
+    css = open(os.path.join(_STATIC, "app.css"), encoding="utf-8").read()
+    assert ".ax-brand-home:focus-visible" in css, "the home link needs a visible keyboard focus ring"
+    # The collapsed rail still shows the mark (inside the link), so home works when collapsed.
+    assert 'html[data-sidebar="collapsed"] .ax-brand-mark { display: block; }' in css
+
+
+def test_settings_route_still_reachable_as_modal_fallback(client):
+    # FR-031/R4: /settings is unlinked from the nav but remains a reachable page (the modal's
+    # staged fallback for the server-backed Retention + Governors controls).
+    assert client.get("/settings").status_code == 200

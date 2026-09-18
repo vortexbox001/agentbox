@@ -411,17 +411,47 @@ whether it is healthy (Checks and a Run-history sparkline of the last ten runs).
   toggle disables (with a title) when the agent is disabled, Dagster is down, or the state is
   unknown.
 
+#### The runs overview
+
+`/runs` is a full-bleed, tabbed table of runs that reads the same as the agents overview. It is
+built from disk first — so it renders with the orchestrator stopped — then enriched best-effort
+from a single batched Dagster read for each render (capped at the most recent 500 runs of the
+filtered set; older rows keep their last-known status and a note says so).
+
+- **Truthful status** — each row shows the real Dagster outcome (succeeded / failed / timed out /
+  cancelled / queued / in progress). When Dagster is unreachable or has no record for a run, the
+  row falls back to the local report status and is marked **last-known**.
+- **Tabs** — All / In progress / Succeeded / Failed, each with a count over the whole filtered set
+  (an `unknown`-status run counts only under All, so the sub-tabs need not sum to All).
+- **Filter** — a ghost **Filter** control reveals a text box (matches agent, model, target, run id)
+  plus the retained agent and date-range filters. Tab, filter, and page all live in the URL, so a
+  view is shareable and survives reload; changing any of them returns to page 1.
+- **Columns** — Run, Status, Agent, Model, Target, Launched by, Checks, Created, Duration, Cost.
+  Agent and Model are mono (the agent links to its page); Created reads in the operator's local
+  time (`Sep 17, 1:15 PM`) with the full timestamp on hover; Cost shows `—` for an unknown cost
+  (distinct from a real `$0`). Target, Launched by, and Checks come from enrichment and show `—`
+  when unobtainable.
+- **Dagster link** — a right-justified indigo link icon in the Run column opens that run in Dagster
+  in a new tab; it is omitted (no dead link) when Dagster is not configured. The run id itself
+  links to the AgentBox run page.
+- **Pagination** — 30 runs per page, newest first, via the shared **Pagination** design-system
+  component; Prev/Next are real `?page=` links that work without JS.
+
 #### Shell, foot, and settings
 
-Every page shares the sidebar shell. The primary nav links only to **Agents**; below a keyline the
-**foot** carries a Dagster connection-status block, a **Hide navigation** control that collapses
-the sidebar to 68px (its accessible name flips to *Show navigation* when collapsed), and a
-**Settings** link. The collapse choice persists per browser.
+Every page shares the sidebar shell. The primary nav leads with **Runs**, then a keyline, then
+**Agents**; the brand lockup links home (in both the expanded and collapsed rail). **Settings** is
+no longer a nav destination — the single Settings entry is the foot button that opens the modal.
+Below a keyline the **foot** carries a Dagster connection-status block, a **Hide navigation**
+control that collapses the sidebar to 68px (its accessible name flips to *Show navigation* when
+collapsed), and the **Settings** button. The collapse choice persists per browser.
 
 **Settings** opens a *User settings* modal (`role="dialog"`) with a Preferences section and a
 **Theme** dropdown — Light, Dark, or *Use system setting*. Choosing an option applies immediately
 (no reload) and persists across reloads; *Use system setting* follows the OS light/dark flip. There
 is no Save button — the choice takes effect on selection, and **Done** or Escape closes the modal.
+The modal also links to the **Settings page** for the server-backed Retention and Run-governors
+controls (kept as a route, reachable only through this link, not the nav).
 
 #### The indigo Dagster accent
 

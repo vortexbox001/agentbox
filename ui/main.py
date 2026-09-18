@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlencode, urlparse, urlunparse
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -378,41 +378,228 @@ def _run_stats(detail: dict) -> list[dict]:
     ]
 
 
-_RUN_STATUSES = ["ok", "failed", "timeout", "running", "unknown"]
+_RUNS_PER_PAGE = 30
+_RUN_TABS = ["all", "in_progress", "succeeded", "failed"]
 
 
-def _run_filters(request: Request) -> dict:
+def _fmt_duration(seconds):
+    """A compact elapsed-time label (`45s`, `2m 3s`, `1h 5m`, `2d 3h`), or None (→ em-dash)."""
+    if seconds is None:
+        return None
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    m, s = divmod(s, 60)
+    if m < 60:
+        return f"{m}m {s}s" if s else f"{m}m"
+    h, m = divmod(m, 60)
+    if h < 24:
+        return f"{h}h {m}m" if m else f"{h}h"
+    d, h = divmod(h, 24)
+    return f"{d}d {h}h" if h else f"{d}d"
+
+
+def _runs_url_state(request: Request) -> dict:
+    """Parse the shareable Runs view state from the URL (contract §A). Unknown ``tab`` → all;
+    ``page`` ≥ 1 (clamped to the last valid page later). The removed ``status`` param is ignored
+    (FR-007)."""
     qp = request.query_params
+    tab = qp.get("tab") or "all"
+    if tab not in _RUN_TABS:
+        tab = "all"
+    try:
+        page = int(qp.get("page") or 1)
+    except (TypeError, ValueError):
+        page = 1
     return {
-        "agent": qp.get("agent") or None,
-        "status": qp.get("status") or None,
-        "date_from": qp.get("date_from") or None,
-        "date_to": qp.get("date_to") or None,
+        "tab": tab,
+        "q": qp.get("q") or "",
+        "agent": qp.get("agent") or "",
+        "date_from": qp.get("date_from") or "",
+        "date_to": qp.get("date_to") or "",
+        "page": page if page >= 1 else 1,
+    }
+
+
+def _runs_base_query(state: dict) -> str:
+    """The tab+filter query (without ``page``) so pagination Prev/Next preserve the view."""
+    parts = {}
+    if state["tab"] != "all":
+        parts["tab"] = state["tab"]
+    for k in ("q", "agent", "date_from", "date_to"):
+        if state[k]:
+            parts[k] = state[k]
+    return urlencode(parts)
+
+
+def _launched_by_label(lb: dict) -> str:
+    """Launched-by cell text; ``—`` when enrichment could not supply it (FR-021)."""
+    kind = (lb or {}).get("kind")
+    if kind == "schedule":
+        return lb.get("name") or "schedule"
+    if kind == "sensor":
+        return lb.get("name") or "sensor"
+    if kind == "manual":
+        return "manual launch"
+    return "—"
+
+
+def _present_run(row: dict, info, enriched: bool, base: str) -> dict:
+    """Join one disk row with its Dagster enrichment into a presented Run row (data-model).
+
+    ``info`` is the per-id enrichment dict (or None); ``enriched`` is True only when Dagster
+    was reachable AND this row was within the enrichment cap. A row without live enrichment
+    keeps its local report status and is marked ``last_known`` (FR-002/FR-003)."""
+    local_status = row.get("status")
+    if info:
+        present = dagster._present_status(info.get("status"), local_status)
+        last_known = False
+        target = info.get("target") or "—"
+        launched_by = _launched_by_label(info.get("launched_by") or {})
+        checks = info.get("checks")
+        started_epoch = info.get("start_time") or row.get("started")
+        duration = _fmt_duration(
+            runs_store.duration_seconds(started_epoch, info.get("end_time")))
+    else:
+        present = dagster._present_status(None, local_status)
+        last_known = True
+        target = "—"
+        launched_by = "—"
+        checks = None
+        started_epoch = row.get("started")
+        duration = None
+    return {
+        "run_id": row["run_id"],
+        "agent": row.get("agent"),
+        "model": row.get("model") or None,
+        "target": target,
+        "launched_by": launched_by,
+        "checks": checks,
+        "created": runs_store.created_label(started_epoch),
+        "created_iso": runs_store.created_iso(started_epoch),
+        "created_epoch": started_epoch,
+        "duration": duration,
+        "cost_usd": _fmt_cost(row.get("cost_usd")),
+        "present": present,
+        "status_intent": dagster._status_intent(present),
+        "status_label": dagster._status_label(present),
+        "last_known": last_known,
+        "dagster_url": (f"{base}/runs/{row['run_id']}" if base else None),
+        "_sort": row.get("started") or 0,
+    }
+
+
+def _runs_tab_counts(rows: list[dict]) -> dict:
+    """Per-tab counts over the whole filtered set (before partition). An ``unknown`` row is
+    counted only in ``all`` (contract §D), so all ≥ in_progress + succeeded + failed."""
+    counts = {"all": len(rows), "in_progress": 0, "succeeded": 0, "failed": 0}
+    for r in rows:
+        tab = dagster._status_tab(r["present"])
+        if tab in counts:
+            counts[tab] += 1
+    return counts
+
+
+def _runs_in_tab(present: str, tab: str) -> bool:
+    return tab == "all" or dagster._status_tab(present) == tab
+
+
+async def _build_runs_view(request: Request) -> dict:
+    """The shared filter → enrich → count → partition → paginate pipeline (contract §A/§B,
+    FR-026). Disk is the source of truth; Dagster is best-effort so the page renders with the
+    orchestrator stopped (SC-002)."""
+    state = _runs_url_state(request)
+    # 1. Disk rows filtered by agent + date range (cheap; no Dagster).
+    rows = runs_store.list_runs(agent=state["agent"] or None,
+                                date_from=state["date_from"] or None,
+                                date_to=state["date_to"] or None)
+    # 2. Enrich the newest N of the filtered set from Dagster (one batched read, capped).
+    cap = dagster.RUNS_STATUS_CAP
+    enrichment = await dagster.run_status([r["run_id"] for r in rows[:cap]])
+    reachable = bool(enrichment.get("reachable"))
+    enriched = enrichment.get("runs") or {}
+    capped = len(rows) > cap
+    base = public_dagster_url(request)
+    presented = [
+        _present_run(row, (enriched.get(row["run_id"]) if (reachable and i < cap) else None),
+                     reachable and i < cap, base)
+        for i, row in enumerate(rows)
+    ]
+    # 3. Text filter over agent / model / run id / target (target now available, R3).
+    presented = [r for r in presented if runs_store.matches_text(r, state["q"])]
+    # 4. Per-tab counts over the whole filtered set (before partition, FR-006).
+    counts = _runs_tab_counts(presented)
+    # 5. Partition by tab; 6. newest-first (list_runs already sorts desc); 7. paginate 30.
+    partitioned = [r for r in presented if _runs_in_tab(r["present"], state["tab"])]
+    total = len(partitioned)
+    pages = max(1, (total + _RUNS_PER_PAGE - 1) // _RUNS_PER_PAGE)
+    page = min(state["page"], pages)                    # clamp a past-the-end page (edge case)
+    start = (page - 1) * _RUNS_PER_PAGE
+    return {
+        "state": state,
+        "rows": partitioned[start:start + _RUNS_PER_PAGE],
+        "counts": counts,
+        "page": page,
+        "pages": pages,
+        "reachable": reachable,
+        "capped": capped,
+        "cap": cap,
+        "base_query": _runs_base_query(state),
+        "dagster_url": base,
+    }
+
+
+def _api_run_row(r: dict) -> dict:
+    """One presented Run as the /api/runs JSON shape (contract §B)."""
+    return {
+        "run_id": r["run_id"],
+        "status": r["present"],
+        "last_known": r["last_known"],
+        "agent": r["agent"],
+        "model": r["model"],
+        "target": r["target"],
+        "launched_by": r["launched_by"],
+        "checks": r["checks"],
+        "created": r["created"],
+        "created_iso": r["created_iso"],
+        "duration": r["duration"],
+        "cost_usd": r["cost_usd"],
+        "dagster_url": r["dagster_url"],
     }
 
 
 @app.get("/runs")
 async def _runs_list_page(request: Request):
-    # The Runs list, built entirely from disk so it renders with the orchestrator stopped
-    # (FR-017/FR-018/SC-007). Filters (agent / status / date range) are applied server-side for
-    # first paint; runs-list.js refreshes them client-side against /api/runs.
-    filters = _run_filters(request)
-    rows = runs_store.list_runs(**filters)
+    # The Runs overview: a tabbed, filterable, paginated table (contract §A). Disk is the
+    # source of truth so it renders with the orchestrator stopped (SC-002); Dagster enrichment
+    # (true status / Target / Launched by / Checks) is best-effort and marked last-known when
+    # absent. runs-list.js refreshes rows client-side against /api/runs.
+    view = await _build_runs_view(request)
     agents = sorted({r["agent"] for r in runs_store.list_runs()})
     return templates.TemplateResponse(
         request,
         "runs/list.html",
         _shell_context(
-            request, title="Runs", runs=rows, agents=agents, statuses=_RUN_STATUSES,
-            filters=filters,
+            request, title="Runs", runs=view["rows"], agents=agents,
+            state=view["state"], counts=view["counts"], page=view["page"],
+            pages=view["pages"], reachable=view["reachable"], capped=view["capped"],
+            cap=view["cap"], base_query=view["base_query"],
         ),
     )
 
 
 @app.get("/api/runs")
 async def _api_runs(request: Request):
-    # List rows as JSON for client-side filter/refresh (disk-only).
-    return JSONResponse({"runs": runs_store.list_runs(**_run_filters(request))})
+    # Presented rows for the current tab+filter+page as JSON (contract §B). MUST return
+    # reachable:false + last-known rows rather than failing when Dagster is down.
+    view = await _build_runs_view(request)
+    return JSONResponse({
+        "runs": [_api_run_row(r) for r in view["rows"]],
+        "counts": view["counts"],
+        "page": view["page"],
+        "pages": view["pages"],
+        "reachable": view["reachable"],
+    })
 
 
 @app.get("/api/runs/{run_id}/files/{path:path}")

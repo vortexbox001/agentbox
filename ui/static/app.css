@@ -46,6 +46,10 @@ html[data-sidebar="collapsed"] .ax-app {
 }
 
 /* ── Brand ────────────────────────────────────────────── */
+/* The brand lockup links home (FR-032); the anchor carries the click target and a visible
+   keyboard focus ring, active in both expanded and collapsed nav. */
+.ax-brand-home { display: block; text-decoration: none; border-radius: var(--radius-md); }
+.ax-brand-home:focus-visible { outline: thin solid var(--color-focus-ring); outline-offset: var(--space-1); }
 .ax-brand {
   display: flex;
   align-items: center;
@@ -1147,12 +1151,34 @@ mark.ax-hit { background: var(--color-background-yellow); color: var(--color-tex
 .ax-file-size { flex: none; font: var(--type-mono-sm); color: var(--color-text-lighter); }
 .ax-file-actions { flex: none; display: flex; gap: var(--space-4); }
 
-/* Report tab — notes block + runs-list filter toolbar (spec 012 US3) */
+/* Report tab — notes block (spec 012 US3) */
 .ax-report-notes { margin-top: var(--space-6); padding: var(--space-6) var(--space-7); border: thin solid var(--color-border-default); border-radius: var(--radius-md); background: var(--color-background-light); font: var(--type-body-sm); line-height: 1.6; color: var(--color-text-default); white-space: pre-wrap; overflow-wrap: anywhere; }
-.ax-runs-filters { display: flex; align-items: flex-end; gap: var(--space-6); flex-wrap: wrap; }
-.ax-runs-filter { display: flex; flex-direction: column; gap: var(--space-3); }
-.ax-runs-filter-label { font: var(--type-label-sm); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-light); }
 .ax-runs-empty { padding: var(--space-10) var(--space-9); text-align: center; color: var(--color-text-lighter); font: var(--type-body-md); }
+
+/* ── Runs overview (spec 015) ─────────────────────────────
+   Tabbed, filterable, paginated table matching the Agents overview. The ghost-Filter form
+   reveals the text + agent + date-range controls; the Run cell right-justifies an indigo
+   Dagster deep-link; a last-known badge marks a stale (disk-fallback) status. */
+.ax-runs-filters { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; }
+.ax-runs-filters .ax-input { width: 14rem; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.ax-run-cell { display: flex; align-items: center; gap: var(--space-4); }
+/* The Dagster deep-link icon: indigo/accent ramp, pushed to the right of the run id. */
+.ax-run-dagster-link { display: inline-flex; margin-left: auto; color: var(--color-core-indigo300); }
+.ax-run-dagster-link:hover { color: var(--color-core-indigo200); }
+.ax-run-dagster-link .ax-icon { width: var(--icon-sm); height: var(--icon-sm); }
+/* Last-known status marker: a subtle gray badge that signals staleness without changing the
+   status intent (FR-002). */
+.ax-badge--last-known { background: var(--color-background-gray); color: var(--color-text-light); }
+/* Enrichment-cap note (FR-035): a muted line above the table. */
+.ax-runs-cap-note { margin: 0; padding: var(--space-5) var(--space-9); font: var(--type-body-sm); color: var(--color-text-light); }
+
+/* ── Pagination (Pagination.d.ts, FR-034) ─────────────────
+   Prev · indicator · Next, composed from the shared button treatment. The active Prev/Next
+   use the accent/indigo hover the button base already exposes; a disabled control is dimmed
+   and non-navigating. */
+.ax-pagination { display: flex; align-items: center; justify-content: center; gap: var(--space-6); padding: var(--space-7) var(--space-9); }
+.ax-pagination-indicator { font: var(--type-body-sm); color: var(--color-text-light); }
+.ax-pagination .ax-btn[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
 
 /* Compare view — field-by-field context diff (spec 012 US4) */
 .ax-cmp { display: flex; flex-direction: column; }

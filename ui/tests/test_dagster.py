@@ -140,3 +140,111 @@ def test_activity_populates_asset_agent_from_shared_asset_runs(settings, monkeyp
     agent = out["agents"]["notes"]
     assert agent["latest_run"]["run_id"] == "n2"
     assert agent["history"] == ["SUCCESS", "FAILURE"]
+
+
+# ── run_status(): the Runs-overview enrichment read (spec 015, contract §C, T009) ────────────
+
+class _CountingClient:
+    """A fake AsyncClient that records how many POSTs it issues (to assert exactly one)."""
+    def __init__(self, payload, calls, *, raise_exc=None):
+        self._payload = payload
+        self._calls = calls
+        self._raise = raise_exc
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, json):
+        self._calls.append(json)
+        if self._raise is not None:
+            raise self._raise
+        p = self._payload
+        if callable(p):
+            p = p(json["query"])
+        return _FakeResp(p)
+
+
+def _run_result(run_id, status, *, start=None, end=None, asset=None, pipeline=None,
+                tags=None, checks=None):
+    r = {"runId": run_id, "status": status, "startTime": start, "endTime": end,
+         "pipelineName": pipeline, "tags": tags or []}
+    if asset is not None:
+        r["assetSelection"] = [{"path": asset}]
+    if checks is not None:
+        r["assetChecks"] = checks
+    return r
+
+
+def test_run_status_batches_reads_and_parses(settings, monkeypatch):
+    import dagster
+    calls = []
+    runs_payload = {"data": {"runsOrError": {"__typename": "Runs", "results": [
+        _run_result("a", "SUCCESS", start=100.0, end=160.0, asset=["refined", "daily"],
+                    tags=[{"key": "dagster/schedule_name", "value": "sched_x"}]),
+        _run_result("b", "FAILURE", pipeline="agent_hello",
+                    tags=[{"key": "dagster/sensor_name", "value": "autocond_hello"}]),
+        _run_result("c", "STARTED", pipeline="agent_hello", tags=[]),
+    ]}}}
+    # Checks live on the AssetNode, not the Run: the second read returns the latest check
+    # execution, tagged with the run that produced it (only run "a" has an asset here).
+    checks_payload = {"data": {"c0": {"__typename": "AssetNode", "assetChecksOrError": {
+        "__typename": "AssetChecks", "checks": [
+            {"name": "freshness",
+             "executionForLatestMaterialization": {"runId": "a", "status": "SUCCEEDED"}}]}}}}
+
+    def dispatch(query):
+        return checks_payload if "assetNodeOrError" in query else runs_payload
+
+    monkeypatch.setattr(dagster.httpx, "AsyncClient",
+                        lambda *a, **k: _CountingClient(dispatch, calls))
+    out = asyncio.run(dagster.run_status(["a", "b", "c", "absent"]))
+    # Two batched POSTs — one for run status/target/launched-by, one for Checks — never one
+    # request per run (contract guarantee): the run read, then a single aliased asset-node read.
+    assert len(calls) == 2
+    assert "runsOrError" in calls[0]["query"]
+    assert "assetNodeOrError" in calls[1]["query"]
+    assert out["reachable"] is True
+    # status / target (asset key vs job name) / launched-by / checks are parsed.
+    assert out["runs"]["a"]["status"] == "SUCCESS"
+    assert out["runs"]["a"]["target"] == "refined/daily"
+    assert out["runs"]["a"]["launched_by"] == {"kind": "schedule", "name": "sched_x"}
+    assert out["runs"]["a"]["checks"] == [{"name": "freshness", "status": "pass"}]
+    assert out["runs"]["b"]["target"] == "agent_hello"          # falls back to the job name
+    assert out["runs"]["b"]["launched_by"] == {"kind": "sensor", "name": "autocond_hello"}
+    assert out["runs"]["b"]["checks"] is None                   # no asset → no checks
+    assert out["runs"]["c"]["launched_by"] == {"kind": "manual", "name": None}
+    # A requested id absent from results is simply omitted (caller treats it as last-known).
+    assert "absent" not in out["runs"]
+
+
+def test_run_status_empty_ids_makes_no_call(settings, monkeypatch):
+    import dagster
+    calls = []
+    monkeypatch.setattr(dagster.httpx, "AsyncClient",
+                        lambda *a, **k: _CountingClient({}, calls))
+    out = asyncio.run(dagster.run_status([]))
+    assert out == {"reachable": True, "runs": {}}
+    assert calls == []
+
+
+def test_run_status_degrades_on_transport_error(settings, monkeypatch):
+    import dagster
+    calls = []
+    monkeypatch.setattr(dagster.httpx, "AsyncClient",
+                        lambda *a, **k: _CountingClient(None, calls,
+                                                        raise_exc=dagster.httpx.ConnectError("down")))
+    out = asyncio.run(dagster.run_status(["a"]))
+    assert out == {"reachable": False, "runs": {}}
+
+
+def test_run_status_degrades_on_python_error_arm(settings, monkeypatch):
+    import dagster
+    calls = []
+    payload = {"data": {"runsOrError": {"__typename": "PythonError", "message": "boom"}}}
+    monkeypatch.setattr(dagster.httpx, "AsyncClient",
+                        lambda *a, **k: _CountingClient(payload, calls))
+    out = asyncio.run(dagster.run_status(["a"]))
+    assert out == {"reachable": False, "runs": {}}

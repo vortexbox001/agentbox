@@ -123,6 +123,11 @@ def settings(monkeypatch, tmp_agents, tmp_prompts, tmp_templates, litellm_cfg,
     # checkout (so a path under the repo is correctly rejected as product-tree-owned).
     monkeypatch.setattr(config, "DATA_ROOT", "/data")
     monkeypatch.setattr(config, "PRODUCT_ROOT", str(REPO_ROOT))
+    # Pin the browser-facing Dagster link inputs so tests derive `{request host}:3000` and never
+    # inherit an operator's exported `.env` (DAGSTER_PUBLIC_URL / DAGSTER_HOST_PORT), which config
+    # reads at import — otherwise the same suite fails on the box but passes off it.
+    monkeypatch.setattr(config, "DAGSTER_PUBLIC_URL", "")
+    monkeypatch.setattr(config, "DAGSTER_HOST_PORT", "3000")
     return config
 
 

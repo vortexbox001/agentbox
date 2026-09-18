@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"AgentBoxDesignSystem_463fbd","components":[{"name":"Button","sourcePath":"components/buttons/Button.jsx"},{"name":"Table","sourcePath":"components/data/Table.jsx"},{"name":"Alert","sourcePath":"components/feedback/Alert.jsx"},{"name":"Badge","sourcePath":"components/feedback/Badge.jsx"},{"name":"RunStatusTag","sourcePath":"components/feedback/RunStatusTag.jsx"},{"name":"SchedulePill","sourcePath":"components/feedback/SchedulePill.jsx"},{"name":"Spinner","sourcePath":"components/feedback/Spinner.jsx"},{"name":"StatusDot","sourcePath":"components/feedback/StatusDot.jsx"},{"name":"Checkbox","sourcePath":"components/forms/Checkbox.jsx"},{"name":"Select","sourcePath":"components/forms/Select.jsx"},{"name":"TextInput","sourcePath":"components/forms/TextInput.jsx"},{"name":"Toggle","sourcePath":"components/forms/Toggle.jsx"},{"name":"Card","sourcePath":"components/layout/Card.jsx"},{"name":"Dialog","sourcePath":"components/layout/Dialog.jsx"},{"name":"Tabs","sourcePath":"components/navigation/Tabs.jsx"},{"name":"Tab","sourcePath":"components/navigation/Tabs.jsx"}],"sourceHashes":{"components/buttons/Button.jsx":"e5c09169e13c","components/data/Table.jsx":"ec89ce49f825","components/feedback/Alert.jsx":"a8e9b189d966","components/feedback/Badge.jsx":"dcd2e315e7ee","components/feedback/RunStatusTag.jsx":"9bbfb16297bc","components/feedback/SchedulePill.jsx":"fd6ce3d3d2d6","components/feedback/Spinner.jsx":"ec7ee75319fc","components/feedback/StatusDot.jsx":"a238cf172490","components/forms/Checkbox.jsx":"1b36a86a1d79","components/forms/Select.jsx":"9344fce9702f","components/forms/TextInput.jsx":"a31075e0a82c","components/forms/Toggle.jsx":"9073dbbfcfd8","components/layout/Card.jsx":"d9a3d477352c","components/layout/Dialog.jsx":"3f642a39861e","components/navigation/Tabs.jsx":"6acb218ddf74","static/dropdown.js":"dc2966e327c9"},"inlinedExternals":[],"unexposedExports":[{"name":"enhanceSelect","sourcePath":"static/dropdown.js"},{"name":"enhanceSelects","sourcePath":"static/dropdown.js"}]} */
+/* @ds-bundle: {"format":4,"namespace":"AgentBoxDesignSystem_463fbd","components":[{"name":"Button","sourcePath":"components/buttons/Button.jsx"},{"name":"Table","sourcePath":"components/data/Table.jsx"},{"name":"Alert","sourcePath":"components/feedback/Alert.jsx"},{"name":"Badge","sourcePath":"components/feedback/Badge.jsx"},{"name":"RunStatusTag","sourcePath":"components/feedback/RunStatusTag.jsx"},{"name":"SchedulePill","sourcePath":"components/feedback/SchedulePill.jsx"},{"name":"Spinner","sourcePath":"components/feedback/Spinner.jsx"},{"name":"StatusDot","sourcePath":"components/feedback/StatusDot.jsx"},{"name":"Checkbox","sourcePath":"components/forms/Checkbox.jsx"},{"name":"Select","sourcePath":"components/forms/Select.jsx"},{"name":"TextInput","sourcePath":"components/forms/TextInput.jsx"},{"name":"Toggle","sourcePath":"components/forms/Toggle.jsx"},{"name":"Card","sourcePath":"components/layout/Card.jsx"},{"name":"Dialog","sourcePath":"components/layout/Dialog.jsx"},{"name":"Tabs","sourcePath":"components/navigation/Tabs.jsx"},{"name":"Tab","sourcePath":"components/navigation/Tabs.jsx"},{"name":"Pagination","sourcePath":"components/navigation/Pagination.jsx"}],"sourceHashes":{"components/buttons/Button.jsx":"e5c09169e13c","components/data/Table.jsx":"ec89ce49f825","components/feedback/Alert.jsx":"a8e9b189d966","components/feedback/Badge.jsx":"dcd2e315e7ee","components/feedback/RunStatusTag.jsx":"9bbfb16297bc","components/feedback/SchedulePill.jsx":"fd6ce3d3d2d6","components/feedback/Spinner.jsx":"ec7ee75319fc","components/feedback/StatusDot.jsx":"a238cf172490","components/forms/Checkbox.jsx":"1b36a86a1d79","components/forms/Select.jsx":"9344fce9702f","components/forms/TextInput.jsx":"a31075e0a82c","components/forms/Toggle.jsx":"9073dbbfcfd8","components/layout/Card.jsx":"d9a3d477352c","components/layout/Dialog.jsx":"3f642a39861e","components/navigation/Tabs.jsx":"6acb218ddf74","static/dropdown.js":"dc2966e327c9","components/navigation/Pagination.jsx":"e70ca85c42e2"},"inlinedExternals":[],"unexposedExports":[{"name":"enhanceSelect","sourcePath":"static/dropdown.js"},{"name":"enhanceSelects","sourcePath":"static/dropdown.js"}]} */
 
 (() => {
 
@@ -1040,6 +1040,67 @@ function Tab({
 Object.assign(__ds_scope, { Tabs, Tab });
 })(); } catch (e) { __ds_ns.__errors.push({ path: "components/navigation/Tabs.jsx", error: String((e && e.message) || e) }); }
 
+// components/navigation/Pagination.jsx
+try { (() => {
+function Pagination({
+  page = 1,
+  pages = 1,
+  onChange,
+  style,
+  ...rest
+}) {
+  const wrap = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '16px',
+    fontFamily: 'var(--font-default)',
+    ...style
+  };
+  const btn = disabled => ({
+    fontFamily: 'var(--font-default)',
+    fontSize: '14px',
+    lineHeight: '20px',
+    fontWeight: 600,
+    padding: '8px 16px',
+    borderRadius: '8px',
+    border: '1px solid var(--color-border-default)',
+    background: 'none',
+    color: disabled ? 'var(--color-text-light)' : 'var(--color-text-default)',
+    cursor: disabled ? 'default' : 'pointer',
+    opacity: disabled ? 0.5 : 1,
+    transition: 'color 100ms, border-color 100ms'
+  });
+  const indicator = {
+    fontSize: '14px',
+    lineHeight: '20px',
+    color: 'var(--color-text-light)'
+  };
+  const prevDisabled = page <= 1;
+  const nextDisabled = page >= pages;
+  return React.createElement('nav', {
+    'aria-label': 'Pagination',
+    style: wrap,
+    ...rest
+  }, React.createElement('button', {
+    type: 'button',
+    'aria-disabled': prevDisabled,
+    disabled: prevDisabled,
+    style: btn(prevDisabled),
+    onClick: onChange && !prevDisabled ? () => onChange(page - 1) : undefined
+  }, 'Prev'), React.createElement('span', {
+    style: indicator
+  }, `Page ${page} of ${pages}`), React.createElement('button', {
+    type: 'button',
+    'aria-disabled': nextDisabled,
+    disabled: nextDisabled,
+    style: btn(nextDisabled),
+    onClick: onChange && !nextDisabled ? () => onChange(page + 1) : undefined
+  }, 'Next'));
+}
+Object.assign(__ds_scope, { Pagination });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/navigation/Pagination.jsx", error: String((e && e.message) || e) }); }
+
 // static/dropdown.js
 try { (() => {
 // Custom dropdown — a progressive enhancement over a native <select>.
@@ -1559,5 +1620,7 @@ __ds_ns.Dialog = __ds_scope.Dialog;
 __ds_ns.Tabs = __ds_scope.Tabs;
 
 __ds_ns.Tab = __ds_scope.Tab;
+
+__ds_ns.Pagination = __ds_scope.Pagination;
 
 })();

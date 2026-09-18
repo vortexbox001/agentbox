@@ -179,7 +179,7 @@ No emoji in the product UI. No custom icon font. Unicode characters are not used
 │   ├── buttons/         Button, IconButton
 │   ├── forms/           TextInput, Select, Checkbox, Toggle
 │   ├── feedback/        Badge, StatusDot, Alert, Spinner, RunStatusTag, SchedulePill
-│   ├── navigation/      Tabs, Breadcrumbs
+│   ├── navigation/      Pagination, Tabs, Breadcrumbs
 │   ├── layout/          Card, Dialog
 │   └── data/            Table
 ├── fonts/               Self-hosted brand fonts (Inter, Source Code Pro .woff2)
@@ -217,6 +217,7 @@ No emoji in the product UI. No custom icon font. Unicode characters are not used
 | RunStatusTag | `components/feedback/` | Run status pill: colored dot + label; neutral gray for started/running. |
 | SchedulePill | `components/feedback/` | Schedule/sensor chip: icon + frequency + inline on/off toggle. |
 | Tabs | `components/navigation/` | Bottom-border tab indicator, matches Dagster. |
+| Pagination | `components/navigation/` | Prev · page indicator · Next. Prev disabled on the first page, Next on the last; page state lives in the URL (`?page=`), so it works without JS and a copied link restores the page. |
 | Card | `components/layout/` | Content container with border, no shadow. |
 | Dialog | `components/layout/` | Modal dialog with backdrop blur. |
 | Table | `components/data/` | Grid-based data table with header + rows. |
