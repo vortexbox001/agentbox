@@ -155,9 +155,10 @@ the spec + repo. Full rationale in [research.md](./research.md).
    that escapes all input, emits only the FR-007 subset, and never passes raw HTML through. This makes
    the "no raw markup" guarantee structural and lets the golden fixtures assert the rendered output
    (R2).
-3. **Summary source precedence**: `report.notes` → final event text → the run foot line + "No final
-   message was captured." (FR-008). The `report.notes` line therefore leaves the rail's Usage block
-   entirely (FR-006, spec Assumption) (R3).
+3. **Summary source precedence**: `report.notes` → final event text → the Summary foot line
+   (status · turns · files written) + "No final message was captured." (FR-008). The Summary foot line
+   is the three-field variant — distinct from the four-field Transcript foot line (FR-033). The
+   `report.notes` line therefore leaves the rail's Usage block entirely (FR-006, spec Assumption) (R3).
 4. **Produced-elsewhere is mined best-effort from the normalized event stream** with null-action
    fallback (R4): a **pull request** = a tool result containing a GitHub pulls `html_url`; a **commit**
    = a git result containing a short SHA; a **file** = a write/edit tool call's `file_path`. Rows are
@@ -176,8 +177,10 @@ the spec + repo. Full rationale in [research.md](./research.md).
    so it is not the source of the marker; see data-model.md "Tool card view model".)
 7. **Clamp is fixed at 3 lines, detected server-side**: the view model counts IN/OUT lines and flags
    `overflow` (> 3) so the template renders the fade and the "Show all N lines" link deterministically;
-   `run-detail.js` toggles the expanded state. **Diff OUT rows render expanded by default** because diff
-   colouring cannot survive the clamp cleanly (FR-026 fallback / edge case) (R7).
+   `run-detail.js` toggles the expanded state. **Diff OUT rows render expanded by default** — an
+   unconditional design choice (not a condition triggered only when clamped colouring would be
+   unreadable) so diff colouring is never clamped, matching the spec's unconditional FR-026 rule and
+   the Session 2026-09-18 clarification (finding A1) (R7).
 8. **The six new components are design-system-first** (R8); the existing `tool_call`/`timeline` macros
    are left in place for the compare page (FR-037, spec Assumption). Section-note wording is adopted
    from the artboard (spec Assumption): "final message from the agent"; "0 files · 1 pull request";

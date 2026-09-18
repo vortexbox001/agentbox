@@ -112,7 +112,7 @@ AGENTBOX_DATA=/path/to/data .venv/bin/uvicorn ui.main:app --port 8000
 2. Switch **Readable / Raw-log** (now in the Transcript header) → the unchanged `transcript.jsonl` view
    shows, and back (FR-030).
 3. Confirm the last assistant message and the final event render **once**, as a Result (FR-032), and
-   the run foot line sits at the bottom of the Transcript (FR-033).
+   the Transcript foot line sits at the bottom of the Transcript (FR-033).
 
 ## Theme check (SC-009)
 

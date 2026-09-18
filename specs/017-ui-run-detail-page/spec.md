@@ -51,6 +51,34 @@ applied consistently across `spec.md`, `plan.md`, `tasks.md`, `data-model.md`, a
   lives inside the rail's **Configuration** block (FR-006). "Harness remains in the rail" in User
   Story 6 refers to that Configuration detail, not a second, separate placement.
 
+### Session 2026-09-18 (analysis remediation — residual findings)
+
+Decisions recorded while acting on the second `/speckit-analyze` pass (`analysis-report.md`, four LOW
+residual findings), unattended. Each is applied consistently across `spec.md`, `plan.md`, `tasks.md`,
+and `data-model.md`.
+
+- Q: The term "run foot line" named two different renderings — the Summary fallback (three fields:
+  status · turns · files written) and the Transcript foot (four fields: … · tool calls). What is the
+  canonical naming? (finding I1) → A: Disambiguate by name. The three-field variant is the **Summary
+  foot line** (FR-008); the four-field variant is the **Transcript foot line** (FR-033). The underlying
+  rule was never in conflict — only the shared name was ambiguous — so the values are unchanged; every
+  occurrence in `spec.md`/`plan.md`/`data-model.md` now uses the specific name and cross-notes that the
+  Summary variant omits `· tool calls`.
+- Q: Plan decision R7 still justified expanded diff OUT rows with the superseded conditional clause
+  ("because diff colouring cannot survive the clamp cleanly"). Should the plan match the spec's
+  unconditional rule? (finding A1) → A: Yes. R7's rationale is rewritten to state the unconditional
+  design choice (diff OUT always renders expanded so colouring is never clamped), matching FR-026 and
+  the earlier A1 clarification. Behaviour unchanged; only the plan's "why" wording is aligned.
+- Q: SC-002, SC-005 (runtime half) and SC-007 have no automated coverage (no JS test harness). How is
+  their acceptance tracked? (finding C1) → A: The quickstart.md US1–US7 manual walk-through (T058) is a
+  **required** acceptance gate, not optional: it is the sole sign-off for those client-only criteria,
+  and acceptance is incomplete until both T057 (automated `pytest`) and T058 (manual) pass. T057/T058
+  now state this dependency explicitly.
+- Q: The feature directory (`017-…`) and git branch (`207-…`) disagree. (finding N1) → A: No artifact
+  edit. This is already documented and cross-referenced in `spec.md`, `plan.md`, and `tasks.md`; `207`
+  is a transposition of `017`. Left as-is pre-merge; reconciling the branch/directory names is a
+  post-merge housekeeping step, out of scope for the artifacts.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Read a run's outcome in the order the questions arise (Priority: P1)
@@ -155,7 +183,7 @@ to a readable Summary at the top is central to answering the operator's first qu
 **Independent Test**: Open a run whose report carries a final message with a heading, a bold line, code
 spans and a bullet list, and confirm the Summary renders each as formatted text; open a run whose
 report has no notes but whose event stream has a final message and confirm the Summary shows that
-text; open a legacy run with neither and confirm the Summary shows the run foot line and the note
+text; open a legacy run with neither and confirm the Summary shows the Summary foot line and the note
 "No final message was captured."
 
 **Acceptance Scenarios**:
@@ -167,7 +195,7 @@ text; open a legacy run with neither and confirm the Summary shows the run foot 
 2. **Given** a run whose report has no final message but whose event stream carries one, **When** the
    operator reads the Summary, **Then** it shows the event's final text.
 3. **Given** a run with neither a report message nor an event message, **When** the operator reads the
-   Summary, **Then** it shows the run foot line (status · turns · files written) and the note
+   Summary, **Then** it shows the Summary foot line (status · turns · files written) and the note
    "No final message was captured."
 4. **Given** the Summary now carries the final message, **When** the operator looks in the rail's
    Usage block, **Then** the final-message notes no longer appear there.
@@ -276,8 +304,8 @@ An operator uses the Transcript section to find and read what exactly happened. 
 the transcript to entries whose text matches — now including the IN and OUT content of tool cards, not
 only message text — and reports the match count. The Readable / Raw-log control lives inside the
 Transcript section and switches to the unchanged raw view and back. Turn entries keep their role
-labels and line breaks, the duplicate final message renders once as a Result, and the run foot line
-sits at the bottom of the section.
+labels and line breaks, the duplicate final message renders once as a Result, and the Transcript foot
+line sits at the bottom of the section.
 
 **Why this priority**: Search and the raw-log toggle are how an operator drills into "what exactly
 happened". Moving them into the Transcript section and widening search to tool content complete the
@@ -287,7 +315,7 @@ transcript's job, but they refine a section that is already usable.
 matching entries stay and the rest hide, with a match count; clear the search and confirm all entries
 return; switch the Readable / Raw-log control to the raw view and back and confirm the raw
 `transcript.jsonl` view is unchanged; confirm the last assistant message and the final event render as
-a single Result entry; confirm the run foot line sits at the bottom of the Transcript.
+a single Result entry; confirm the Transcript foot line sits at the bottom of the Transcript.
 
 **Acceptance Scenarios**:
 
@@ -365,8 +393,8 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   bullet lists, and URLs as links — with no raw HTML pass-through; content outside the subset MUST
   render as plain text.
 - **FR-008**: When the run's report has no final message, the Summary MUST fall back to the final
-  event's text from the event stream; when neither exists, it MUST show the run foot line and the note
-  "No final message was captured."
+  event's text from the event stream; when neither exists, it MUST show the Summary foot line
+  (status · turns · files written) and the note "No final message was captured."
 - **FR-009**: The Summary section's closed-state note MUST describe its contents (e.g. "final message
   from the agent").
 
@@ -455,8 +483,9 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   (turn N · tokens) and message text with line breaks preserved.
 - **FR-032**: The last assistant message and the final event that carry the same text MUST render once,
   as a single Result entry.
-- **FR-033**: The run foot line (status · turns · files written · tool calls) MUST appear at the bottom
-  of the Transcript section.
+- **FR-033**: The Transcript foot line (status · turns · files written · tool calls) MUST appear at the
+  bottom of the Transcript section. (It carries `· tool calls` as a fourth field; the Summary foot line
+  in FR-008 omits that field — see the Clarifications note on foot-line naming.)
 - **FR-034**: The Transcript section's closed-state note MUST summarise its contents (e.g. "24 turns ·
   23 tool calls").
 
@@ -516,7 +545,7 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   entry.
 - **SC-008**: A run with no recorded checks shows "No checks were configured for this agent." with the
   note "—"; a run whose report has no final message shows the final event text; a legacy run with
-  neither shows the foot line and the "No final message was captured." note.
+  neither shows the Summary foot line and the "No final message was captured." note.
 - **SC-009**: Viewed in light, dark and Indigo themes, the section borders, the IN/OUT box ground and
   fade, the muted OUT text, and the check marks all read correctly, with the fade colour following the
   background token.

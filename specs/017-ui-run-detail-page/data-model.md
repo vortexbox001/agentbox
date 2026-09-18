@@ -33,7 +33,7 @@ reflecting state, toggled by click or Enter/Space, rendered by the `disclosure` 
 |-------|--------|-------|
 | `html` | `ui/markdown.render_summary(text)` | Safe subset HTML: paragraphs, `##`/`###` → uppercase labels, bold, inline code, bullet lists, URLs → links; all input escaped; **no raw HTML** (FR-007, R2). |
 | `source` | precedence: `report.notes` → final event text → none (R3) | `report.notes` is the claude harness's stored final message (`images/agent-claude/wrapper.py:142`); the final event is the `kind=="final"` entry from `conversation_entries`. |
-| `fallback` | present when `source is none` | The **run foot line** (status · turns · files written) + note **"No final message was captured."** (FR-008). |
+| `fallback` | present when `source is none` | The **Summary foot line** (status · turns · files written — three fields, no `· tool calls`) + note **"No final message was captured."** (FR-008). Distinct from the four-field Transcript foot line (FR-033). |
 | `note` | `"final message from the agent"` (or the fallback note) | Closed-state note (FR-009). |
 
 The `report.notes` line is **removed from the rail** (`_rail.html:91`) — it lives only here (FR-006,
@@ -128,7 +128,7 @@ flips the link to "Show less" (FR-025); the control is keyboard-operable with `a
 |-------|--------|-------|
 | `entries` | `conversation_entries(events)` | Turn entries unchanged: gutter dot, role label (Task, Agent, Result, Error), meta (turn N · tokens), message text with line breaks (FR-031). |
 | `result_dedup` | last assistant message == final event text → render once as **Result** | (FR-032). |
-| `foot` | status · turns · files written · tool calls | At the bottom of the section (FR-033). |
+| `foot` | Transcript foot line: status · turns · files written · tool calls (four fields) | At the bottom of the section (FR-033). Distinct from the three-field Summary foot line (FR-008). |
 | `raw_transcript` / `raw_truncated` | `read_transcript(run_id)` | The unchanged raw `transcript.jsonl` view, bounded to 512 KB (FR-030). |
 | `note` | `"N turns · M tool calls"` | Closed-state note (FR-034). |
 

@@ -359,7 +359,7 @@ rail.
 
 **Goal**: The Transcript section carries search (now matching tool IN/OUT content, with auto-expand on
 clamped-only matches) + match count, the relocated Readable/Raw-log control, unchanged turn entries, a
-single deduped Result, and the run foot line at the bottom.
+single deduped Result, and the Transcript foot line at the bottom.
 
 **Independent Test**: Search a term that appears only inside a tool card's IN/OUT — matching entries
 stay, the rest hide, the count reports, the matching card auto-expands; clearing restores every entry
@@ -408,10 +408,16 @@ skimmable transcript.
   **background** token (FR-036, SC-009, SC-010).
 - [ ] T057 Run the full gate `.venv/bin/python -m pytest -q ui/tests` and confirm every suite passes
   (runs, runs_store, dagster, conformance, ds-sync, ds-docs), including the golden fixture rendering
-  every section (SC-010, quickstart "Automated validation").
-- [ ] T058 Walk quickstart.md US1–US7 + the theme check against the reference run (`speckit-open-pr`,
-  2026-09-18) in light/dark/Indigo, confirming the section borders, IN/OUT box ground + fade, muted OUT
-  text and check marks all read correctly (SC-009).
+  every section (SC-010, quickstart "Automated validation"). **Note (finding C1):** a green `pytest`
+  run is **not by itself** sufficient acceptance — SC-002, SC-005 (runtime half) and SC-007 have no
+  automated coverage (no JS test harness; see the Test-surface note) and are signed off only by the
+  required manual walk-through in T058.
+- [ ] T058 **Required acceptance gate (not optional — finding C1).** Walk quickstart.md US1–US7 + the
+  theme check against the reference run (`speckit-open-pr`, 2026-09-18) in light/dark/Indigo, confirming
+  the section borders, IN/OUT box ground + fade, muted OUT text and check marks all read correctly
+  (SC-009). This walk-through is the **sole** sign-off for the client-only behaviours SC-002 (per-browser
+  section persistence), SC-005 (clamp expand-on-click, runtime half) and SC-007 (search hide +
+  auto-expand-on-match); acceptance is incomplete until both T057 (automated) and T058 (manual) pass.
 - [ ] T059 [P] Add a read-path/no-write guard test in `ui/tests/` (e.g. `test_runs.py` or a small
   `test_scope.py`) that makes the FR-035 "presentation and read-path only" guarantee verifiable rather
   than policy-only: assert `ui.schema.SCHEMA_VERSION` is unchanged, that `ui/requirements.txt` gains no

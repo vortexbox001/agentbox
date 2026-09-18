@@ -58,8 +58,9 @@ the one the spec names — nothing wider (Out of Scope: "Markdown rendering beyo
 **Decision**: The Summary content is chosen in order (FR-008): **(1)** `report.notes` (the agent's
 final message the claude harness already stores as `report.notes` —
 `images/agent-claude/wrapper.py:142`); **(2)** the final event's text from the event stream (the
-`kind == "final"` entry `conversation_entries` produces); **(3)** neither → the **run foot line**
-(status · turns · files written) plus the note **"No final message was captured."** The `report.notes`
+`kind == "final"` entry `conversation_entries` produces); **(3)** neither → the **Summary foot line**
+(status · turns · files written — three fields, distinct from the four-field Transcript foot line)
+plus the note **"No final message was captured."** The `report.notes`
 line is **removed from the rail's Usage block** (`_rail.html:91`) and does not appear in both places
 (FR-006, spec Assumption, US3-AC4).
 
