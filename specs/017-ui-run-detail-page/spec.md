@@ -229,8 +229,8 @@ here — they remain in the rail.
 2. **Given** the Context section, **When** the operator reads its note, **Then** it states the count of
    instruction files.
 3. **Given** the configuration rail, **When** the operator reads it, **Then** Configuration, Container,
-   Inputs, Completeness, Asset run and Usage remain in that order, and only the final-message notes and
-   the output artifacts have left it.
+   Inputs, Completeness, Asset run, Issue and Usage remain in that order, and only the final-message
+   notes and the output artifacts have left it.
 
 ---
 
@@ -314,8 +314,8 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   chips, the "View in Dagster" link, and the six-stat strip (Status, Harness, Model, Turns, Tokens in,
   Cost).
 - **FR-006**: The configuration rail MUST keep Configuration, Container, Inputs, Completeness, Asset
-  run and Usage, in that order; only the final-message notes (which become the Summary section) and the
-  output artifacts (which become the Output section) MUST leave the rail.
+  run, Issue and Usage, in that order; only the final-message notes (which become the Summary section)
+  and the output artifacts (which become the Output section) MUST leave the rail.
 
 **Summary section**
 
