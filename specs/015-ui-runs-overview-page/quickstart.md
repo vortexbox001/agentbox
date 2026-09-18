@@ -28,7 +28,8 @@ Run the whole `ui` suite — it is the gate. New/updated tests to expect:
 - `test_runs.py` — status truth vs local fallback (last-known), the ten columns in order, Date/Time/
   Attempts gone, `q` substring over agent/model/target/run id, tab partition + counts over the
   filtered set, 30/page pagination, page-reset on tab/filter change, `—` cost vs `0`, Created label.
-- `test_dagster.py` — `run_status` issues exactly one POST and degrades to `{"reachable": False}`.
+- `test_dagster.py` — `run_status` issues two bounded POSTs (run status, then Checks off the
+  AssetNode) and degrades to `{"reachable": False}` on a failed first read.
 - `test_conformance.py` / `test_design_system_sync.py` / `test_design_system_docs.py` — the new
   Pagination component is registered (manifest/bundle/readme) and everything stays tokens-only,
   macro-composed, no inline styles.
@@ -57,7 +58,7 @@ Run the whole `ui` suite — it is the gate. New/updated tests to expect:
 
 ## US3 — Read the columns (P1)
 
-1. Header reads exactly **Run, Status, Agent, Model, Target, Launched by, Checks, Created, Duration,
+1. Header reads exactly **Run, Agent, Model, Target, Launched by, Checks, Status, Created, Duration,
    Cost**; no Date, Time, or Attempts (FR-012/FR-013, AC1).
 2. A run created 13:15 local on 17 Sep reads `Sep 17, 1:15 PM`, full timestamp on hover (FR-017,
    AC2, SC-005).

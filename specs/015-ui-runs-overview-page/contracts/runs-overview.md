@@ -72,7 +72,8 @@ One bounded, batched GraphQL read (research R6), matching `dagster.py`'s existin
 transport/HTTP/parse failure and every non-`Runs` error arm collapses to plain data — the caller
 never sees an exception from a reachable-or-not Dagster.
 
-**Request**: a single POST to `{DAGSTER_URL}/graphql`:
+**Request**: the first POST to `{DAGSTER_URL}/graphql` (Checks follow in a second — see the note
+below):
 
 ```graphql
 query {

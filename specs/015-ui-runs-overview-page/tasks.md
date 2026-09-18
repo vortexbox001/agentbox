@@ -61,9 +61,10 @@ begin until this phase is complete.**
   `_status_tab(present) -> str` mapping presented status → tab bucket (`in_progress`, `succeeded`,
   `failed`) and a `_status_intent(present)` for the `run_status_tag` intent.
 - [X] T004 Implement `run_status(run_ids: list[str]) -> dict` in `ui/dagster.py` (contract §C,
-  research R6): exactly one GraphQL POST `runsOrError(filter:{runIds:[…]}, limit:N)` selecting
-  `runId, status, startTime, endTime, assetSelection{path}, pipelineName, tags{key value}` and the
-  asset-check sub-selection, parsed with the existing `_check_status`/`_parse_checks` helpers.
+  research R6): a first GraphQL POST `runsOrError(filter:{runIds:[…]}, limit:N)` selecting
+  `runId, status, startTime, endTime, assetSelection{path}, pipelineName, tags{key value}`, then a
+  second bounded POST resolving Checks off the AssetNode (Dagster 1.13.21's `Run.assetChecks`
+  carries only handles) via `_run_checks_by_id`, attached by `executionForLatestMaterialization.runId`.
   Return `{"reachable": bool, "runs": {run_id: {status, start_time, end_time, target, launched_by,
   checks}}}`; collapse every `httpx.HTTPError`/`ValueError`/`PythonError`/non-`Runs` arm to
   `{"reachable": False, "runs": {}}` (never raise). Bound by `config.RELOAD_TIMEOUT_S`. Derive
@@ -90,8 +91,9 @@ begin until this phase is complete.**
   data-model *Run (as presented)* fields (`run_id, status, last_known, agent, model, target,
   launched_by, checks, created, created_iso, duration, cost_usd, dagster_url`). MUST return
   `reachable:false` + last-known rows rather than failing when Dagster is down.
-- [X] T009 [P] Add `test_dagster.py` coverage: `run_status` issues **exactly one** POST (assert call
-  count), parses status/target/launched-by/checks, omits run ids absent from `results`, and degrades
+- [X] T009 [P] Add `test_dagster.py` coverage: `run_status` issues **two** bounded POSTs (run status,
+  then Checks off the AssetNode; assert call count), parses status/target/launched-by/checks, omits
+  run ids absent from `results`, and degrades
   to `{"reachable": False, "runs": {}}` on transport/parse/`PythonError` arms (contract §C
   guarantees).
 **Checkpoint**: Foundation ready — the page renders enriched rows disk-first; user-story rendering
@@ -160,7 +162,7 @@ narrows by agent/model/target/run id; copy the URL and reopen → tab/filter/dat
 
 ## Phase 5: User Story 3 - Read the run table's columns (Priority: P1)
 
-**Goal**: Columns in order — Run, Status, Agent, Model, Target, Launched by, Checks, Created,
+**Goal**: Columns in order — Run, Agent, Model, Target, Launched by, Checks, Status, Created,
 Duration, Cost — with mono Agent/Model (agent links to `/agents/<agent>`), `Sep 17, 1:15 PM` Created
 with full timestamp on hover, elapsed Duration, `—`-for-unknown Cost, and Target/Launched by/Checks
 from enrichment (`—` when unobtainable). Date/Time/Attempts columns gone.

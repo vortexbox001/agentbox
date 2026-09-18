@@ -159,8 +159,8 @@ the tab, filter, and date range are restored.
 ### User Story 3 - Read the run table's columns (Priority: P1)
 
 An operator reads a run's row and learns, in one line, what ran, against what, who launched
-it, how it went, and what it cost. The columns, in order, are: Run, Status, Agent, Model,
-Target, Launched by, Checks, Created, Duration, Cost. The Agent and Model cells use the same
+it, how it went, and what it cost. The columns, in order, are: Run, Agent, Model, Target,
+Launched by, Checks, Status, Created, Duration, Cost. The Agent and Model cells use the same
 mono type treatment as the Agents overview and the agent name links to that agent. Created is
 a single local-time timestamp like `Sep 17, 1:15 PM` with the full timestamp on hover.
 Duration is elapsed run time, showing time so far for an in-progress run. Cost shows `—` when unknown,
@@ -180,7 +180,7 @@ the Date, Time, and Attempts columns are gone.
 **Acceptance Scenarios**:
 
 1. **Given** the run table, **When** the operator reads the header, **Then** the columns are
-   Run, Status, Agent, Model, Target, Launched by, Checks, Created, Duration, Cost in that
+   Run, Agent, Model, Target, Launched by, Checks, Status, Created, Duration, Cost in that
    order, and there are no separate Date, Time, or Attempts columns.
 2. **Given** a run created at 13:15 local time on 17 September, **When** the operator reads the
    Created cell, **Then** it shows `Sep 17, 1:15 PM` and hovering reveals the full timestamp.
@@ -349,8 +349,8 @@ a visible focus state on keyboard focus.
 
 **Columns**
 
-- **FR-012**: The table's columns MUST be, in order: Run, Status, Agent, Model, Target,
-  Launched by, Checks, Created, Duration, Cost.
+- **FR-012**: The table's columns MUST be, in order: Run, Agent, Model, Target,
+  Launched by, Checks, Status, Created, Duration, Cost.
 - **FR-013**: The separate Date and Time columns and the Attempts column MUST be removed.
 - **FR-014**: Target MUST show the run's target exactly as Dagster's Runs page lists it (the
   asset key or job name).

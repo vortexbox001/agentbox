@@ -9,8 +9,8 @@
 Bring the Runs overview (`GET /runs`) up to the standard of the Agents overview: a shared-macro
 tabbed header (All / In progress / Succeeded / Failed) with per-tab count badges, a ghost-Filter
 control revealing a text filter (agent, model, target, run id) plus the existing agent and
-date-range filters, a re-ordered column set (Run, Status, Agent, Model, Target, Launched by,
-Checks, Created, Duration, Cost), a truthful status sourced from Dagster with a last-known
+date-range filters, a re-ordered column set (Run, Agent, Model, Target, Launched by,
+Checks, Status, Created, Duration, Cost), a truthful status sourced from Dagster with a last-known
 fallback, a one-click link to the same run in Dagster, and URL-encoded tab/filter/page state with
 30-per-page pagination. Alongside it, tidy the shell so Runs leads the navigation, Settings appears
 exactly once (the foot modal), and the logo links home. Pagination lands in the design system first
