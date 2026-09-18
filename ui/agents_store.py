@@ -209,6 +209,13 @@ def read_agent(stem: str, base_dir: str | None = None) -> dict:
             loaded["on_upstream"] = block["on_upstream"]
         if "on_missing" in block:
             loaded["on_missing"] = block["on_missing"]
+        # Lift the nested `on_project_status:` mapping into the flat project_status fields (spec
+        # 016), the same way asset_schedule/job_schedule are lifted — never routed to "Unmanaged".
+        ps = block.get("on_project_status")
+        if isinstance(ps, dict):
+            for fid in schema.PROJECT_STATUS_FIELDS:
+                if fid in ps:
+                    loaded[fid] = ps[fid]
 
     # Separate schema-managed keys from unmanaged ones.
     managed: dict = {}
@@ -298,6 +305,20 @@ def asset_graph(exclude: str | None = None) -> dict[str, list[str]]:
     return graph
 
 
+def project_status_description(agent: dict) -> str | None:
+    """The plain-words description of the GitHub Projects trigger (spec 016, contract ui §3).
+
+    *"When an issue enters {status} on {owner}/{project}"* — shown as the board pill's tooltip and
+    the Automation row label (FR-025). ``None`` when the block is not configured (needs at least
+    owner/project/status)."""
+    owner = agent.get("owner")
+    project = agent.get("project")
+    status = agent.get("status")
+    if not (owner and project and status):
+        return None
+    return f"When an issue enters {status} on {owner}/{project}"
+
+
 def _list_view_fields(stem: str, agent: dict) -> dict:
     """Derive the tabbed-list row's kind/crons/checks from a parsed definition.
 
@@ -329,6 +350,13 @@ def _list_view_fields(stem: str, agent: dict) -> dict:
     if isinstance(job_sched, str) and job_sched.strip():
         crons.append({"type": "job_schedule", "expr": job_sched.strip(),
                       "dagster_name": f"sched_{dagster_stem}"})
+    # The GitHub Projects trigger (spec 016) shows as a "board" pill on the paused
+    # project_status_<stem> sensor, with a plain-words description (contract ui §3, FR-025).
+    ps_desc = project_status_description(agent)
+    if ps_desc is not None:
+        crons.append({"type": "project_status", "expr": None, "label": "board",
+                      "description": ps_desc,
+                      "dagster_name": f"project_status_{dagster_stem}"})
 
     declared = agent.get("checks")
     checks = (
@@ -539,7 +567,8 @@ def _triggers_block_lines(agent: dict, harness: str) -> list[str]:
     if not applicable:  # neither kind (an invalid agent the emitter still renders defensively)
         applicable = ["asset_schedule", "on_upstream", "on_missing", "job_schedule"]
 
-    any_set = any(_trigger_set(agent, fid) for fid in applicable)
+    ps_on = schema._project_status_on(agent)
+    any_set = any(_trigger_set(agent, fid) for fid in applicable) or ps_on
     if any_set:
         lines = [f"triggers:  # {header}"]
         for fid in applicable:
@@ -548,10 +577,40 @@ def _triggers_block_lines(agent: dict, harness: str) -> list[str]:
                 lines.append(f"  {fid}: {_emit_scalar(agent[fid])}  # {help_text}")
             else:
                 lines.append(f"#  {fid}:  # {help_text}")
+        lines.extend(_project_status_lines(agent, harness, commented=not ps_on))
         return lines
-    return [f"#triggers:  # {header}"] + [
-        f"#  {fid}:  # {schema.field_help(fid, harness)}" for fid in applicable
-    ]
+    return (
+        [f"#triggers:  # {header}"]
+        + [f"#  {fid}:  # {schema.field_help(fid, harness)}" for fid in applicable]
+        + _project_status_lines(agent, harness, commented=True)
+    )
+
+
+def _project_status_lines(agent: dict, harness: str, *, commented: bool) -> list[str]:
+    """The nested `on_project_status:` mapping under `triggers:` (spec 016, contract agent-model §4).
+
+    Emitted real when the block is on (owner/project/status always written, label/repo/
+    interval_seconds only when set), else a commented placeholder so an author can opt in by
+    uncommenting — mirroring the flat triggers. ``commented`` forces the placeholder form even when
+    the surrounding triggers block is real but this sub-block is off."""
+    header = schema.PROJECT_STATUS_BLOCK_HELP
+    # required sub-fields always shown when the block is on; optional ones only when set.
+    always = ("owner", "project", "status")
+    optional = ("label", "repo", "interval_seconds")
+    if commented:
+        lines = [f"#  on_project_status:  # {header}"]
+        for fid in schema.PROJECT_STATUS_FIELDS:
+            lines.append(f"#    {fid}:  # {schema.field_help(fid, harness)}")
+        return lines
+    lines = [f"  on_project_status:  # {header}"]
+    for fid in always:
+        val = agent.get(fid)
+        val = "" if val is None else val
+        lines.append(f"    {fid}: {_emit_scalar(val)}  # {schema.field_help(fid, harness)}")
+    for fid in optional:
+        if fid in agent and not schema._is_unset(FIELDS_BY_ID[fid], agent.get(fid)):
+            lines.append(f"    {fid}: {_emit_scalar(agent[fid])}  # {schema.field_help(fid, harness)}")
+    return lines
 
 
 def _job_line(agent: dict, harness: str) -> list[str]:
@@ -605,6 +664,11 @@ def emit_yaml(agent: dict) -> str:
             agent.setdefault("on_upstream", block["on_upstream"])
         if "on_missing" in block:
             agent.setdefault("on_missing", block["on_missing"])
+        ps = block.get("on_project_status")
+        if isinstance(ps, dict):
+            for fid in schema.PROJECT_STATUS_FIELDS:
+                if fid in ps:
+                    agent.setdefault(fid, ps[fid])
 
     desc = HARNESS_BY_ID[harness]["description"]
     lines = [f"# {desc}", _HEADER_GENERATED, f"# agentbox-schema: {schema.SCHEMA_VERSION}"]
@@ -625,6 +689,10 @@ def emit_yaml(agent: dict) -> str:
             lines.append("")
             lines.append(f"# --- {section['label']} ---")
             lines.extend(_triggers_block_lines(agent, harness))
+            continue
+        # The project_status fields are children of the nested `triggers.on_project_status` block,
+        # emitted inside _triggers_block_lines above — never as flat top-level keys (spec 016).
+        if section["id"] == "project_status":
             continue
         if section["id"] == "run_as_job":
             lines.append("")

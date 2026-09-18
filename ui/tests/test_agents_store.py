@@ -35,6 +35,14 @@ GOLDEN = {
         "workspace": "/data/workspaces/sample-codex", "wipe_workspace": True,
         "timeout_seconds": 1800, "network": "bridge", "memory": "1g", "cpus": 1.5, "job": True,
         "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "GITHUB_USER": "example-user", "GITHUB_REPONAME": "example-repo"}},
+    # A job agent carrying the GitHub Projects status trigger (spec 016), so the emitter regression
+    # suite pins the nested on_project_status block's rendering too.
+    "board": {"name": "sample-board", "enabled": True, "harness": "api", "model": "cheap",
+        "max_tokens": 1024, "prompt_file": "hello-example.md",
+        "output_dir": "/data/outputs/sample-board", "timeout_seconds": 600,
+        "network": "agentnet-isolated", "memory": "1g", "cpus": 1.5, "job": True,
+        "owner": "vortexbox001", "project": 1, "status": "In progress", "label": "brief",
+        "repo": "vortexbox001/agentbox", "interval_seconds": 60},
 }
 
 _GOLDEN_DIR = os.path.join(os.path.dirname(__file__), "golden")
@@ -590,3 +598,69 @@ def test_tab_counts_derivation(settings):
     assert sum(1 for r in rows if r["is_job"]) == 2     # hello-example + both-kind
     assert sum(1 for r in rows if r["crons"]) == 1      # only both-kind is scheduled
     assert sum(1 for r in rows if r["enabled"] is False) == 0
+
+
+# ── spec 016: the nested on_project_status block emits and round-trips ───────
+
+def test_on_project_status_emits_nested_block_with_comments(settings):
+    cfg = dict(GOLDEN["board"])
+    text = st.emit_yaml(cfg)
+    assert "  on_project_status:  #" in text                    # nested under triggers:, with help
+    assert "    owner: vortexbox001  #" in text
+    assert "    project: 1  #" in text
+    assert "    status: In progress  #" in text
+    assert "    label: brief  #" in text
+    assert "    repo: vortexbox001/agentbox  #" in text
+    assert "    interval_seconds: 60  #" in text
+
+
+def test_on_project_status_round_trips_byte_stable(settings):
+    cfg = dict(GOLDEN["board"], name="rt-board")
+    text1 = st.emit_yaml(cfg)
+    loaded = yaml.safe_load(text1)
+    assert loaded["triggers"]["on_project_status"] == {
+        "owner": "vortexbox001", "project": 1, "status": "In progress",
+        "label": "brief", "repo": "vortexbox001/agentbox", "interval_seconds": 60}
+    from schema import PROJECT_STATUS_FIELDS
+    ps = loaded["triggers"]["on_project_status"]
+    reread = {k: v for k, v in loaded.items() if k != "triggers"}
+    reread.update({fid: ps[fid] for fid in PROJECT_STATUS_FIELDS if fid in ps})
+    assert st.emit_yaml(reread) == text1
+
+
+def test_optional_ps_fields_omitted_when_unset(settings):
+    cfg = dict(GOLDEN["board"])
+    for fid in ("label", "repo", "interval_seconds"):
+        cfg.pop(fid, None)
+    text = st.emit_yaml(cfg)
+    assert "    owner:" in text and "    status:" in text
+    assert "    label:" not in text.replace("#", "")   # no real label line
+    assert "    repo:" not in text.replace("#", "")
+
+
+def test_on_project_status_commented_when_block_off(settings):
+    cfg = dict(GOLDEN["api"])   # job-only, no on_project_status
+    text = st.emit_yaml(cfg)
+    assert "#  on_project_status:  #" in text
+    assert "#    owner:  #" in text
+
+
+def test_read_lifts_on_project_status_into_flat_fields(settings):
+    import os
+    path = os.path.join(settings.AGENTS_DIR, "brd.yaml")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("# agentbox-schema: 8\nname: brd\nharness: api\nmodel: cheap\n"
+                "prompt_file: p.md\noutput_dir: /data/outputs/brd\n"
+                "network: agentnet-isolated\njob: true\ntriggers:\n"
+                "  on_project_status:\n    owner: o\n    project: 2\n    status: In progress\n")
+    info = st.read_agent("brd")
+    assert info["parse_error"] is None
+    agent = info["agent"]
+    assert agent["owner"] == "o" and agent["project"] == 2 and agent["status"] == "In progress"
+
+
+def test_project_status_description_formatter():
+    assert st.project_status_description(
+        {"owner": "vortexbox001", "project": 1, "status": "In progress"}
+    ) == "When an issue enters In progress on vortexbox001/1"
+    assert st.project_status_description({"owner": "o"}) is None

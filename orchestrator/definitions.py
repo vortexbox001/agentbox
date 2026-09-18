@@ -41,6 +41,7 @@ from factory import (
     build_job, build_schedule, build_asset, build_materializing_job,
     build_asset_automation_sensor, validate_asset_key, validate_checks, validate_depends_on,
     partition_on_cron_supported, build_prune_job, build_prune_schedule, RejectAgent,
+    build_project_status_sensor, project_status_supported,
 )
 
 log = logging.getLogger("agentbox.definitions")
@@ -76,6 +77,42 @@ def _event_triggers(cfg: dict) -> tuple[bool, bool]:
     if not isinstance(block, dict):
         return False, False
     return block.get("on_upstream") is True, block.get("on_missing") is True
+
+
+def _project_status(cfg: dict, file: str) -> dict | None:
+    """Read and structurally validate the ``triggers.on_project_status`` block (spec 016, §5/§8).
+
+    The load-time structural twin of the UI's ``schema.validate`` (contract agent-model §5): an
+    absent block returns ``None`` (no sensor); a present-but-malformed block raises
+    ``RejectAgent(file, message)`` naming the offending field, so only that agent is skipped and
+    every other loads (US8, FR-023). Requires ``owner``/``project``/``status``; ``project`` a
+    positive integer; ``interval_seconds`` (if present) an integer ≥30; ``repo`` (if present) of
+    the form ``owner/repo``. Returns the block dict when valid."""
+    block = cfg.get("triggers")
+    if not isinstance(block, dict):
+        return None
+    ps = block.get("on_project_status")
+    if ps is None:
+        return None
+    if not isinstance(ps, dict):
+        raise RejectAgent(file, "triggers.on_project_status must be a mapping")
+    for key in ("owner", "project", "status"):
+        val = ps.get(key)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            raise RejectAgent(file, f"on_project_status.{key} is required for a GitHub Projects trigger")
+    project = ps.get("project")
+    if isinstance(project, bool) or not isinstance(project, int) or project < 1:
+        raise RejectAgent(file, "on_project_status.project must be a positive integer")
+    if "interval_seconds" in ps:
+        iv = ps["interval_seconds"]
+        if isinstance(iv, bool) or not isinstance(iv, int) or iv < 30:
+            raise RejectAgent(file, "on_project_status.interval_seconds must be an integer of at least 30")
+    repo = ps.get("repo")
+    if repo is not None and str(repo).strip():
+        parts = str(repo).split("/")
+        if len(parts) != 2 or not all(p.strip() for p in parts):
+            raise RejectAgent(file, "on_project_status.repo must be a full owner/repo name")
+    return ps
 
 
 def _detect_cycles(graph: dict[str, list[str]]) -> tuple[set[str], list[list[str]]]:
@@ -175,6 +212,9 @@ def discover(agents_glob: str = AGENTS_GLOB) -> dict:
     # duplicate keys can be rejected before their sensors / materializing jobs are added.
     pending_assets: list[tuple] = []
     files_by_key: dict[str, list[str]] = {}
+    # Valid `on_project_status` blocks by file (spec 016): a project-status sensor is added for
+    # both asset- and job-kind agents; asset-kind ones are deferred to the post-rejection loop.
+    project_status_by_file: dict[str, dict] = {}
 
     for path in sorted(glob.glob(agents_glob)):
         with open(path) as f:
@@ -191,6 +231,11 @@ def discover(agents_glob: str = AGENTS_GLOB) -> dict:
             # produces.checks are rejected here — without a valid asset, or malformed — before
             # any nature routing, so one bad checks file is skipped by name (FR-010, contract §6).
             validate_checks(cfg, file)
+            # Structural backstop for the project-status trigger (spec 016, §5): a malformed block
+            # rejects only this agent by name; a valid block is remembered for sensor wiring below.
+            ps_block = _project_status(cfg, file)
+            if ps_block is not None:
+                project_status_by_file[file] = ps_block
             is_asset = "produces" in cfg
             is_job = cfg.get("job") is True
             if not is_asset and not is_job:
@@ -215,6 +260,11 @@ def discover(agents_glob: str = AGENTS_GLOB) -> dict:
                 jobs.append(job_def)
                 if job_schedule:
                     schedules.append(build_schedule(job_def, job_schedule))
+                # A project-status sensor for a job-kind agent launches agent_<name> directly; it
+                # composes with the job schedule (spec 016, FR-002). Asset-kind agents defer to the
+                # post-rejection loop so a rejected asset never gets a sensor.
+                if ps_block is not None and project_status_supported():
+                    sensors.append(build_project_status_sensor(cfg))
         except RejectAgent as e:
             log.warning("skipping %s", e)
             continue
@@ -257,6 +307,12 @@ def discover(agents_glob: str = AGENTS_GLOB) -> dict:
             partitioned=partitioned,
         ):
             sensors.append(build_asset_automation_sensor({"name": name}, asset_def))
+
+        # A project-status sensor for an asset-kind agent materializes the asset (spec 016, FR-002);
+        # added here (after rejection filtering) so a rejected asset never gets a sensor. It
+        # composes with the asset's automation sensor and any schedule.
+        if file in project_status_by_file and project_status_supported():
+            sensors.append(build_project_status_sensor(cfg))
 
         # A both-kind agent has agent_<name> as its materializing job; the fallback also needs
         # such a job (defining one for an asset-only agent) to carry the partition-filling schedule.

@@ -248,3 +248,41 @@ def test_run_status_degrades_on_python_error_arm(settings, monkeypatch):
                         lambda *a, **k: _CountingClient(payload, calls))
     out = asyncio.run(dagster.run_status(["a"]))
     assert out == {"reachable": False, "runs": {}}
+
+
+# ── spec 016: the project_status sensor's held-issue report surfaces (FR-025) ─
+
+def _board_row(name):
+    row = _job_row(name)
+    row["crons"] = [{"type": "project_status", "expr": None, "label": "board",
+                     "description": f"When an issue enters In progress on o/1",
+                     "dagster_name": f"project_status_{name.replace('-', '_')}"}]
+    return row
+
+
+def test_build_query_reads_latest_tick_for_project_status_sensor():
+    import dagster
+    q, index = dagster._build_query([_board_row("board")])
+    # the sensor's latest tick SkipReason is requested so the Automation view can show held issues
+    assert "ticks(limit: 1) { skipReason }" in q
+    assert "project_status_board" in q
+
+
+def test_parse_schedules_surfaces_skip_reason_for_project_status():
+    import dagster
+    inst = [("project_status_board", "a0_inst0", "project_status")]
+    data = {"a0_inst0": {"__typename": "InstigationState", "id": "x", "status": "RUNNING",
+                         "ticks": [{"skipReason": "holding #7 — #5 is in flight"}]}}
+    out = dagster._parse_schedules(data, inst)
+    assert out["project_status_board"]["running"] is True
+    assert out["project_status_board"]["skip_reason"] == "holding #7 — #5 is in flight"
+
+
+def test_parse_schedules_no_tick_is_none_skip_reason():
+    import dagster
+    inst = [("project_status_board", "a0_inst0", "project_status")]
+    data = {"a0_inst0": {"__typename": "InstigationState", "id": "x", "status": "STOPPED",
+                         "ticks": []}}
+    out = dagster._parse_schedules(data, inst)
+    assert out["project_status_board"]["skip_reason"] is None
+    assert out["project_status_board"]["running"] is False

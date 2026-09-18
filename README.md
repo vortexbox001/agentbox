@@ -331,6 +331,62 @@ report metadata, and materialization time — or a `materialized: false` file wh
 `AGENTBOX_UPSTREAM_NOTES_DAILY`, `repo-review/list-commits` →
 `AGENTBOX_UPSTREAM_REPO_REVIEW_LIST_COMMITS`.
 
+### GitHub Projects status trigger — board-driven launches
+
+An agent can also launch when an **issue enters a status column** on a GitHub Projects (v2) board.
+Under `triggers:`, add an `on_project_status:` block (valid for both asset- and job-kind agents; it
+composes with the other triggers rather than replacing them):
+
+```yaml
+triggers:
+  on_project_status:
+    owner: vortexbox001         # board owner (org or user login)   — required
+    project: 1                  # the Projects board number         — required (positive integer)
+    status: In progress         # the Status option name            — required (matched case-insensitively)
+    label: brief                # optional — only issues carrying this label launch
+    repo: vortexbox001/agentbox # optional — only issues from this owner/repo launch (case-insensitive)
+    interval_seconds: 60        # optional — poll cadence in seconds (default 60, minimum 30)
+```
+
+A paused `project_status_<name>` sensor polls the board on `interval_seconds`; turn it on from the
+Automation view like any schedule (it starts **stopped**). Moving a matching **issue** into `status`
+launches the agent **exactly once per entry** — PRs, drafts, wrong-status, and filtered-out issues
+never launch, and issues already in the status at first start are recorded but not launched. Only
+**one feature is in flight at a time per agent**: while a launched issue is still in the status,
+other eligible issues are **held** (surfaced with the holder's number on the Automation view) and
+launch — oldest first — once the active issue leaves the status. A GitHub outage, rate-limit, or an
+unresolvable board/status degrades to a skip-with-reason that leaves the cursor untouched (nothing
+re-fires). Agents watching the same board share one query per tick.
+
+Each launched run is handed the issue's identity as env values and a read-only body file:
+
+| Env value | Meaning |
+|-----------|---------|
+| `AGENTBOX_ISSUE_NUMBER` | the issue number |
+| `AGENTBOX_ISSUE_REPO` | the full `owner/repo` |
+| `AGENTBOX_ISSUE_URL` | the issue URL (linked from the run page) |
+| `AGENTBOX_ISSUE_TITLE` | the title, control-stripped and capped at 256 chars |
+| `AGENTBOX_FEATURE_KEY` | a stable key `NNN-slug` (see below) |
+| `AGENTBOX_ISSUE_BODY_FILE` | `/issue/body.md` — the body, delivered **only** as a read-only file (never on the command line or in an env value) |
+
+The same identity rides on the run as tags — `agentbox/issue_number`, `agentbox/issue_repo`,
+`agentbox/issue_url`, `agentbox/project_item_id`, `agentbox/feature_key` (title and body are never
+tags) — and a sensor-launched run is **automated**: it counts toward `max_runs_per_hour` and starts
+a chain at depth 1.
+
+The **feature key** is a pure function of the issue: the number zero-padded to three digits, then a
+slug of the title (lowercased, only `a-z0-9` kept — non-ASCII letters and emoji are dropped, not
+transliterated — with other runs collapsed to single hyphens), the whole key capped at 48 characters
+with any trailing hyphen stripped. Grammar `^[0-9]{3}(-[a-z0-9]+)*$`; e.g. issue 38 *"UI: update
+runs overview page"* → `038-ui-update-runs-overview-page`, and an all-punctuation/emoji title → `038`.
+
+The sensor reads its token **only** from `GITHUB_PROJECT_TOKEN` — a board-read token, isolated to the
+daemon process, with **no** fallback to `GITHUB_TOKEN`. It needs board read scope: a classic PAT with
+`read:project` + repo read, or a fine-grained token with Projects: read plus Contents/Issues: read.
+The token is never forwarded to a container, tagged, logged, or filed. Set it in `.env` (see
+`.env.example`). A malformed `on_project_status` block rejects **only that agent** at load, naming
+the offending field, while every other agent still loads.
+
 **Run governors.** Two instance-level limits in `settings.yaml` (edited on the Settings page) bound
 automated chaining: `max_runs_per_hour` (default 12, a rolling 60-minute window) and
 `max_chain_depth` (default 5; every automated run carries a `chain_depth` — a root is 1, each
@@ -501,6 +557,7 @@ This table is descriptive. The authoritative per-key wording, valid values, defa
 | `triggers.on_upstream` | `false` | Materialize this asset when any declared `depends_on` upstream materializes and passes its blocking checks. Asset kind only; starts paused behind `autocond_<name>`. |
 | `triggers.on_missing` | `false` | Materialize the current/latest partition when it has never been produced (no history backfill). Asset kind only; starts paused behind `autocond_<name>`. |
 | `triggers.job_schedule` | none | Five-field cron (no `@`-macros) that launches `agent_<name>` on a schedule (`sched_<name>`). Applies only when the agent has a job. |
+| `triggers.on_project_status` | none | Nested block launching the agent when a GitHub Projects issue enters a status: `owner`/`project`/`status` (required), `label`/`repo`/`interval_seconds` (optional, default 60, minimum 30). Builds a paused `project_status_<name>` sensor read via `GITHUB_PROJECT_TOKEN`. Valid for both agent kinds. See [GitHub Projects status trigger](#github-projects-status-trigger--board-driven-launches). |
 
 ### Output files
 

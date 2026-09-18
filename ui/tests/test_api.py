@@ -108,7 +108,7 @@ def test_api_schema_carries_produces(client):
     # FR-013: /api/schema drives the form; the Produces card is a runs-group section
     # with the asset/partition fields, and the version is 7 (spec 013 bumped it).
     data = client.get("/api/schema").json()
-    assert data["schema_version"] == 7
+    assert data["schema_version"] == 8
     assert {"id": "produces", "label": "Produces", "group": "runs"} in data["sections"]
     by_id = {f["id"]: f for f in data["fields"]}
     assert by_id["asset"]["section"] == "produces"
@@ -1125,3 +1125,43 @@ def test_agent_form_has_no_schedule_card(client):
     enabled = next(f for f in schema_payload["fields"] if f["id"] == "enabled")
     section = next(s for s in schema_payload["sections"] if s["id"] == enabled["section"])
     assert section["group"] == "runs"
+
+
+# ── spec 016: the GitHub Projects trigger surfaces in the UI ────────────────
+
+def test_api_schema_carries_project_status(client):
+    # /api/schema exposes the on_project_status group so the form can render its card (FR-024).
+    data = client.get("/api/schema").json()
+    assert {"id": "project_status", "label": "GitHub Projects", "group": "runs"} in data["sections"]
+    by_id = {f["id"]: f for f in data["fields"]}
+    for fid in ("owner", "project", "status", "label", "repo", "interval_seconds"):
+        assert by_id[fid]["section"] == "project_status"
+        assert by_id[fid]["block"] == "triggers.on_project_status"
+    for h in data["harnesses"]:
+        assert {"owner", "project", "status"} <= set(h["fields"])
+
+
+_BOARD_AGENT = (
+    "# agentbox-schema: 8\nname: board-agent\nharness: api\nmodel: cheap\n"
+    "prompt_file: hello-example.md\noutput_dir: /data/outputs/board-agent\n"
+    "network: agentnet-isolated\njob: true\ntriggers:\n"
+    "  on_project_status:\n    owner: vortexbox001\n    project: 1\n    status: In progress\n"
+)
+
+
+def test_agents_list_row_carries_project_status_cron(client, tmp_agents):
+    _write(tmp_agents, "board-agent.yaml", _BOARD_AGENT)
+    data = client.get("/api/agents").json()
+    row = next(a for a in data["agents"] if a["name"] == "board-agent")
+    ps = next(c for c in row["crons"] if c["type"] == "project_status")
+    assert ps["dagster_name"] == "project_status_board_agent"
+    assert ps["description"] == "When an issue enters In progress on vortexbox001/1"
+    assert ps["label"] == "board"
+
+
+def test_agents_page_renders_board_pill_with_tooltip(client, tmp_agents):
+    _write(tmp_agents, "board-agent.yaml", _BOARD_AGENT)
+    html = client.get("/agents").text
+    assert 'data-type="project_status"' in html
+    assert 'data-dagster-name="project_status_board_agent"' in html
+    assert "When an issue enters In progress on vortexbox001/1" in html

@@ -247,3 +247,17 @@ def test_emitter_covers_new_fields_for_an_asset():
     text = agents_store.emit_yaml(cfg)
     assert "  depends_on:  #" in text and "    - notes/daily" in text
     assert "  on_upstream: true  #" in text and "  on_missing: true  #" in text
+
+
+# ── spec 016: the board trigger's new template/JS carry no external URL literal ──
+
+def test_project_status_surface_uses_no_external_url_literal():
+    """The run-page issue link (spec 016) is built from run data (context.issue.url), never a
+    hard-coded external URL; the form card + list pill add none either (FR-026, conformance §6)."""
+    import re
+    for rel in ("templates/runs/_rail.html", "templates/agents/list.html",
+                "static/agent-form.js", "static/agents-list.js"):
+        text = open(os.path.join(_UI_DIR, rel), encoding="utf-8").read()
+        urls = [u for u in re.findall(r"https?://[^\s\"')]+", text)
+                if not _NS_ALLOW.match(u)]
+        assert urls == [], f"{rel} carries external URL literal(s): {urls}"

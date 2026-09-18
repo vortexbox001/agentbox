@@ -8,6 +8,7 @@ from dagster import (
     MetadataValue,
     AutomationCondition, AutomationConditionSensorDefinition, AssetSelection,
     DefaultSensorStatus, DefaultScheduleStatus, define_asset_job,
+    sensor, SensorDefinition, SensorEvaluationContext, RunRequest, SkipReason,
     Out, Nothing,
     AssetSpec, AssetCheckSpec, AssetCheckResult, AssetCheckSeverity, MaterializeResult,
     EventRecordsFilter, DagsterEventType, RunsFilter,
@@ -24,6 +25,11 @@ from dagster_pipes import (
 
 import paths
 import run_capture
+import github_projects
+from github_projects import (
+    GitHubProjectsClient, filter_items, plan_tick, sanitize_title,
+    BoardError, RateLimited, Unresolvable, ISSUE_TAG_NAMES,
+)
 
 # Every state/config path derives from the single resolution point (orchestrator/paths.py,
 # FR-002/SC-009): no literal /data or /opt/agentbox appears in this module.
@@ -521,6 +527,56 @@ def _prepare_upstream_handoff(cfg: dict, context: OpExecutionContext) -> tuple[s
     return handoff_dir, build_upstream_handoff(cfg, context, handoff_dir)
 
 
+# --- Issue handoff (spec 016 US1, FR-012/FR-013/FR-014/FR-015) ---------------
+#
+# The twin of the upstream handoff: a project-status sensor launches a run carrying the issue's
+# identity, and the op turns that into the AGENTBOX_ISSUE_* env values + a read-only /issue/body.md
+# file. The body travels as run_config only (never a command line or env value, FR-014); the five
+# identity tags ride on the RunRequest (set by the sensor), so the run carries them from creation.
+
+
+def _issue_from_run_config(context) -> dict | None:
+    """The ``issue`` payload the sensor's ``RunRequest.run_config`` reaches the op through.
+
+    Dagster routes ``run_config`` to the op's config, so it arrives on ``context.op_config`` under
+    the op's ``issue`` field. This helper is the fallback lookup for callers that pass the payload
+    another way; today ``context.op_config['issue']`` is the sole source, so it returns ``None``.
+    """
+    return None
+
+
+def _prepare_issue_handoff(cfg: dict, context) -> tuple[str | None, dict]:
+    """Create the read-only ``/issue`` handoff dir + the AGENTBOX_ISSUE_* env map (US1, §4).
+
+    Reads the ``issue`` payload off ``context.op_config``; when absent this is not a
+    sensor-launched run — return ``(None, {})`` and the launch is unchanged. Else make a ``0777``
+    tempdir under ``STAGING_ROOT`` (host==container, the same boundary the upstream handoff uses),
+    write the body to ``body.md`` (``0644`` so the non-root container reads it), and return
+    ``(handoff_dir, env)`` where ``AGENTBOX_ISSUE_TITLE`` is control-stripped/≤256 and
+    ``AGENTBOX_ISSUE_BODY_FILE`` is the in-container path only — the body itself is never on the
+    command line or in an env value (FR-014).
+    """
+    issue = (context.op_config or {}).get("issue") or _issue_from_run_config(context)
+    if not issue:
+        return None, {}
+    os.makedirs(STAGING_ROOT, exist_ok=True)
+    handoff_dir = tempfile.mkdtemp(prefix=f"agentbox-issue-{context.run_id[:8]}-", dir=STAGING_ROOT)
+    os.chmod(handoff_dir, 0o777)
+    body_path = os.path.join(handoff_dir, "body.md")
+    with open(body_path, "w", encoding="utf-8") as f:
+        f.write(issue.get("body") or "")
+    os.chmod(body_path, 0o644)
+    env = {
+        "AGENTBOX_ISSUE_NUMBER": str(issue.get("number")),
+        "AGENTBOX_ISSUE_REPO": issue.get("repo") or "",
+        "AGENTBOX_ISSUE_URL": issue.get("url") or "",
+        "AGENTBOX_ISSUE_TITLE": sanitize_title(issue.get("title") or ""),
+        "AGENTBOX_FEATURE_KEY": issue.get("feature_key") or "",
+        "AGENTBOX_ISSUE_BODY_FILE": "/issue/body.md",
+    }
+    return handoff_dir, env
+
+
 # --- chain_depth + governors (spec 013 US5, contract orchestrator-model §5/§6) --------------
 
 class GovernorRefusal(Exception):
@@ -685,12 +741,14 @@ def _launch_env_names(cfg: dict, runtime_env: dict) -> list[str]:
     return sorted(names)
 
 
-def _launch_mounts(cfg: dict, ws: str, handoff_dir: str | None = None) -> list[dict]:
+def _launch_mounts(cfg: dict, ws: str, handoff_dir: str | None = None,
+                   issue_dir: str | None = None) -> list[dict]:
     """The agent-facing bind mounts of the launch, as ``[{source, target, mode}]`` (FR-009).
 
-    Records the data mounts the agent sees (/output, /workspace, the api prompt mount, and — when
-    the asset declares upstreams — the read-only /upstreams handoff dir, FR-013) — not the ephemeral
-    capture plumbing (/pipes, /staging), which is not agent-facing config.
+    Records the data mounts the agent sees (/output, /workspace, the api prompt mount, the
+    read-only /upstreams handoff dir when the asset declares upstreams, and — when a project-status
+    sensor launched the run — the read-only /issue handoff dir, FR-013) — not the ephemeral capture
+    plumbing (/pipes, /staging), which is not agent-facing config.
     """
     mounts = [{"source": _output_dir(cfg), "target": "/output", "mode": "rw"}]
     if cfg["harness"] in WORKSPACE_HARNESSES:
@@ -702,12 +760,25 @@ def _launch_mounts(cfg: dict, ws: str, handoff_dir: str | None = None) -> list[d
         })
     if handoff_dir is not None:
         mounts.append({"source": handoff_dir, "target": "/upstreams", "mode": "ro"})
+    if issue_dir is not None:
+        mounts.append({"source": issue_dir, "target": "/issue", "mode": "ro"})
     return mounts
+
+
+def _issue_provenance(context) -> dict | None:
+    """The issue identity to capture in the run's context snapshot (spec 016, FR-026), or ``None``.
+
+    Reads the sensor's ``issue`` op-config payload and keeps only the identity fields — the body is
+    delivered as the read-only ``/issue`` file (FR-014), so it is never captured here."""
+    issue = (context.op_config or {}).get("issue")
+    if not issue:
+        return None
+    return {k: issue.get(k) for k in ("number", "repo", "url", "title", "feature_key")}
 
 
 def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_id: str,
                     ws: str, runtime_env: dict, is_asset: bool, handoff_dir: str | None = None,
-                    upstream_inputs: dict | None = None) -> dict:
+                    upstream_inputs: dict | None = None, issue_dir: str | None = None) -> dict:
     """Build the context snapshot from the launch config (spec 012, R3 orchestrator side).
 
     The instruction files, MCP exposed tools, and completeness statement are the image
@@ -746,7 +817,7 @@ def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_
         image_ref=image_ref,
         image_digest=_image_digest(image_ref) if image_ref else "",
         env_names=_launch_env_names(cfg, runtime_env),
-        mounts=_launch_mounts(cfg, ws, handoff_dir),
+        mounts=_launch_mounts(cfg, ws, handoff_dir, issue_dir),
         network=cfg.get("network", "agentnet"),
         working_dir="/workspace" if cfg["harness"] in WORKSPACE_HARNESSES else None,
         workspace_dir=ws if cfg["harness"] in WORKSPACE_HARNESSES else None,
@@ -754,6 +825,7 @@ def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_
         memory=str(cfg.get("memory", "1g")),
         cpus=str(cfg.get("cpus", "1.5")),
         asset=asset,
+        issue=_issue_provenance(context) if issue_dir is not None else None,
         run_id=context.run_id,
         session_id=session_id,
         stamp=stamp,
@@ -762,7 +834,7 @@ def _launch_context(cfg: dict, context: OpExecutionContext, stamp: str, session_
 
 def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
                      session_id: str, ws: str, runtime_env: dict,
-                     handoff_dir: str | None = None) -> list[str]:
+                     handoff_dir: str | None = None, issue_dir: str | None = None) -> list[str]:
     """Build the full ``docker run`` argv for one agent launch.
 
     Extracted verbatim from the op body so the launch is defined in one place and the
@@ -782,6 +854,11 @@ def _build_agent_cmd(cfg: dict, context: OpExecutionContext, stamp: str,
         # one read-only handoff file per declared upstream at /upstreams (spec 013, FR-013); the
         # AGENTBOX_UPSTREAM_<KEY> env vars pointing into it are merged via runtime_env below.
         cmd += ["-v", f"{handoff_dir}:/upstreams:ro"]
+    if issue_dir is not None:
+        # the issue body handed off read-only at /issue/body.md (spec 016, FR-013/FR-014); the
+        # AGENTBOX_ISSUE_* env vars (including AGENTBOX_ISSUE_BODY_FILE=/issue/body.md) are merged
+        # via runtime_env below. The body itself never appears on the command line.
+        cmd += ["-v", f"{issue_dir}:/issue:ro"]
     if cfg["harness"] in PROMPT_MOUNT_HARNESSES:
         # the prompt lives under the config root; the `-v` source is its HOST path (the host
         # daemon resolves bind sources — Docker-outside-of-Docker).
@@ -1191,6 +1268,9 @@ def make_run_op(cfg: dict):
             # Upstream handoff inputs a triggering run passes to this asset; captured into the
             # context snapshot as asset.upstream_inputs (FR-011). Empty when nothing is handed off.
             "inputs": Field(Permissive(), default_value={}, is_required=False),
+            # Issue handoff a project-status sensor passes via RunRequest.run_config (spec 016,
+            # FR-012): {number, repo, url, title, feature_key, body}. Absent for a non-sensor run.
+            "issue": Field(Permissive(), is_required=False),
         },
     )
     def run_agent(context: OpExecutionContext):
@@ -1240,8 +1320,12 @@ def make_run_op(cfg: dict):
         # Upstream handoff (spec 013 US2): one read-only /upstreams/<key>.json per declared upstream
         # + the AGENTBOX_UPSTREAM_<KEY> env vars, merged into the launch env (FR-011/012/013).
         handoff_dir, upstream_env = _prepare_upstream_handoff(cfg, context)
-        launch_env = {**runtime_env, **upstream_env}
-        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, launch_env, handoff_dir=handoff_dir)
+        # Issue handoff (spec 016 US1): a project-status sensor's run gets a read-only /issue/body.md
+        # + the AGENTBOX_ISSUE_* env vars; a non-sensor run leaves both empty (FR-012/013/014).
+        issue_dir, issue_env = _prepare_issue_handoff(cfg, context)
+        launch_env = {**runtime_env, **upstream_env, **issue_env}
+        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, launch_env,
+                               handoff_dir=handoff_dir, issue_dir=issue_dir)
 
         # Assemble + write the run directory's context.json FIRST (spec 012, contracts/run-directory.md):
         # so the audit record exists even for a crash before the first event. The image context
@@ -1249,7 +1333,8 @@ def make_run_op(cfg: dict):
         capture = run_capture.RunCapture(name, stamp[:10], context.run_id)
         capture.create()
         launch_context = _launch_context(cfg, context, stamp, session_id, ws, launch_env, is_asset,
-                                         handoff_dir=handoff_dir, upstream_inputs=upstream_env or None)
+                                         handoff_dir=handoff_dir, upstream_inputs=upstream_env or None,
+                                         issue_dir=issue_dir)
         capture.write_context(launch_context)
         # Per-run ephemeral staging the image writes events.jsonl + the context fragment to,
         # bind-mounted at /staging (spec 012, T010a). Under STAGING_ROOT ($AGENTBOX_DATA,
@@ -1321,6 +1406,8 @@ def make_run_op(cfg: dict):
             shutil.rmtree(staging_dir, ignore_errors=True)  # --rm-cleaned staging (T010a)
             if handoff_dir is not None:
                 shutil.rmtree(handoff_dir, ignore_errors=True)  # --rm-cleaned handoff (US2)
+            if issue_dir is not None:
+                shutil.rmtree(issue_dir, ignore_errors=True)   # --rm-cleaned issue handoff (spec 016)
     return run_agent
 
 def build_asset(cfg: dict, file: str | None = None, cron: str | None = None,
@@ -1422,6 +1509,9 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
             # Upstream handoff inputs a triggering run passes to this asset; captured into the
             # context snapshot as asset.upstream_inputs (FR-011). Empty when nothing is handed off.
             "inputs": Field(Permissive(), default_value={}, is_required=False),
+            # Issue handoff a project-status sensor passes via RunRequest.run_config (spec 016,
+            # FR-012). Absent for a non-sensor run.
+            "issue": Field(Permissive(), is_required=False),
         },
     )
     def run_agent_checked(context: OpExecutionContext):
@@ -1457,14 +1547,19 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
         # Upstream handoff (spec 013 US2): one read-only /upstreams/<key>.json per declared upstream
         # + the AGENTBOX_UPSTREAM_<KEY> env vars, merged into the launch env (FR-011/012/013).
         handoff_dir, upstream_env = _prepare_upstream_handoff(cfg, context)
-        launch_env = {**runtime_env, **upstream_env}
-        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, launch_env, handoff_dir=handoff_dir)
+        # Issue handoff (spec 016 US1): a project-status sensor's run gets a read-only /issue/body.md
+        # + the AGENTBOX_ISSUE_* env vars; a non-sensor run leaves both empty (FR-012/013/014).
+        issue_dir, issue_env = _prepare_issue_handoff(cfg, context)
+        launch_env = {**runtime_env, **upstream_env, **issue_env}
+        cmd = _build_agent_cmd(cfg, context, stamp, session_id, ws, launch_env,
+                               handoff_dir=handoff_dir, issue_dir=issue_dir)
 
         # Run directory + context.json first (spec 012); the image fragment is merged after the run.
         capture = run_capture.RunCapture(name, stamp[:10], context.run_id)
         capture.create()
         launch_context = _launch_context(cfg, context, stamp, session_id, ws, launch_env, True,
-                                         handoff_dir=handoff_dir, upstream_inputs=upstream_env or None)
+                                         handoff_dir=handoff_dir, upstream_inputs=upstream_env or None,
+                                         issue_dir=issue_dir)
         capture.write_context(launch_context)
         os.makedirs(STAGING_ROOT, exist_ok=True)
         staging_dir = tempfile.mkdtemp(prefix=f"agentbox-staging-{context.run_id[:8]}-", dir=STAGING_ROOT)
@@ -1529,6 +1624,8 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
             shutil.rmtree(staging_dir, ignore_errors=True)  # --rm-cleaned staging (T010a)
             if handoff_dir is not None:
                 shutil.rmtree(handoff_dir, ignore_errors=True)  # --rm-cleaned handoff (US2)
+            if issue_dir is not None:
+                shutil.rmtree(issue_dir, ignore_errors=True)   # --rm-cleaned issue handoff (spec 016)
 
     return AssetsDefinition.dagster_internal_init(
         keys_by_input_name={},
@@ -1546,6 +1643,126 @@ def _build_checked_asset(cfg: dict, key: AssetKey, partitions_def, checks: list,
         execution_type=None,
         hook_defs=None,
     )
+
+
+# --- Project-status sensor (spec 016, contracts/orchestrator-model.md §3) ---
+#
+# Turns an agent's `on_project_status` block into a paused, operator-toggleable polling sensor
+# that launches the agent once per issue-entry into the target board status. Observation and
+# admission live in github_projects; the sensor wires them onto the run.
+
+
+def _utcnow_iso() -> str:
+    """The current UTC time as an ISO-8601 ``Z`` string — the clock the sensor injects into
+    ``plan_tick`` (kept out of the pure admission function so the state machine is testable)."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def project_status_supported() -> bool:
+    """Build-time lever: whether project-status sensors are wired at all (FR-025).
+
+    True by default; set ``AGENTBOX_PROJECT_STATUS_DISABLED=1`` to skip building them (mirrors the
+    other build-time levers). Read at build time so a reload picks up a change."""
+    return os.environ.get("AGENTBOX_PROJECT_STATUS_DISABLED", "").lower() not in ("1", "true", "yes")
+
+
+# A short-TTL process-local memo of the WHOLE board keyed by (owner, project), so two sensors on
+# the same board share one GraphQL fetch per tick (FR-021). Best-effort: correctness never depends
+# on it — a miss simply fetches again. Stored as {(owner, project): (fetched_at, board)}.
+_BOARD_CACHE: dict = {}
+_BOARD_CACHE_TTL = 25.0  # seconds — shorter than the 30s minimum interval so it spans one tick fan
+
+
+def board_cache_get(owner: str, project) -> "list | None":
+    """The cached whole board for ``(owner, project)`` if a fresh entry exists, else ``None``.
+
+    A cache miss returns ``None`` so the caller fetches and stores via ``board_cache_put``. The
+    cache stores the WHOLE board (all statuses/content-types); ``filter_items`` runs per sensor
+    after the cache, so different-status sensors share one query without cross-contamination."""
+    entry = _BOARD_CACHE.get((owner, int(project)))
+    if not entry:
+        return None
+    fetched_at, board = entry
+    if (datetime.datetime.now(datetime.timezone.utc).timestamp() - fetched_at) > _BOARD_CACHE_TTL:
+        return None
+    return board
+
+
+def board_cache_put(owner: str, project, board: list) -> None:
+    """Store the freshly-fetched whole board for ``(owner, project)`` (FR-021)."""
+    _BOARD_CACHE[(owner, int(project))] = (
+        datetime.datetime.now(datetime.timezone.utc).timestamp(), board,
+    )
+
+
+def _project_status_target(cfg: dict) -> dict:
+    """The ``@sensor`` target kwargs for the agent's kind (FR-002).
+
+    An asset-kind agent targets its asset by selection (records a materialization, as the UI does);
+    a job-kind agent targets its job by name. Mirrors the launch distinction the UI makes."""
+    if (cfg.get("produces") or {}).get("asset"):
+        key = AssetKey(cfg["produces"]["asset"].split("/"))
+        return {"asset_selection": AssetSelection.assets(key)}
+    return {"job_name": f"agent_{cfg['name'].replace('-', '_')}"}
+
+
+def _run_target(cfg: dict) -> dict:
+    """The per-kind ``RunRequest`` target kwargs (FR-002): ``asset_selection=`` for an asset-kind
+    agent, ``job_name=`` for a job-kind agent — the same launch distinction the UI makes."""
+    if (cfg.get("produces") or {}).get("asset"):
+        key = AssetKey(cfg["produces"]["asset"].split("/"))
+        return {"asset_selection": [key]}
+    return {"job_name": f"agent_{cfg['name'].replace('-', '_')}"}
+
+
+def build_project_status_sensor(cfg: dict) -> SensorDefinition:
+    """A paused polling sensor that launches the agent when an issue enters a board status (§3).
+
+    Named ``project_status_<name>`` and STOPPED by default — the same operator-toggle model as
+    ``autocond_<name>`` (FR-025). Each tick: read the board token from ``GITHUB_PROJECT_TOKEN``
+    only (skip naming it when unset, no ``GITHUB_TOKEN`` fallback — FR-016); fetch the whole board
+    (shared via ``board_cache_get``); ``filter_items`` to this sensor's status/label/repo; run the
+    pure ``plan_tick`` over the persisted cursor; yield a per-kind ``RunRequest`` for each launch
+    carrying the run key + the five identity tags + the ``run_config`` issue payload; surface the
+    held/first-tick report as a ``SkipReason`` when nothing launched; then ``update_cursor``. A
+    GitHub outage or unresolvable board/status returns BEFORE ``update_cursor`` so the cursor is
+    untouched and nothing re-fires (FR-019/FR-020)."""
+    ps = cfg["triggers"]["on_project_status"]
+    name = f"project_status_{cfg['name'].replace('-', '_')}"
+    owner = ps["owner"]
+    project = ps["project"]
+
+    @sensor(name=name, minimum_interval_seconds=int(ps.get("interval_seconds", 60)),
+            default_status=DefaultSensorStatus.STOPPED, **_project_status_target(cfg))
+    def _sensor(context: SensorEvaluationContext):
+        token = os.environ.get("GITHUB_PROJECT_TOKEN")
+        if not token:
+            yield SkipReason("GITHUB_PROJECT_TOKEN is not set (no fallback to GITHUB_TOKEN)")  # FR-016
+            return
+        try:
+            board = board_cache_get(owner, project)
+            if board is None:
+                board = GitHubProjectsClient(token).fetch_board(owner, project)  # WHOLE board
+                board_cache_put(owner, project, board)
+            items = filter_items(board, ps)                    # per-sensor filter (FR-004)
+        except Unresolvable as e:
+            yield SkipReason(f"could not resolve {e.what}")                     # FR-020
+            return                                                             # cursor untouched
+        except (RateLimited, BoardError) as e:
+            yield SkipReason(f"GitHub unavailable: {e}")                        # FR-019
+            return                                                             # cursor untouched
+        state = json.loads(context.cursor) if context.cursor else {}
+        plan = plan_tick(state, items, ps, now=_utcnow_iso())
+        for lk in plan.launches:
+            yield RunRequest(run_key=lk.run_key, tags=lk.tags,
+                             run_config={"ops": {f"run_{cfg['name'].replace('-', '_')}":
+                                                 {"config": {"issue": lk.run_config}}}},
+                             **_run_target(cfg))
+        if plan.skip_reason and not plan.launches:
+            yield SkipReason(plan.skip_reason)                 # held report / first tick (FR-009)
+        context.update_cursor(json.dumps(plan.next_cursor))
+
+    return _sensor
 
 
 def build_asset_automation_sensor(cfg: dict, asset_def: AssetsDefinition):

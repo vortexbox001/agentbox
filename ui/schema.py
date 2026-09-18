@@ -22,7 +22,7 @@ import config
 
 # Current schema version, stamped into every emitted file. Bump when a migration
 # is added below. Files without the stamp are read as version 0.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def migrate_1_to_2(data: dict) -> dict:
@@ -81,12 +81,20 @@ def migrate_6_to_7(data: dict) -> dict:
     return data
 
 
+def migrate_7_to_8(data: dict) -> dict:
+    """Schema 7 -> 8: the GitHub Projects status trigger (spec 016). ``triggers.on_project_status``
+    (a nested mapping) was added. It is additive — a schema-7 file simply has none — so this is the
+    identity function: existing files load with zero migration noise and re-stamp to 8 only when
+    next saved from the UI (same posture as migrate_5_to_6/6_to_7)."""
+    return data
+
+
 # Ordered, forward-only migrations. Each pair is (target_version, fn) where fn
 # transforms a definition dict from target_version - 1 to target_version. Pure
 # dict -> dict, applied on read (never mutating the file until the user saves).
 MIGRATIONS: list[tuple[int, Callable[[dict], dict]]] = [
     (2, migrate_1_to_2), (3, migrate_2_to_3), (4, migrate_3_to_4), (5, migrate_4_to_5),
-    (6, migrate_5_to_6), (7, migrate_6_to_7),
+    (6, migrate_5_to_6), (7, migrate_6_to_7), (8, migrate_7_to_8),
 ]
 
 
@@ -116,6 +124,7 @@ SECTIONS: list[dict] = [
     {"id": "limits", "label": "Limits", "group": "runs"},
     {"id": "produces", "label": "Produces", "group": "runs"},
     {"id": "triggers", "label": "Triggers", "group": "runs"},
+    {"id": "project_status", "label": "GitHub Projects", "group": "runs"},
     {"id": "run_as_job", "label": "Job", "group": "job"},
     {"id": "prompt", "label": "Prompt", "group": "job"},
     {"id": "directories", "label": "Directories", "group": "job"},
@@ -159,6 +168,14 @@ CHECK_FIELD_HELP: dict[str, str] = {
 
 # Comment on the `triggers:` block header line in emitted YAML (real or commented-out).
 TRIGGERS_BLOCK_HELP = "When this agent runs on its own. Optional per-kind cron(s); leave commented for manual/on-demand only."
+
+# Comment on the nested `on_project_status:` mapping header line in emitted YAML (spec 016). The
+# emitter uses this as the block-line comment; the form and README track it.
+PROJECT_STATUS_BLOCK_HELP = (
+    "Launch this agent when an issue enters a GitHub Projects board status. owner/project/status "
+    "are required; label/repo/interval_seconds are optional. Read by the paused "
+    "project_status_<name> sensor using GITHUB_PROJECT_TOKEN."
+)
 
 
 @dataclass
@@ -269,6 +286,40 @@ FIELDS: list[SchemaField] = [
         "Cron that launches the agent's job on a schedule. Five fields, no @-macros. Applies only "
         "when the agent has a job; blank = manual/launchable only.",
         _ALL, block="triggers",
+    ),
+    # GitHub Projects trigger (Runs) — a nested mapping under `triggers.on_project_status` (spec
+    # 016). Applies to both agent kinds. Requiredness of owner/project/status is conditional on the
+    # block being on, so these are not `required=True`; the shape rules live in `validate` below.
+    SchemaField(
+        "owner", "project_status", "Board owner", "string",
+        "GitHub org (or user) that owns the Projects board.",
+        _ALL, block="triggers.on_project_status",
+    ),
+    SchemaField(
+        "project", "project_status", "Project number", "int",
+        "The Projects board number (positive integer).",
+        _ALL, block="triggers.on_project_status",
+    ),
+    SchemaField(
+        "status", "project_status", "Status option", "string",
+        "The Status column option name; an issue entering it launches this agent (matched "
+        "case-insensitively).",
+        _ALL, block="triggers.on_project_status",
+    ),
+    SchemaField(
+        "label", "project_status", "Label filter", "string",
+        "Optional — only issues carrying this label launch.",
+        _ALL, block="triggers.on_project_status",
+    ),
+    SchemaField(
+        "repo", "project_status", "Repo filter", "string",
+        "Optional — only issues from this owner/repo launch (matched case-insensitively).",
+        _ALL, block="triggers.on_project_status",
+    ),
+    SchemaField(
+        "interval_seconds", "project_status", "Poll interval (seconds)", "int",
+        "Poll cadence in seconds (default 60, minimum 30).",
+        _ALL, default=60, block="triggers.on_project_status",
     ),
     # Job (Job group) — the explicit job flag; a job creates agent_<name>.
     SchemaField(
@@ -623,6 +674,48 @@ def _validate_checks(agent: dict, is_asset: bool, errors: dict) -> None:
             return
 
 
+# The fields of the nested `triggers.on_project_status` block (spec 016). Stated once so the
+# emitter, reader, and validation agree on the set.
+PROJECT_STATUS_FIELDS = ("owner", "project", "status", "label", "repo", "interval_seconds")
+
+
+def _project_status_on(agent: dict) -> bool:
+    """Whether the GitHub Projects trigger block is on: any of its fields carries a real value.
+
+    The form's toggle nests the block under ``triggers.on_project_status`` (and omits it when off),
+    so on read at least one field is present when the block is on. An all-unset set is off."""
+    return any(
+        f in agent and not _is_unset(FIELDS_BY_ID[f], agent.get(f)) for f in PROJECT_STATUS_FIELDS
+    )
+
+
+def _validate_project_status(agent: dict, errors: dict) -> None:
+    """Validate the ``on_project_status`` block, keyed by field id (contract agent-model §3, FR-023).
+
+    Only when the block is on: ``owner``/``project``/``status`` are required; ``project`` a positive
+    integer; ``interval_seconds`` (if present) an integer ≥30; ``repo`` (if present) of the form
+    ``owner/repo``. The precise messages are the authority for these fields, so they overwrite any
+    generic range/type message the main loop set."""
+    if not _project_status_on(agent):
+        return
+    for req in ("owner", "project", "status"):
+        if _is_unset(FIELDS_BY_ID[req], agent.get(req)):
+            errors[req] = f"{req} is required for a GitHub Projects trigger."
+    proj = agent.get("project")
+    if not _is_unset(FIELDS_BY_ID["project"], proj):
+        if isinstance(proj, bool) or not isinstance(proj, int) or proj < 1:
+            errors["project"] = "project must be a positive integer."
+    iv = agent.get("interval_seconds")
+    if "interval_seconds" in agent and not _is_unset(FIELDS_BY_ID["interval_seconds"], iv):
+        if isinstance(iv, bool) or not isinstance(iv, int) or iv < 30:
+            errors["interval_seconds"] = "interval_seconds must be an integer of at least 30."
+    repo = agent.get("repo")
+    if "repo" in agent and not _is_unset(FIELDS_BY_ID["repo"], repo):
+        parts = str(repo).split("/")
+        if len(parts) != 2 or not all(p.strip() for p in parts):
+            errors["repo"] = "repo must be a full owner/repo name."
+
+
 # Config-path fields whose value must resolve under the data root, never the product tree
 # (FR-025, contract path-validation §1). mcp_config is a container-internal path and is not
 # checked here.
@@ -831,6 +924,10 @@ def validate(agent: dict, *, prompt_exists: Callable[[str], bool]) -> dict[str, 
             continue
         if agent.get(tid) is True and not is_asset:
             errors[tid] = msg
+
+    # The GitHub Projects trigger block (spec 016) — required fields + project/interval/repo shape.
+    # Runs last so its precise messages own the on_project_status field ids (contract agent-model §3).
+    _validate_project_status(agent, errors)
 
     return errors
 

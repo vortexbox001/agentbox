@@ -33,11 +33,15 @@ const newPrompt = { filename: "", content: "" };   // the inline prompt being au
 let rebuildPromptOptions = null;  // repopulate the current prompt select after a refresh
 let userChangedNetwork = false;   // the user touched the network control on this page
 let assetCardOn = false;          // "make agent an asset" checkbox state (spec 006)
+let projectStatusCardOn = false;  // "GitHub Projects trigger" card state (spec 016)
 const modelMemory = {};           // harness id -> the model chosen while on that harness
 const effortMemory = {};          // harness id -> the effort chosen while on that harness
 
-// Sections the form renders as the two nature cards (Asset / Job), not generic cards.
-const CARD_SECTIONS = new Set(["produces", "triggers", "run_as_job"]);
+// Sections the form renders as their own cards (Asset / Job / GitHub Projects), not generic cards.
+const CARD_SECTIONS = new Set(["produces", "triggers", "run_as_job", "project_status"]);
+
+// The fields of the nested triggers.on_project_status block (spec 016).
+const PROJECT_STATUS_FIELDS = ["owner", "project", "status", "label", "repo", "interval_seconds"];
 
 // Full claude model id, optional [1m] context suffix (mirrors schema._CLAUDE_ID_RE).
 const CLAUDE_ID_RE = /^claude-[a-z0-9.-]+(\[1m\])?$/;
@@ -140,6 +144,12 @@ function collect() {
     delete agent.on_missing;
   }
   if (agent.job !== true) delete agent.job_schedule;
+  // GitHub Projects trigger (spec 016): when the card is off, no on_project_status block is
+  // written — drop all six sub-fields so the server omits the nested block. When on, the flat
+  // fields are sent and the server nests them under triggers.on_project_status.
+  if (!projectStatusCardOn) {
+    for (const fid of PROJECT_STATUS_FIELDS) delete agent[fid];
+  }
   // Carry the file's unmanaged keys through edit saves and the preview untouched.
   if (mode === "edit" && unmanaged && Object.keys(unmanaged).length) {
     agent.unmanaged = unmanaged;
@@ -936,6 +946,45 @@ function buildJobCard() {
   return card;
 }
 
+// The GitHub Projects trigger card (spec 016, contract ui §2): a toggle gating the six
+// on_project_status inputs. On ⇒ the flat fields are sent (the server nests them under
+// triggers.on_project_status); off ⇒ no block is written. Composed from the shared field
+// controls (text_input / number input / toggle) like the Asset card — tokens/macros only.
+function buildProjectStatusCard() {
+  const card = document.createElement("section");
+  card.className = "ax-card ax-form-section ax-nature-card";
+  card.id = "ax-project-status-card";
+  const h = document.createElement("h2");
+  h.textContent = "GitHub Projects";
+
+  const toggle = document.createElement("label");
+  toggle.className = "ax-toggle";
+  toggle.setAttribute("for", "ax-project-status-toggle");
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.id = "ax-project-status-toggle";
+  cb.checked = projectStatusCardOn;
+  const track = document.createElement("span");
+  track.className = "ax-toggle-track";
+  track.setAttribute("aria-hidden", "true");
+  const cbText = document.createElement("span");
+  cbText.textContent = "launch on a board status";
+  toggle.append(cb, track, cbText);
+
+  const grid = document.createElement("div");
+  grid.className = "ax-grid-form";
+  for (const fid of PROJECT_STATUS_FIELDS) {
+    const w = fieldWrapIfApplicable(fid);
+    if (w) grid.appendChild(w);
+  }
+
+  card.append(h, toggle, grid);
+  const gate = () => setCardEnabled(grid, projectStatusCardOn);
+  cb.addEventListener("change", () => { projectStatusCardOn = cb.checked; gate(); });
+  gate();
+  return card;
+}
+
 // A client-side hint when the agent is neither an asset nor a job (the server is the
 // authority — it rejects the save with the nature message; FR-005).
 function updateNatureHint() {
@@ -996,6 +1045,8 @@ function renderForm(harness) {
   // checkbox; the server enforces the at-least-one rule, the client just hints (contract §1).
   const runsGroup = groupEls.get("runs");
   if (runsGroup && ids.has("asset")) runsGroup.appendChild(buildAssetCard());
+  // The GitHub Projects trigger card (spec 016) lives in the Runs group, after the Asset card.
+  if (runsGroup && ids.has("owner")) runsGroup.appendChild(buildProjectStatusCard());
   const jobGroup = groupEls.get("job");
   if (jobGroup && ids.has("job")) jobGroup.insertBefore(buildJobCard(), jobGroup.children[1] || null);
 
@@ -1442,6 +1493,10 @@ async function prefillFromTemplate(stem) {
   values.name = "";          // a template pre-fill is a starting point, not a copy
   values.enabled = false;    // start disabled until the operator reviews it
   assetCardOn = !!(values.asset && String(values.asset).trim());
+  projectStatusCardOn = PROJECT_STATUS_FIELDS.some((fid) => {
+    const v = values[fid];
+    return v !== undefined && v !== null && String(v).trim() !== "";
+  });
   const harness = src.harness && harnessById(src.harness) ? src.harness : currentHarness;
   renderForm(harness);       // marks the form dirty vs. the blank snapshot
 }
@@ -1491,6 +1546,10 @@ async function loadForEdit() {
     values[k] = v;
   }
   assetCardOn = !!(values.asset && String(values.asset).trim());
+  projectStatusCardOn = PROJECT_STATUS_FIELDS.some((fid) => {
+    const v = values[fid];
+    return v !== undefined && v !== null && String(v).trim() !== "";
+  });
   const harness = src.harness && harnessById(src.harness) ? src.harness : currentHarness;
   renderForm(harness);
   lockName();

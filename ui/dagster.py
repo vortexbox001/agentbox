@@ -186,11 +186,16 @@ def _build_query(agents: list[dict]) -> tuple[str, list[tuple[str, dict]]]:
             if not dname:
                 continue
             alias = f"a{i}_inst{j}"
-            meta["inst"].append((dname, alias))
+            ctype = cron.get("type")
+            meta["inst"].append((dname, alias, ctype))
+            # A GitHub Projects sensor (spec 016) also reads its latest tick's SkipReason so the
+            # Automation view can surface the held issues / first-tick report (FR-025, ui §3).
+            tick_frag = (" ticks(limit: 1) { skipReason }"
+                         if ctype == "project_status" else "")
             fields.append(
                 f'{alias}: instigationStateOrError(instigationSelector: '
                 f'{{{selector}, name: {_q(dname)}}}) '
-                f'{{ __typename ... on InstigationState {{ id selectorId status }} }}'
+                f'{{ __typename ... on InstigationState {{ id selectorId status{tick_frag} }} }}'
             )
         if asset_key is not None and row.get("checks"):
             alias = f"a{i}_checks"
@@ -308,14 +313,31 @@ def _parse_checks(node):
     return out
 
 
+def _latest_skip_reason(node: dict) -> str | None:
+    """The latest tick's SkipReason for a sensor (spec 016 — held issues / first-tick report)."""
+    ticks = node.get("ticks") if isinstance(node, dict) else None
+    if isinstance(ticks, list) and ticks and isinstance(ticks[0], dict):
+        reason = ticks[0].get("skipReason")
+        return reason or None
+    return None
+
+
 def _parse_schedules(data: dict, inst: list) -> dict:
-    """{dagster_name: {running, id} | null} from the instigation aliases."""
+    """{dagster_name: {running, id[, skip_reason]} | null} from the instigation aliases.
+
+    A GitHub Projects sensor (spec 016) carries its latest tick's ``skip_reason`` — the held-issue
+    report the Automation view surfaces (FR-025). Entries without a tick fragment omit the key."""
     schedules = {}
-    for dname, alias in inst:
+    for entry in inst:
+        dname, alias = entry[0], entry[1]
+        ctype = entry[2] if len(entry) > 2 else None
         node = data.get(alias)
         if isinstance(node, dict) and node.get("__typename") == "InstigationState":
             status = str(node.get("status") or "").upper()
-            schedules[dname] = {"running": status == "RUNNING", "id": node.get("id")}
+            row = {"running": status == "RUNNING", "id": node.get("id")}
+            if ctype == "project_status":
+                row["skip_reason"] = _latest_skip_reason(node)
+            schedules[dname] = row
         else:
             schedules[dname] = None  # not found / error arm → unknown (toggle disabled)
     return schedules
