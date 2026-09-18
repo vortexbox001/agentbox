@@ -101,7 +101,11 @@ Harness, container, inputs, completeness stay in the rail (FR-019, US6-AC3).
 ## Entity: Tool card view model (US2, FR-021–FR-027)
 
 Built by enriching each tool in the existing `conversation_entries(events)` output
-(`runs_store.py:287`; each tool is `{tool, arg, result, diff, missing, state, exit}`).
+(`runs_store.py:287`; each tool is `{tool, arg, result, diff, missing, state, exit}`). **Note**: the
+`exit` key is a vestigial placeholder that `conversation_entries` always leaves `None` — the
+normalized event schema (`images/lib/agent_events.py`) carries no exit code, so nothing populates it.
+The `exit N` marker is therefore **derived by parsing the result text**, not read from this field (see
+plan R6); the placeholder key is not the source of truth.
 
 | Field | Source | Notes |
 |-------|--------|-------|

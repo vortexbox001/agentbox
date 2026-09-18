@@ -171,7 +171,9 @@ the spec + repo. Full rationale in [research.md](./research.md).
 6. **`exit N` / `failed` is derived best-effort** because the normalized event schema carries no exit
    field (`images/lib/agent_events.py`): `failed` when the result is `missing` or matches a permission-
    refusal marker; `exit N` only when the result text carries a recognizable exit code; otherwise the
-   head shows only the description (spec edge case) (R6).
+   head shows only the description (spec edge case) (R6). (`conversation_entries` does expose an `exit`
+   key on each tool dict, but it is a vestigial placeholder always left `None` — nothing populates it —
+   so it is not the source of the marker; see data-model.md "Tool card view model".)
 7. **Clamp is fixed at 3 lines, detected server-side**: the view model counts IN/OUT lines and flags
    `overflow` (> 3) so the template renders the fade and the "Show all N lines" link deterministically;
    `run-detail.js` toggles the expanded state. **Diff OUT rows render expanded by default** because diff

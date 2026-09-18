@@ -16,6 +16,14 @@ both refer to this one feature — plan.md "Directory/branch note").
 **Tests**: INCLUDED. The spec makes the UI suite the acceptance gate (SC-010) and quickstart.md names
 the exact test surfaces, so test tasks are first-class here (not optional).
 
+**Test-surface note (analysis finding C1)**: the UI suite runs through FastAPI's `TestClient` and there
+is **no JS bundler or JS test harness** (plain ES modules, no `package.json` — AGENTS.md). Python tests
+can therefore assert only the **server-rendered markup hooks** the client JS acts on (section order,
+`data-*`/`aria-expanded` attributes, the shared storage-key wiring, IN/OUT text presence, match-count
+element). The purely client-side behaviours — per-browser section persistence (FR-004, SC-002),
+clamp/expand-all (FR-025/FR-028), and search hide + auto-expand-on-match (FR-029, SC-007) — are
+**validated manually via quickstart.md**, not by the automated suite.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies on incomplete tasks)
@@ -108,11 +116,15 @@ error; header + six-stat strip unchanged.
   single shared `localStorage` key `agentbox.runDetail.sections` mapping section id → open (NOT keyed
   per run id), applying saved state over server defaults on load, keyboard (Enter/Space) toggle with
   `aria-expanded` updates, and a safe fallback to the FR-002 defaults when localStorage is unavailable
-  (no error) (FR-003/FR-004). (Depends on T010.)
-- [ ] T012 [US1] Tests in `ui/tests/test_runs.py`: exactly five sections in the fixed order; the FR-002
-  open/closed defaults present in the rendered markup; each closed section renders a chevron + title +
-  right-aligned note; the header and six-stat strip are unchanged (FR-001/FR-002/FR-003/FR-005,
-  SC-001). (Depends on T009, T010.)
+  (no error) (FR-003/FR-004). This behaviour is JS-only and is validated **manually via quickstart US1**
+  (SC-002) — see the Test-surface note (C1). (Depends on T010.)
+- [ ] T012 [US1] Tests in `ui/tests/test_runs.py` (rendered-markup hooks only — see the Test-surface
+  note, C1): exactly five sections in the fixed order; the FR-002 open/closed defaults present in the
+  rendered markup (`aria-expanded` / default-open attributes); each closed section renders a chevron +
+  title + right-aligned note; the shared `agentbox.runDetail.sections` storage-key wiring is present in
+  the markup; the header and six-stat strip are unchanged (FR-001/FR-002/FR-003/FR-005, SC-001). The
+  runtime persistence behaviour (FR-004, SC-002) is verified manually (quickstart US1), not here.
+  (Depends on T009, T010.)
 
 **Checkpoint**: The five-section shell is live, persists per browser, and is independently testable.
 
@@ -157,7 +169,9 @@ becomes Collapse-all, an individual card still collapses while "all" is on; a re
 - [ ] T018 [US2] Add clamp/expand behaviour in `ui/static/run-detail.js`: per-card `is-expanded` toggle
   on row/link click and via keyboard (Enter/Space, `aria-expanded`), flip "Show all N lines" ↔ "Show
   less", and the Expand-all/Collapse-all toolbar toggle that is **view-only and does not persist**
-  (resets to clamped on reload) while still allowing single-card collapse (FR-025/FR-028). (Depends on
+  (resets to clamped on reload) while still allowing single-card collapse (FR-025/FR-028). This
+  behaviour is JS-only and is validated **manually via quickstart US2** — see the Test-surface note
+  (C1); the automated tests (T020) assert only the rendered clamp/overflow markup hooks. (Depends on
   T017.)
 - [ ] T019 [P] [US2] Add tokens-only styling for the tool card (head, IN/OUT box ground, 3-line clamp,
   fade following the **background** token, marker mono, failed/warning OUT intents) in
@@ -281,8 +295,10 @@ Dagster stopped) shows "No checks were configured for this agent." and the note 
   recorded}`; absent fields degrade to `—`; every existing failure arm still collapses to plain data so
   the section degrades to empty when Dagster is unreachable (FR-015/FR-016, R5, contract run-detail.md
   §E). No new query, no new check types, read-only.
-- [ ] T039 [US5] Add the Checks note builder in `ui/runs_store.py` (or the notes block): "K passed · L
-  warning(s)" / "P failed" counting outcomes; "—" when empty (FR-017/FR-018).
+- [ ] T039 [US5] Add the Checks note builder in `ui/runs_store.py` (or the notes block): count outcomes
+  across the full status vocabulary — "K passed · L warning(s)" / "P failed" (with `fail-blocking`
+  counted as failed) / "Q not run" — each part shown only when non-zero; "—" only when the run has zero
+  recorded checks (a `not-run` check still counts and does not yield "—") (FR-017/FR-018).
 - [ ] T040 [P] [US5] Add the **Check row** design-system component
   `ui/design-system/components/data/CheckRow.jsx` (+ `.d.ts`, `.prompt.md`) and a data-category
   specimen, reusing the existing `ax-result` mark + `CHECK_META` vocabulary (pass/warn/fail-blocking/
@@ -303,8 +319,10 @@ Dagster stopped) shows "No checks were configured for this agent." and the note 
   right-aligned recorded time) in `ui/static/app.css` (FR-036, SC-009).
 - [ ] T046 [US5] Tests: `ui/tests/test_dagster.py` (the additive time + detail fields parse; the Checks
   read still degrades to `{}`/"—" when Dagster is unreachable) and `ui/tests/test_runs.py` (checks
-  render with mark/name/detail/time and the outcome-count note; the empty state + "—" note when there
-  are none) (SC-008, FR-015–FR-018). (Depends on T038, T043, T044.)
+  render with mark/name/detail/time and the outcome-count note across the full vocabulary — including a
+  `fail-blocking` check counted as "failed" and a `not-run` check counted separately and NOT yielding
+  "—"; the empty state + "—" note only when there are zero recorded checks) (SC-008, FR-015–FR-018).
+  (Depends on T038, T043, T044.)
 
 **Checkpoint**: The operator's third question ("did the checks pass") is answered, matching the overview
 language.
@@ -357,14 +375,18 @@ the bottom.
 - [ ] T051 [US7] Extend the transcript search in `ui/static/run-detail.js` to match message text **and**
   tool IN/OUT content, hide non-matching entries, report the match count, **auto-expand** a card that
   matches only on clamped IN/OUT while the search is active and restore its prior clamped state when the
-  search is cleared; wire the relocated Readable/Raw-log toggle (FR-029/FR-030). (Depends on T050,
-  T018.)
+  search is cleared; wire the relocated Readable/Raw-log toggle (FR-029/FR-030). The hide / auto-expand-
+  on-match behaviour is JS-only and is validated **manually via quickstart US7** (SC-007) — see the
+  Test-surface note (C1). (Depends on T050, T018.)
 - [ ] T052 [US7] Ensure `_run_detail_page`/`runs_store` expose the Result-dedup flag and the transcript
   foot line (status · turns · files written · tool calls) to the template in `ui/main.py`
   (FR-032/FR-033). (Depends on T009.)
-- [ ] T053 [US7] Tests in `ui/tests/test_runs.py`: search over IN/OUT content keeps matching entries and
-  reports the count; the raw-log toggle is inside the Transcript header; the duplicate final message is
-  a single Result; the foot line sits at the bottom (SC-007, FR-029–FR-033). (Depends on T050, T052.)
+- [ ] T053 [US7] Tests in `ui/tests/test_runs.py` (rendered-markup hooks only — see the Test-surface
+  note, C1): the IN/OUT text is present in the markup so it is searchable, the match-count element and
+  search box render inside the Transcript header, the raw-log toggle is inside the Transcript header,
+  the duplicate final message renders as a single Result, and the foot line sits at the bottom of the
+  section (FR-030–FR-033). The runtime search hide / auto-expand-on-match (FR-029, SC-007) is verified
+  manually (quickstart US7), not here. (Depends on T050, T052.)
 
 **Checkpoint**: The operator's fifth question ("what exactly happened") is answered with a searchable,
 skimmable transcript.
@@ -390,6 +412,12 @@ skimmable transcript.
 - [ ] T058 Walk quickstart.md US1–US7 + the theme check against the reference run (`speckit-open-pr`,
   2026-09-18) in light/dark/Indigo, confirming the section borders, IN/OUT box ground + fade, muted OUT
   text and check marks all read correctly (SC-009).
+- [ ] T059 [P] Add a read-path/no-write guard test in `ui/tests/` (e.g. `test_runs.py` or a small
+  `test_scope.py`) that makes the FR-035 "presentation and read-path only" guarantee verifiable rather
+  than policy-only: assert `ui.schema.SCHEMA_VERSION` is unchanged, that `ui/requirements.txt` gains no
+  new dependency, and that rendering the run detail page writes nothing to the run record (no new
+  `context.json`/`events.jsonl`/`transcript.jsonl`/`report.json` mutation) and introduces no new check
+  types (FR-035, analysis finding G1).
 
 ---
 

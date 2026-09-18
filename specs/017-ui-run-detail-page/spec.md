@@ -1,6 +1,9 @@
 # Feature Specification: Run Detail Page
 
-**Feature Branch**: `207-ui-run-detail-page`
+**Feature Branch**: `207-ui-run-detail-page` — the feature directory is
+`specs/017-ui-run-detail-page/`; the `207-…` branch and the `017-…` directory refer to this one
+feature (`207` is a transposition of `017` in the `015 → 016 → 017` sequence), as reconciled in
+`plan.md` "Directory/branch note" and `tasks.md`.
 
 **Created**: 2026-09-18
 
@@ -17,6 +20,36 @@
 - Q: Is the "Expand all / Collapse all output" toggle state remembered across visits? → A: No — it is view-only and resets to the default (all cards clamped) on reload; only per-section open/closed state persists.
 - Q: How can the collapsible section headers and expandable tool rows be operated without a mouse? → A: They are keyboard-operable disclosure controls that expose their open/closed state to assistive technology (focusable, toggled with Enter/Space, `aria-expanded` reflecting state), reusing the design system's disclosure pattern.
 - Q: When several Produced-elsewhere items exist, in what order are they listed? → A: Grouped by kind — pull requests, then commits, then files — and in event-stream order within each kind.
+
+### Session 2026-09-18 (analysis remediation)
+
+Decisions recorded while acting on the `/speckit-analyze` findings (`analysis-report.md`) with no
+human available to confirm. Each is the most reasonable reading of the spec + plan + repo and is
+applied consistently across `spec.md`, `plan.md`, `tasks.md`, `data-model.md`, and the contracts.
+
+- Q: When a run has BOTH `/output` artifacts AND minable produced-elsewhere evidence (a PR / commit),
+  does the Produced-elsewhere list appear alongside the file rows? (finding I1) → A: No. Produced-
+  elsewhere is scoped to the **no-output-artifacts** case, consistent with FR-011, User Story 4, plan
+  decision R4, the data model, and task T034 — the list appears only when the run wrote no `/output`
+  files. The earlier edge case that claimed "both appear and the note counts both" was the lone
+  outlier and is corrected. The closed-state note (FR-014) therefore reads "N files" when artifacts
+  exist and "0 files · M pull request(s)" only when there are none.
+- Q: Do diff OUT rows always render expanded, or only when clamped diff colouring would be unreadable?
+  (finding A1) → A: **Always expanded.** The conditional phrasing ("if diff colouring cannot survive
+  the clamped OUT row cleanly") is resolved to the unconditional rule the plan (R7), data model, and
+  tasks T013/T016 already implement: a diff OUT row renders expanded by default while non-diff cards
+  clamp to the FR-024 clamp height.
+- Q: What is the full check-status vocabulary, and how are `fail-blocking` and `not-run` reflected in
+  the Checks note? (finding U1) → A: The vocabulary is **pass / warn / fail-blocking / not-run** — the
+  values `ui/dagster.py:_check_status` actually returns, matching the Agents overview and already used
+  by the data model and the CheckRow component. The closed-state note counts passed / warning / failed
+  / not-run, each part shown only when non-zero, with a `fail-blocking` check counted as "failed". A
+  `not-run` check is still a recorded check, so it participates in the count and does **not** trigger
+  the "—" empty note; "—" appears only when the run has zero recorded checks.
+- Q: Where does the "Harness" label belong — the header stat strip or the rail? (finding A2) → A:
+  Both surface it, distinctly. "Harness" is one of the six header stats (FR-005); the harness *detail*
+  lives inside the rail's **Configuration** block (FR-006). "Harness remains in the rail" in User
+  Story 6 refers to that Configuration detail, not a second, separate placement.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -179,26 +212,29 @@ with an Open action; confirm the section note counts files and pull requests.
 ### User Story 5 - See whether the run's checks passed (Priority: P2)
 
 An operator opens the Checks section to learn whether the run's checks passed. Each recorded check
-appears in the same visual language as the Checks column on the Agents overview — a pass / warn / fail
-mark and icon, the check name, a one-line detail, and the time the check was recorded, right-aligned.
+appears in the same visual language as the Checks column on the Agents overview — a status mark and
+icon (pass / warn / fail-blocking / not-run), the check name, a one-line detail, and the time the
+check was recorded, right-aligned.
 When a run has no recorded checks, the section says so. The closed-state note counts the outcomes.
 
 **Why this priority**: "Did the checks pass" is the operator's third question and today the detail page
 has no view of checks at all. Surfacing them closes a real gap, but it depends on the sectioned layout
 being in place.
 
-**Independent Test**: Open a run with several checks and confirm each renders with its pass/warn/fail
-mark, name, one-line detail, and recorded time, matching the Agents overview treatment; confirm the
+**Independent Test**: Open a run with several checks and confirm each renders with its status mark
+(pass / warn / fail-blocking / not-run), name, one-line detail, and recorded time, matching the Agents
+overview treatment; confirm the
 section note reads the outcome count (e.g. "4 passed · 1 warning"); open a run with no configured
 checks and confirm the empty-state line shows and the note reads "—".
 
 **Acceptance Scenarios**:
 
 1. **Given** a run with recorded checks, **When** the operator opens Checks, **Then** each check shows
-   a pass / warn / fail mark and icon, its name, a one-line detail, and the time it was recorded,
-   right-aligned, in the same visual language as the Agents overview.
+   a status mark and icon (pass / warn / fail-blocking / not-run), its name, a one-line detail, and the
+   time it was recorded, right-aligned, in the same visual language as the Agents overview.
 2. **Given** a run with checks of mixed outcomes, **When** the operator reads the closed-state note,
-   **Then** it counts the outcomes (e.g. "4 passed · 1 warning", "2 failed").
+   **Then** it counts the outcomes across the full vocabulary (e.g. "4 passed · 1 warning", "2 failed",
+   "3 passed · 1 not run"), with a `fail-blocking` check counted as "failed".
 3. **Given** a run with no recorded checks, **When** the operator opens Checks, **Then** it shows "No
    checks were configured for this agent." and the note reads "—".
 
@@ -281,10 +317,12 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   today — the Produced elsewhere list is simply absent.
 - **A tool call with no recorded exit code and a captured result.** The head line shows neither
   `exit N` nor `failed`; only the description is shown.
-- **A diff result longer than the clamp height.** If diff colouring cannot survive the clamped OUT row
-  cleanly, diff cards expand by default while other cards clamp (per the null-action fallback).
-- **A run with output files that also opened a pull request.** Both the file rows and the Produced
-  elsewhere list appear, and the note counts both.
+- **A diff result longer than the clamp height.** Diff cards expand by default while other cards
+  clamp — a diff OUT row always renders expanded so its colouring is preserved (see Clarifications,
+  finding A1).
+- **A run with output files that also opened a pull request.** The file rows appear and the note
+  reads "N files"; the Produced-elsewhere list is scoped to the no-output-artifacts case (FR-011) and
+  is not shown when the run wrote `/output` files (see Clarifications, finding I1).
 - **A section whose contents are empty.** The section still renders with its empty-state line and a
   note (e.g. Checks reads "—", Output reads "0 files").
 - **First visit with no saved section state.** The default open/closed states apply; no error occurs
@@ -315,7 +353,10 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   Cost).
 - **FR-006**: The configuration rail MUST keep Configuration, Container, Inputs, Completeness, Asset
   run, Issue and Usage, in that order; only the final-message notes (which become the Summary section)
-  and the output artifacts (which become the Output section) MUST leave the rail.
+  and the output artifacts (which become the Output section) MUST leave the rail. The harness detail
+  remains inside the rail's Configuration block; this is distinct from the "Harness" stat in the header
+  strip (FR-005), which is unchanged — the harness surfaces in both places, not one instead of the
+  other.
 
 **Summary section**
 
@@ -344,20 +385,27 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   kind.
 - **FR-013**: When the event stream cannot be mined for produced-elsewhere evidence, the Output section
   MUST show the file list or "No output artifacts" alone, as today.
-- **FR-014**: The Output section's closed-state note MUST count what was produced (files and pull
-  requests), showing each part only when non-zero and "0 files" alone when nothing was produced.
+- **FR-014**: The Output section's closed-state note MUST count what was produced — the file count
+  always, and the pull-request count only in the no-output-artifacts case where the Produced-elsewhere
+  list is shown (FR-011) — displaying each part only when non-zero and "0 files" alone when nothing was
+  produced. When the run wrote `/output` files the note reads "N files"; "0 files · M pull request(s)"
+  appears only when there were no output artifacts.
 
 **Checks section**
 
 - **FR-015**: The Checks section MUST show the run's recorded check results in the same visual language
-  as the Checks column on the Agents overview: a pass / warn / fail mark and icon, the check name, a
-  one-line detail, and the time the check was recorded, right-aligned.
+  as the Checks column on the Agents overview: a status mark and icon drawn from the full check-status
+  vocabulary — pass / warn / fail-blocking / not-run (the values the shared check read produces) — the
+  check name, a one-line detail, and the time the check was recorded, right-aligned.
 - **FR-016**: The check data MUST come from the run's recorded checks — the same check results already
   surfaced on the Agents overview — and MUST NOT introduce new check types.
 - **FR-017**: When a run has no recorded checks, the Checks section MUST show "No checks were configured
   for this agent." and its closed-state note MUST read "—".
-- **FR-018**: The Checks section's closed-state note MUST count outcomes (e.g. "4 passed · 1 warning",
-  "2 failed").
+- **FR-018**: The Checks section's closed-state note MUST count outcomes across the full status
+  vocabulary — passed, warning, failed, and not-run — showing each part only when non-zero and counting
+  a `fail-blocking` check as "failed" (e.g. "4 passed · 1 warning", "2 failed", "3 passed · 1 not run").
+  A `not-run` check is still a recorded check, so it participates in the count and does NOT trigger the
+  empty "—" note; the "—" note (FR-017) is shown only when the run has zero recorded checks.
 
 **Context section**
 
@@ -383,9 +431,9 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   full height; clicking again MUST collapse it, and while expanded the link MUST read "Show less". The
   row/link expand control MUST be keyboard-operable and expose its expanded state to assistive
   technology (focusable, toggled with Enter/Space, `aria-expanded`).
-- **FR-026**: A tool result that is a diff MUST preserve its diff colouring inside the OUT row; if diff
-  colouring cannot survive the clamped OUT row cleanly, diff cards MUST expand by default while other
-  cards clamp.
+- **FR-026**: A tool result that is a diff MUST preserve its diff colouring inside the OUT row; a diff
+  OUT row MUST render expanded by default (so its colouring is preserved) while non-diff cards clamp to
+  the FR-024 clamp height.
 - **FR-027**: A tool result recorded as missing MUST render the missing marker text as the OUT row
   content in the warning colour, and a failed result's OUT row MUST read in the failed colour.
 
@@ -441,8 +489,9 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
 - **Produced-elsewhere item**: A thing the run created outside `/output`, mined best-effort from the
   event stream — a pull request (with URL), a commit (with short SHA), or a workspace file — shown only
   when the evidence is present.
-- **Check result (as presented)**: One recorded check for the run — outcome (pass / warn / fail), name,
-  one-line detail, and recorded time — read from the same source the Agents overview reads.
+- **Check result (as presented)**: One recorded check for the run — outcome (pass / warn / fail-
+  blocking / not-run), name, one-line detail, and recorded time — read from the same source the Agents
+  overview reads.
 
 ## Success Criteria *(mandatory)*
 
