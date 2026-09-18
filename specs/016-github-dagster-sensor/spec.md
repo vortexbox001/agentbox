@@ -18,6 +18,23 @@
 - Q: What form does the `repo` filter (and the `AGENTBOX_ISSUE_REPO` value / `agentbox/issue_repo` tag) take? → A: The full `owner/repo` name, matched case-insensitively.
 - Q: In the feature-key slug, are non-ASCII letters and emoji transliterated to ASCII (e.g. `é`→`e`) or dropped? → A: Dropped — only `a-z0-9` characters survive; there is no transliteration.
 
+### Session 2026-09-17 (task-generation review)
+
+Gaps surfaced by the requirements-quality checklist while generating `tasks.md`, each resolved by
+adopting the most reasonable default consistent with the plan and contracts:
+
+- Q: How is the run handed the issue body when the body is empty or absent? → A: The `:ro` body file is **always** written (an empty file when the body is empty/absent); `AGENTBOX_ISSUE_BODY_FILE` always points at a readable file, never unset (CHK001).
+- Q: Is the issue-body size written to the read-only file bounded? → A: No — the body file is written **unbounded**; only the title is capped (256 chars). The body is data delivered as a file, not an env value (CHK002).
+- Q: How is an issue in the target column that carries no Status value (null option) treated? → A: As **not matching** the configured status — it is dropped exactly like any non-matching option and neither launches nor holds the slot (CHK003).
+- Q: What GitHub scopes must `GITHUB_PROJECT_TOKEN` hold? → A: Board read scope — a classic PAT with `read:project` + repo read, or a fine-grained token with Projects: read + Contents/Issues: read (CHK004).
+- Q: What happens if a board item's repository (`owner/repo`) cannot be resolved? → A: A launch candidate is only an Issue, which always resolves `repository.nameWithOwner`; if it is ever absent the item is **skipped defensively** rather than launched with a blank repo (CHK005).
+- Q: What upper bound does "within about a minute" carry? → A: One poll interval — the run launches within `interval_seconds` (default ≤60s) of the board reflecting the move (CHK008).
+- Q: Is the 256-char title cap applied before or after control-character stripping, and is truncation multi-byte-safe? → A: Control characters are stripped **first**, then the result is truncated to 256 Unicode code points (code-point-safe, never splitting a character) (CHK013).
+- Q: Does the slot stay held when a launched run fails, errors, or is terminated while the issue remains in the status? → A: Yes — the board is the sole source of truth; the slot is released **only** when the card leaves the status, so a failed/stuck run is cleared by moving the card (generalizes US3 #4) (CHK026).
+- Q: What happens to an item that enters and leaves the status entirely between two ticks? → A: It is **never observed in-status**, so it never launches and never holds the slot; only moves visible on a tick are acted on (CHK027).
+- Q: Can the same item re-enter the status before its prior run's slot is released? → A: No — leaving the status forgets the item and frees the slot in the same tick, so a re-entry is always a fresh entry observed after release (CHK030).
+- Q: What happens to an issue that is closed or deleted while sitting in the target status? → A: A closed issue still shown in the column is treated as in-status until it leaves; once the board no longer returns it in-status it is forgotten and frees the slot like any other leave (CHK031).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Launch an agent when an issue enters a status (Priority: P1)
@@ -298,7 +315,17 @@ launched run and confirm the sensor is named as launcher and the issue number li
 - **Transient GitHub failure:** A skip with a reason that leaves the cursor untouched.
 - **Multi-page board:** Pagination followed so items beyond the first page count.
 - **Stuck active feature:** The slot is released only by the board (the card leaving the status), not
-  by any downstream completion signal.
+  by any downstream completion signal — including when the launched run itself fails, errors, or is
+  terminated while the issue is still in the status.
+- **Empty or absent body:** The read-only body file is always written (empty when the body is empty),
+  so `AGENTBOX_ISSUE_BODY_FILE` always points at a readable file; the body is written unbounded (only
+  the title is capped).
+- **Closed or deleted issue in status:** A closed issue still shown in the column is treated as
+  in-status until it leaves; once the board stops returning it in-status it is forgotten and frees the
+  slot like any other leave.
+- **Same board, different statuses:** Several agents may watch the same board on different Status
+  options; the one shared per-tick query returns the whole board and each sensor applies its own
+  status/label/repo filter, so they never cross-contaminate.
 
 ## Requirements *(mandatory)*
 

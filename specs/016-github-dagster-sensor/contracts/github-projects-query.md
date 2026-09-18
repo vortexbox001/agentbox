@@ -61,21 +61,32 @@ Loop over pages: start with `after: null`, and while `items.pageInfo.hasNextPage
 `after: items.pageInfo.endCursor`, accumulating `nodes`. All items across all pages are considered, so
 an item beyond the first page still launches (US7 #3).
 
-## §4 Deriving a `BoardItem` and filtering
+## §4 Deriving a `BoardItem`, then filtering
 
-For each node the client builds a `BoardItem` and keeps it only when it is a launch candidate:
+`fetch_board` derives a `BoardItem` for **every** node and returns the whole board — it does **not**
+filter — so the result is cacheable and shareable across sensors watching the same board on different
+statuses (orchestrator-model §1/§3, spec Edge Case "Same board, different statuses"):
+
+| Field | Rule |
+|-------|------|
+| `item_id` | `node.id`. |
+| `content_type` | `content.__typename` (`Issue` \| `PullRequest` \| `DraftIssue`). |
+| `status` | the item's Status single-select option name (or null when the item has no Status value). |
+| Issue fields | `number`, `title`, `body`, `url`, `repo=repository.nameWithOwner`, `labels` — present only for issues. |
+
+The pure `filter_items(items, cfg)` (orchestrator-model §1) then keeps only launch candidates:
 
 | Step | Rule |
 |------|------|
-| Content type | Keep only `content.__typename == "Issue"`; drop PRs and drafts (FR-004). |
-| Status match | Keep only when the item's Status option name equals the configured `status`, compared **case-insensitively**. If the configured `status` matches no option present anywhere on the board, raise `Unresolvable("status option '<status>'")` (FR-020). |
+| Content type | Keep only `content_type == "Issue"`; drop PRs and drafts (FR-004). |
+| Status match | Keep only when the item's Status option name equals the configured `status`, compared **case-insensitively**; a null Status value never matches. If the configured `status` matches no option present anywhere on the board, raise `Unresolvable("status option '<status>'")` (FR-020). |
 | `repo` filter | If configured, keep only when `repository.nameWithOwner` equals `repo`, compared case-insensitively (spec clarification). |
 | `label` filter | If configured, keep only when the issue's `labels.nodes[].name` contains it. |
-| Fields | `item_id=node.id`, `number`, `title`, `body`, `url`, `repo=nameWithOwner`, `labels`. |
 
-The client returns the filtered list of issues-in-status; PRs, drafts, wrong-status, and filtered-out
-items are already gone, so admission (`plan_tick`) never launches them and they never hold the slot
-(FR-004 / US4 #3).
+`filter_items` returns the issues-in-status; PRs, drafts, wrong-status, null-status, and filtered-out
+items are gone, so admission (`plan_tick`) never launches them and they never hold the slot
+(FR-004 / US4 #3). The missing `Status` **field** itself (no single-select field named `Status` on the
+board) is an `Unresolvable("Status field")` raised during `fetch_board` (§5).
 
 ## §5 Error mapping (FR-019/FR-020)
 

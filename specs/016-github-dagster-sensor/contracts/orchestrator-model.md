@@ -14,12 +14,24 @@ Observation and admission are separated by a hard seam so a later feature can re
 class GitHubProjectsClient:
     def __init__(self, token: str): ...            # token from GITHUB_PROJECT_TOKEN only (§6)
     def fetch_board(self, owner: str, project: int) -> list[BoardItem]:
-        """Outbound GraphQL read of the board's items + Status, following pagination (FR-021).
-        Raises RateLimited / BoardError (transient) or Unresolvable(what) (board/status/field)."""
+        """Outbound GraphQL read of the WHOLE board's items + Status, following pagination (FR-021).
+        Returns every item (all statuses/content-types) so the result is shareable across sensors
+        watching the same board on different statuses (FR-021). Raises RateLimited / BoardError
+        (transient) or Unresolvable(what) (board/Status-field). Status-option resolution and the
+        status/label/repo filtering are NOT done here — see filter_items."""
+
+# --- Filtering (PURE, no I/O) ---
+def filter_items(items: list[BoardItem], cfg: ProjectStatusCfg) -> list[BoardItem]:
+    """Keep only issues (drop PRs/drafts) whose Status equals cfg.status case-insensitively and
+    that pass the optional label + owner/repo filters (FR-004). Applied per sensor AFTER the shared
+    fetch, so two agents on the same board with different statuses never cross-contaminate. Raises
+    Unresolvable("status option '<status>'") when the configured status matches no option present
+    anywhere on the board (FR-020)."""
 
 # --- Admission (PURE, no I/O, clock injected) ---
 def plan_tick(cursor_state: dict, items: list[BoardItem], cfg: ProjectStatusCfg, now: str) -> TickPlan:
-    """Decide launches, held issues, and the next cursor. No network, no clock read."""
+    """Decide launches, held issues, and the next cursor over the already-filtered items.
+    No network, no clock read."""
 
 # --- Pure helpers ---
 def feature_key(number: int, title: str) -> str: ...     # §5
@@ -79,8 +91,9 @@ def build_project_status_sensor(cfg: dict) -> SensorDefinition:
             yield SkipReason("GITHUB_PROJECT_TOKEN is not set (no fallback to GITHUB_TOKEN)")  # FR-016
             return
         try:
-            items = board_cache_get(ps["owner"], ps["project"]) or \
-                    GitHubProjectsClient(token).fetch_board(ps["owner"], ps["project"])
+            board = board_cache_get(ps["owner"], ps["project"]) or \
+                    GitHubProjectsClient(token).fetch_board(ps["owner"], ps["project"])   # WHOLE board, shareable
+            items = filter_items(board, ps)              # per-sensor status/label/repo filter (FR-004)
         except Unresolvable as e:
             yield SkipReason(f"could not resolve {e.what}")                                    # FR-020
             return
@@ -106,7 +119,10 @@ def build_project_status_sensor(cfg: dict) -> SensorDefinition:
 - **Cursor untouched on error** (FR-019/FR-020): the two `except` arms `return` before
   `update_cursor`, so a transient/unresolvable tick loses nothing and re-fires nothing.
 - **Shared query** (FR-021): `board_cache_get` is a short-TTL process-local memo keyed by
-  `(owner, project)`; a cache miss fetches and stores. Best-effort; correctness never depends on it.
+  `(owner, project)` that stores the **whole board** (all statuses/content-types); a cache miss
+  fetches and stores. Each sensor then applies its own `filter_items`, so two agents on the same
+  board with different statuses share the one query without cross-contamination (spec Edge Case
+  "Same board, different statuses"). Best-effort; correctness never depends on the cache.
 
 ## §4 Issue handoff into the run — `factory._prepare_issue_handoff` (FR-012/FR-013/FR-014/FR-015)
 
