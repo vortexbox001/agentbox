@@ -53,6 +53,21 @@
 {% endcall %}
 {% endif %}
 
+{% if context.issue %}
+{# GitHub Projects launch (spec 016, FR-026): link the issue number to its URL. The URL is a run
+   data value (context.issue.url), not a hard-coded external literal (conformance §6). #}
+{% call ui.context_section(title="Issue") %}
+  <div class="ax-run-kv">
+    <span class="ax-run-kv-key">Issue</span>
+    <span class="ax-run-kv-val ax-mono">
+      {% if context.issue.url %}<a href="{{ context.issue.url }}">#{{ context.issue.number }}</a>{% else %}#{{ context.issue.number }}{% endif %}
+    </span>
+  </div>
+  {{ ui.context_kv(key="Repo", value=context.issue.repo, mono=true, dim=(not context.issue.repo)) }}
+  {{ ui.context_kv(key="Feature key", value=context.issue.feature_key, mono=true, dim=(not context.issue.feature_key)) }}
+{% endcall %}
+{% endif %}
+
 {% call ui.context_section(title="Output artifacts", note=(output_files|length ~ " file(s)")) %}
   {% if not output_files %}
   <div class="ax-run-kv-val ax-dim">No output artifacts.</div>

@@ -39,10 +39,10 @@ beside the code they cover:
 
 **Purpose**: Runtime prerequisites and shared test scaffolding
 
-- [ ] T001 [P] Document `GITHUB_PROJECT_TOKEN` in `.env.example` (board read scope — classic PAT with
+- [X] T001 [P] Document `GITHUB_PROJECT_TOKEN` in `.env.example` (board read scope — classic PAT with
   `read:project` + repo read, or fine-grained token with Projects: read + Contents/Issues: read;
   sensor-process only, no fallback to `GITHUB_TOKEN`).
-- [ ] T002 [P] Create `orchestrator/tests/test_github_projects.py` with a shared **FakeGitHubProjectsClient**
+- [X] T002 [P] Create `orchestrator/tests/test_github_projects.py` with a shared **FakeGitHubProjectsClient**
   and a board-fixture builder (nodes with `content.__typename`, Status field-value, labels, repo,
   pagination pages) so every orchestrator test runs with GitHub faked and **no network call** (SC-010).
 
@@ -55,11 +55,11 @@ exceptions, constants, and the pure key/title helpers the launch handoff needs.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 Create `orchestrator/github_projects.py` with the module boundary: `BoardItem`
+- [X] T003 Create `orchestrator/github_projects.py` with the module boundary: `BoardItem`
   (item_id, content_type, status, number, repo, url, title, body, labels), `ProjectStatusCfg` shape,
   `TickPlan`/`Launch`/`Held` result types, typed exceptions `BoardError` / `RateLimited` /
   `Unresolvable(what)`, and the constants `ISSUE_ENV_NAMES` and `ISSUE_TAG_NAMES` (contracts/orchestrator-model.md §1).
-- [ ] T004 Implement the pure helpers `feature_key(number, title)` and `sanitize_title(title)` in
+- [X] T004 Implement the pure helpers `feature_key(number, title)` and `sanitize_title(title)` in
   `orchestrator/github_projects.py` (contracts/orchestrator-model.md §5): `NNN` + `-` + slug of
   `a-z0-9`/single-hyphens, no leading/trailing hyphen, whole key capped at 48 then trailing hyphen
   stripped, empty slug ⇒ `NNN` alone; title control-stripped then capped to 256. (Grammar/cap pinned
@@ -80,25 +80,25 @@ status; confirm one run launches within ~a minute carrying the correct number, t
 
 ### Tests for User Story 1 ⚠️ (write first, ensure they fail)
 
-- [ ] T005 [P] [US1] In `orchestrator/tests/test_github_projects.py`, add tests: `fetch_board` happy
+- [X] T005 [P] [US1] In `orchestrator/tests/test_github_projects.py`, add tests: `fetch_board` happy
   path (single page) derives a `BoardItem` for **every** node (whole board, unfiltered); `filter_items`
   keeps only issues whose Status matches the configured option case-insensitively; `plan_tick`
   launches a newly-entered issue and emits a `Launch` with `run_key = "<item_id>:<entered_at>"`, the
   five `agentbox/issue_*` tags, and a `run_config` payload `{number, repo, url, title, feature_key, body}`
   (title/body never in tags).
-- [ ] T006 [P] [US1] In `orchestrator/tests/test_factory.py`, add tests: `build_project_status_sensor`
+- [X] T006 [P] [US1] In `orchestrator/tests/test_factory.py`, add tests: `build_project_status_sensor`
   yields a `SensorDefinition` that is **paused** (`DefaultSensorStatus.STOPPED`); a matching issue
   produces a `RunRequest` targeting an **asset-kind** agent by `asset_selection` and a **job-kind**
   agent by `job_name=agent_<name>` (FR-002); the issue handoff sets the five `AGENTBOX_ISSUE_*` env
   values, mounts `body.md` read-only at `/issue`, and the body appears **only** in the `:ro` file —
   never on the command line or in an env value.
-- [ ] T007 [P] [US1] In `orchestrator/tests/test_definitions.py`, add a test: a valid `on_project_status`
+- [X] T007 [P] [US1] In `orchestrator/tests/test_definitions.py`, add a test: a valid `on_project_status`
   block causes `discover()` to append a `project_status_<name>` sensor for both an asset-kind and a
   job-kind agent, composing with the agent's existing triggers.
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Implement `GitHubProjectsClient.fetch_board(owner, project)` happy path plus the pure
+- [X] T008 [US1] Implement `GitHubProjectsClient.fetch_board(owner, project)` happy path plus the pure
   `filter_items(items, cfg)` in `orchestrator/github_projects.py` (single page): `fetch_board` issues
   the outbound GraphQL `POST https://api.github.com/graphql` with `Authorization: Bearer` via the
   pinned `httpx` and a bounded timeout, and returns a `BoardItem` for **every** node (whole board,
@@ -106,28 +106,28 @@ status; confirm one run launches within ~a minute carrying the correct number, t
   only issues (drops PRs/drafts) whose Status option name equals the configured `status`
   case-insensitively (contracts/github-projects-query.md §1–§2, §4). The `label`/`repo` filters land in
   US4; pagination/error mapping in US7.
-- [ ] T009 [US1] Implement `plan_tick(cursor_state, items, cfg, now)` core in
+- [X] T009 [US1] Implement `plan_tick(cursor_state, items, cfg, now)` core in
   `orchestrator/github_projects.py`: for a newly-appeared issue emit one `Launch` with the run key
   `<item_id>:<entered_at>`, build its tags + `run_config`, and return `next_cursor` with the item marked
   `launched: true` (contracts/orchestrator-model.md §2). Full cursor lifecycle and slot logic are
   extended in US2/US3.
-- [ ] T010 [US1] Add `_prepare_issue_handoff(cfg, context)` to `orchestrator/factory.py`, the twin of
+- [X] T010 [US1] Add `_prepare_issue_handoff(cfg, context)` to `orchestrator/factory.py`, the twin of
   `_prepare_upstream_handoff`: read the `issue` payload off `context.op_config`/`run_config`; when
   absent return `(None, {})` (unchanged path); else make a `0777` tempdir under `STAGING_ROOT`, write
   the body to `body.md` (`0644`), and return `(handoff_dir, {AGENTBOX_ISSUE_*: …})` with
   `AGENTBOX_ISSUE_TITLE` = `sanitize_title(...)` and `AGENTBOX_ISSUE_BODY_FILE=/issue/body.md`
   (contracts/orchestrator-model.md §4).
-- [ ] T011 [US1] Wire the issue handoff into `make_run_op` in `orchestrator/factory.py`: add an optional
+- [X] T011 [US1] Wire the issue handoff into `make_run_op` in `orchestrator/factory.py`: add an optional
   `issue` op-config field; call `_prepare_issue_handoff`; merge `launch_env = {**runtime_env,
   **upstream_env, **issue_env}`; extend `_launch_mounts`/`_build_agent_cmd` to add `-v <dir>:/issue:ro`
   when the handoff dir is set; `--rm`-clean the dir in the op's `finally` (mirrors the upstream handoff).
-- [ ] T012 [US1] Implement `build_project_status_sensor(cfg)` in `orchestrator/factory.py`
+- [X] T012 [US1] Implement `build_project_status_sensor(cfg)` in `orchestrator/factory.py`
   (contracts/orchestrator-model.md §3): `@sensor(name="project_status_<name>",
   minimum_interval_seconds=…, default_status=STOPPED)` with the per-kind target; each tick reads the
   cursor, calls `plan_tick`, yields per-kind `RunRequest`s (`asset_selection=` or `job_name=`) carrying
   run_key + the five tags + run_config, then `update_cursor(next_state)`. Add the
   `project_status_supported()` build-time lever.
-- [ ] T013 [US1] Add `_project_status(cfg)` to `orchestrator/definitions.py` and call it from
+- [X] T013 [US1] Add `_project_status(cfg)` to `orchestrator/definitions.py` and call it from
   `discover()`: when the block is valid, `sensors.append(build_project_status_sensor(cfg))` for both
   asset- and job-kind agents, composing with existing `on_upstream`/`on_missing`/schedules
   (contracts/orchestrator-model.md §8). (Structural validation/rejection is added in US8.)
@@ -146,7 +146,7 @@ no further run; move out and back in → exactly one more run.
 
 ### Tests for User Story 2 ⚠️ (write first, ensure they fail)
 
-- [ ] T014 [P] [US2] In `orchestrator/tests/test_github_projects.py`, add `plan_tick` state-machine
+- [X] T014 [P] [US2] In `orchestrator/tests/test_github_projects.py`, add `plan_tick` state-machine
   tests: **first tick** (empty cursor `{}`) seeds every in-status item `{entered_at, launched:false,
   eligible:false}` and launches nothing (FR-007); **empty-board first start** — first tick with `S={}`
   seeds nothing yet still returns a **non-empty** `next_cursor = {"version":1,"seen":{}}`, and the
@@ -162,7 +162,7 @@ no further run; move out and back in → exactly one more run.
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Extend `plan_tick` in `orchestrator/github_projects.py` with the full cursor lifecycle:
+- [X] T015 [US2] Extend `plan_tick` in `orchestrator/github_projects.py` with the full cursor lifecycle:
   detect the first tick by the **empty cursor** (`cursor_state == {}` — the sensor passes `{}` when
   `context.cursor` is falsy), never by `seen` being empty; drop **left** ids, keep **carried** ids with
   their stored `{entered_at, launched, eligible}`, add **new** ids as
@@ -192,14 +192,14 @@ first.
 
 ### Tests for User Story 3 ⚠️ (write first, ensure they fail)
 
-- [ ] T016 [P] [US3] In `orchestrator/tests/test_github_projects.py`, add slot tests: with a carried
+- [X] T016 [P] [US3] In `orchestrator/tests/test_github_projects.py`, add slot tests: with a carried
   `launched:true` item still in status, a second eligible issue produces **no launch** and appears in
   `held` naming the holder's number (FR-009); when the active item leaves, the oldest held candidate
   launches (FR-010); three simultaneous entrants launch one-per-freed-slot in `entered_at` order.
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Extend `plan_tick` in `orchestrator/github_projects.py` with the per-agent slot: the
+- [X] T017 [US3] Extend `plan_tick` in `orchestrator/github_projects.py` with the per-agent slot: the
   slot is occupied iff any carried id has `launched:true`; candidates are ids with `launched:false`
   **and** `eligible:true` ordered by `(entered_at, number)` (first-tick-seeded `eligible:false` ids are
   never candidates, so a pre-existing item never launches — FR-007); if free, launch the oldest and
@@ -223,7 +223,7 @@ not launch or hold.
 
 ### Tests for User Story 4 ⚠️ (write first, ensure they fail)
 
-- [ ] T018 [P] [US4] In `orchestrator/tests/test_github_projects.py`, add `filter_items` tests: PRs and
+- [X] T018 [P] [US4] In `orchestrator/tests/test_github_projects.py`, add `filter_items` tests: PRs and
   drafts are dropped; the `label` filter matches by **exact membership** of the label-name list,
   **case-insensitively** (a substring of a label name does NOT match — F6/F7) and the `owner/repo`
   **case-insensitive** filter keep only matching issues; a null-Status item never matches; an issue
@@ -233,7 +233,7 @@ not launch or hold.
 
 ### Implementation for User Story 4
 
-- [ ] T019 [US4] Extend the pure `filter_items(items, cfg)` in `orchestrator/github_projects.py`
+- [X] T019 [US4] Extend the pure `filter_items(items, cfg)` in `orchestrator/github_projects.py`
   (contracts/github-projects-query.md §4) with the optional filters: `label` (the issue's
   `labels.nodes[].name` list **includes** `label` by exact membership, matched **case-insensitively** —
   not a substring match, F6/F7) and `repo` (`repository.nameWithOwner` equals `repo`,
@@ -257,7 +257,7 @@ confirm every key matches `^[0-9]{3}(-[a-z0-9]+)*$` and ≤48; two same-title is
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T020 [P] [US5] In `orchestrator/tests/test_github_projects.py`, add exhaustive `feature_key` /
+- [X] T020 [P] [US5] In `orchestrator/tests/test_github_projects.py`, add exhaustive `feature_key` /
   `sanitize_title` vectors: `038-ui-update-runs-overview-page`; punctuation/emoji/path-separator/`..`/
   200-char titles all satisfy the grammar and ≤48 cap; an all-punctuation/emoji title ⇒ `038` (no
   trailing hyphen); non-ASCII letters and emoji are **dropped**, not transliterated; two same-title
@@ -279,16 +279,16 @@ none of them.
 
 ### Tests for User Story 6 ⚠️ (write first, ensure they fail)
 
-- [ ] T021 [P] [US6] In `orchestrator/tests/test_factory.py`, add token-isolation tests: with
+- [X] T021 [P] [US6] In `orchestrator/tests/test_factory.py`, add token-isolation tests: with
   `GITHUB_PROJECT_TOKEN` unset (and `GITHUB_TOKEN` set) the sensor yields `SkipReason` naming the missing
   `GITHUB_PROJECT_TOKEN` with **no** fallback (FR-016); a launched run's container env, the five tags,
   the `run_config`, and the captured context contain no token value (FR-017).
-- [ ] T022 [P] [US6] In `orchestrator/tests/test_redact.py`, assert a `GITHUB_PROJECT_TOKEN`-shaped
+- [X] T022 [P] [US6] In `orchestrator/tests/test_redact.py`, assert a `GITHUB_PROJECT_TOKEN`-shaped
   value (e.g. `github_pat_…` / `ghp_…`) is masked by `orchestrator/redact.py` (defence in depth).
 
 ### Implementation for User Story 6
 
-- [ ] T023 [US6] In `orchestrator/factory.py`, read the token only from `os.environ["GITHUB_PROJECT_TOKEN"]`
+- [X] T023 [US6] In `orchestrator/factory.py`, read the token only from `os.environ["GITHUB_PROJECT_TOKEN"]`
   inside the sensor and `SkipReason` naming it when unset (no `GITHUB_TOKEN` fallback); ensure the token
   is passed only to `GitHubProjectsClient` and never placed in a `RunRequest` tag/`run_config`/env value
   or logged (contracts/orchestrator-model.md §6). Confirm `orchestrator/redact.py` masks the token
@@ -309,24 +309,24 @@ other agents/sensors keep running; simulate a GitHub error → cursor unchanged,
 
 ### Tests for User Story 7 ⚠️ (write first, ensure they fail)
 
-- [ ] T024 [P] [US7] In `orchestrator/tests/test_github_projects.py`, add resilience tests: HTTP 5xx /
+- [X] T024 [P] [US7] In `orchestrator/tests/test_github_projects.py`, add resilience tests: HTTP 5xx /
   connection error / timeout ⇒ `BoardError`; 403/429 or GraphQL `RATE_LIMITED` ⇒ `RateLimited`; null
   `organization`/`user`/`projectV2` ⇒ `Unresolvable("board …")`; missing Status field ⇒
   `Unresolvable("Status field")`; configured status matching no option ⇒
   `Unresolvable("status option '…'")`; multi-page fixtures are followed so a page-2 item is considered
   (FR-021); the sensor turns each into a `SkipReason` and leaves the cursor **unchanged** (FR-019/FR-020).
-- [ ] T025 [P] [US7] In `orchestrator/tests/test_factory.py`, assert the per-tick board cache serves one
+- [X] T025 [P] [US7] In `orchestrator/tests/test_factory.py`, assert the per-tick board cache serves one
   raw fetch across two sensors on the same `(owner, project)`, and that two sensors watching that board
   on **different statuses** each see only their own status's items (the cache stores the whole board;
   `filter_items` is per sensor) (FR-021, spec Edge Case "Same board, different statuses").
 
 ### Implementation for User Story 7
 
-- [ ] T026 [US7] Implement error mapping and pagination in `GitHubProjectsClient.fetch_board`
+- [X] T026 [US7] Implement error mapping and pagination in `GitHubProjectsClient.fetch_board`
   (`orchestrator/github_projects.py`, contracts/github-projects-query.md §3/§5): loop `after`
   pagination to completion; raise `BoardError`/`RateLimited`/`Unresolvable(what)` per the table; retry
   with `user(login:)` when `organization(login:)` is null (best-effort user-owned board).
-- [ ] T027 [US7] In `orchestrator/factory.py`, catch `Unresolvable` → `SkipReason("could not resolve …")`
+- [X] T027 [US7] In `orchestrator/factory.py`, catch `Unresolvable` → `SkipReason("could not resolve …")`
   and `RateLimited`/`BoardError` → `SkipReason("GitHub unavailable: …")`, both **returning before**
   `update_cursor` so the cursor is untouched; add `board_cache_get(owner, project)` as a short-TTL
   process-local memo storing the **whole board** keyed by `(owner, project)` (cache miss fetches and
@@ -347,14 +347,14 @@ load with a file+field message while every other agent still loads.
 
 ### Tests for User Story 8 ⚠️ (write first, ensure they fail)
 
-- [ ] T028 [P] [US8] In `orchestrator/tests/test_definitions.py`, add rejection tests: a block missing
+- [X] T028 [P] [US8] In `orchestrator/tests/test_definitions.py`, add rejection tests: a block missing
   `owner`/`project`/`status`, a non-positive-integer `project`, or `interval_seconds` below 30 / non-int
   each raise `RejectAgent(file, field-message)` for that agent while all other agents still load (US8,
   FR-023).
 
 ### Implementation for User Story 8
 
-- [ ] T029 [US8] Add structural validation to `_project_status(cfg)` in `orchestrator/definitions.py`
+- [X] T029 [US8] Add structural validation to `_project_status(cfg)` in `orchestrator/definitions.py`
   (the load-time backstop, contracts/agent-model.md §5): require `owner`/`project`/`status`; `project`
   a positive integer; `interval_seconds` an integer ≥30; `repo` (if present) of the form `owner/repo`;
   raise `RejectAgent(file, message)` naming the offending field on a bad block, leaving others loadable.
@@ -375,51 +375,51 @@ as launcher and issue number links to the issue.
 
 ### Tests for User Story 9 ⚠️ (write first, ensure they fail)
 
-- [ ] T030 [P] [US9] In `ui/tests/test_schema.py`: the `on_project_status` group is present in `FIELDS`
+- [X] T030 [P] [US9] In `ui/tests/test_schema.py`: the `on_project_status` group is present in `FIELDS`
   and `/api/schema` under `section="project_status"`; `validate` returns the messages for missing
   required fields, `project`<1, `interval_seconds`<30, and bad `repo`; `migrate_7_to_8` is identity;
   `SCHEMA_VERSION == 8` (contracts/ui-automation-and-runs.md §5).
-- [ ] T031 [P] [US9] In `ui/tests/test_agents_store.py`: the nested `on_project_status` block emits with
+- [X] T031 [P] [US9] In `ui/tests/test_agents_store.py`: the nested `on_project_status` block emits with
   its block-line + per-field comments and round-trips read→write unchanged; add a GOLDEN sample carrying
   the block.
-- [ ] T032 [P] [US9] In `ui/tests/test_api.py`: `/api/schema` shape; the agent form renders the trigger
+- [X] T032 [P] [US9] In `ui/tests/test_api.py`: `/api/schema` shape; the agent form renders the trigger
   card; the Automation view lists the `project_status_<name>` sensor with its plain-words description +
   held issues; the run page links the issue number to `agentbox/issue_url`.
-- [ ] T033 [P] [US9] In `ui/tests/test_conformance.py`: the new template/JS pass the token/macro/
+- [X] T033 [P] [US9] In `ui/tests/test_conformance.py`: the new template/JS pass the token/macro/
   no-inline-style checks; no external URL literal beyond the issue link built from the run tag.
 
 ### Implementation for User Story 9
 
-- [ ] T034 [US9] In `ui/schema.py`: add the `on_project_status` field group (`section="project_status"`,
+- [X] T034 [US9] In `ui/schema.py`: add the `on_project_status` field group (`section="project_status"`,
   nesting under `triggers.on_project_status`, harnesses `_ALL`) — `owner`/`status`/`label`/`repo` text,
   `project`/`interval_seconds` int (interval default 60), each with its help text, plus
   `PROJECT_STATUS_BLOCK_HELP` for the emitter (contracts/agent-model.md §2).
-- [ ] T035 [US9] In `ui/schema.py` `validate()`: enforce required `owner`/`project`/`status`, `project`
+- [X] T035 [US9] In `ui/schema.py` `validate()`: enforce required `owner`/`project`/`status`, `project`
   a positive integer, `interval_seconds` an integer ≥30, and `repo` shape `owner/repo`, keyed by field
   id in the `depends_on`/`checks` style (contracts/agent-model.md §3).
-- [ ] T036 [US9] In `ui/schema.py`: bump `SCHEMA_VERSION` 7→8, add `migrate_7_to_8(data)` (identity),
+- [X] T036 [US9] In `ui/schema.py`: bump `SCHEMA_VERSION` 7→8, add `migrate_7_to_8(data)` (identity),
   and append `(8, migrate_7_to_8)` to `MIGRATIONS` (contracts/agent-model.md §6).
-- [ ] T037 [US9] In `ui/agents_store.py`: extend `_triggers_block_lines` to emit the nested
+- [X] T037 [US9] In `ui/agents_store.py`: extend `_triggers_block_lines` to emit the nested
   `on_project_status:` mapping (block-line comment = `PROJECT_STATUS_BLOCK_HELP`, per-field inline
   comments), optional sub-fields only when set; lift `triggers.on_project_status.*` on read; preserve
   unknown keys (contracts/agent-model.md §4).
-- [ ] T038 [P] [US9] In `ui/dagster.py`: read the `project_status_<name>` sensor's latest tick
+- [X] T038 [P] [US9] In `ui/dagster.py`: read the `project_status_<name>` sensor's latest tick
   status/`SkipReason` (held issues) for the Automation view; confirm
   `set_instigation(kind="sensor", name=…, running=…)` toggles the sensor by name (the real signature
   is `set_instigation(kind, name, running)` — `ui/dagster.py:632`) (contracts/ui-automation-and-runs.md §3).
-- [ ] T039 [US9] In `ui/main.py`: pass the plain-words description
+- [X] T039 [US9] In `ui/main.py`: pass the plain-words description
   (*"When an issue enters {status} on {owner}/{project}"*) and the latest-tick held issues into the
   Automation view; expose the issue link (`agentbox/issue_number` → `agentbox/issue_url`) on the run
   detail via the existing `_launched_by_label` sensor path (contracts/ui-automation-and-runs.md §3–§4).
-- [ ] T040 [P] [US9] In `ui/static/agent-form.js` and `ui/templates/agents/form.html`: render the GitHub
+- [X] T040 [P] [US9] In `ui/static/agent-form.js` and `ui/templates/agents/form.html`: render the GitHub
   Projects trigger card from the shared macros (`card`, `text_input`, number input, `toggle`) — six
   inputs gated on the block being enabled, `collect()` nesting under `triggers.on_project_status` and
   omitting the block when disabled (contracts/ui-automation-and-runs.md §2).
-- [ ] T041 [P] [US9] In `ui/static/agents-list.js` and `ui/templates/agents/list.html`: recognise
+- [X] T041 [P] [US9] In `ui/static/agents-list.js` and `ui/templates/agents/list.html`: recognise
   `project_status` for the automation-column pill and render a "board" pill with the plain-words tooltip.
-- [ ] T042 [US9] In the run-detail template under `ui/templates/runs/`: link the issue number to
+- [X] T042 [US9] In the run-detail template under `ui/templates/runs/`: link the issue number to
   `AGENTBOX_ISSUE_URL` / the `agentbox/issue_url` tag using the shared macros (no inline style).
-- [ ] T043 [US9] Regenerate `ui/tests/golden/*.yaml` from the emitter so every sample carries the
+- [X] T043 [US9] Regenerate `ui/tests/golden/*.yaml` from the emitter so every sample carries the
   `# agentbox-schema: 8` header (and the new sample carries the `on_project_status` block).
 
 **Checkpoint**: The trigger is fully operable from the management UI.
@@ -431,20 +431,20 @@ as launcher and issue number links to the issue.
 **Purpose**: Documentation and templates that track the new surface (Constitution VI), and final
 validation.
 
-- [ ] T044 [P] Edit `examples/config/agents/_template-*.yaml`: add a commented `on_project_status:` block
+- [X] T044 [P] Edit `examples/config/agents/_template-*.yaml`: add a commented `on_project_status:` block
   under `triggers:` with the same help text, and re-stamp each template to `# agentbox-schema: 8`
   (contracts/agent-model.md §7).
-- [ ] T045 [P] Update `README.md`: document `on_project_status` (fields + defaults), the
+- [X] T045 [P] Update `README.md`: document `on_project_status` (fields + defaults), the
   `AGENTBOX_ISSUE_*` env values + `agentbox/issue_*` tags + read-only body file, `GITHUB_PROJECT_TOKEN`
   (board read scope, sensor-only, no fallback), the `project_status_<name>` sensor, and the feature-key
   grammar/cap.
-- [ ] T046 [P] Add an FR-018 verification test in `orchestrator/tests/test_factory.py`: a
+- [X] T046 [P] Add an FR-018 verification test in `orchestrator/tests/test_factory.py`: a
   sensor-launched `RunRequest` yields an **automated** run — `is_automated_run(context)` is true (it
   carries `dagster/sensor_name`), `governor_gate` applies (the run counts toward `max_runs_per_hour`
   and is refused past `max_chain_depth`), and `derive_chain_depth` returns **1** (a root chain at
   depth 1). Pins FR-018's "no new code" claim so a later refactor cannot silently regress it
   (contracts/orchestrator-model.md §7).
-- [ ] T047 Run all five pytest suites from the repo root (`ui`, `orchestrator`, `images`, `litellm`,
+- [X] T047 Run all five pytest suites from the repo root (`ui`, `orchestrator`, `images`, `litellm`,
   `scripts`) and the quickstart §0 checks; confirm green (SC-010: no test makes a network call).
 
 ---

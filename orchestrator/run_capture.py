@@ -73,6 +73,7 @@ def build_context(
     memory: Optional[str] = None,
     cpus: Optional[str] = None,
     asset: Optional[dict] = None,
+    issue: Optional[dict] = None,
     fragment: Optional[dict] = None,
     run_id: Optional[str] = None,
     session_id: Optional[str] = None,
@@ -130,6 +131,11 @@ def build_context(
     }
     if asset:
         context["asset"] = asset
+    if issue:
+        # The board-driven launch's issue identity (spec 016), captured as provenance so the
+        # disk-only run page can link the issue (FR-026). The body is delivered only as the
+        # read-only /issue file (FR-014), so it is never captured here.
+        context["issue"] = issue
     if run_id or session_id or stamp:
         # Identity the viewer's Files tab uses to associate this run's /output artifacts (the output
         # convention embeds the session id in each filename); output_dir is the /output mount source.

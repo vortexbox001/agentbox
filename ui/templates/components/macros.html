@@ -196,7 +196,7 @@
    `clock` for a job_schedule, `sensor` for an asset_schedule (FR-025). Resolved by #id
    against the inline sprite. #}
 {% macro schedule_pill(type="schedule", label="", on=false, name=none, id=none, attrs={}) -%}
-{%- set _pill_icon = {"job_schedule": "clock", "asset_schedule": "sensor", "schedule": "clock", "asset": "sensor", "on_upstream": "sensor", "on_missing": "sensor"}.get(type, "clock") -%}
+{%- set _pill_icon = {"job_schedule": "clock", "asset_schedule": "sensor", "schedule": "clock", "asset": "sensor", "on_upstream": "sensor", "on_missing": "sensor", "project_status": "sensor"}.get(type, "clock") -%}
 <span class="ax-schedule-pill" data-type="{{ type }}"{{ attrs|xmlattr }}>
   <svg class="ax-icon" width="16" height="16" aria-hidden="true"><use href="#{{ _pill_icon }}"></use></svg>
   <span class="ax-schedule-pill-label">{{ label }}</span>

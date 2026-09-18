@@ -174,9 +174,11 @@ function fillChecks(row, checks) {
 
 // Toggle kind is derived from the store's canonical trigger type (contract §0):
 // job_schedule → schedule; the asset-kind triggers (asset_schedule, on_upstream, on_missing —
-// spec 013) all share the paused autocond_<name> sensor.
+// spec 013) share the paused autocond_<name> sensor, and the GitHub Projects trigger (spec 016)
+// is its own paused project_status_<name> sensor.
 function kindFromType(type) {
-  return (type === "asset_schedule" || type === "on_upstream" || type === "on_missing")
+  return (type === "asset_schedule" || type === "on_upstream" || type === "on_missing"
+          || type === "project_status")
     ? "sensor" : "schedule";
 }
 
@@ -236,7 +238,14 @@ function fillToggles(row, schedules, reachable) {
     } else {
       input.disabled = false;
       input.checked = sched.running === true;
-      pill.removeAttribute("title");
+      // A running GitHub Projects sensor (spec 016) shows its latest tick's held-issue report as
+      // the pill tooltip so the operator sees what is waiting and why (FR-025); the plain-words
+      // description (set server-side) is the fallback when the sensor is idle / has no skip reason.
+      if (sched.running === true && sched.skip_reason) {
+        pill.setAttribute("title", sched.skip_reason);
+      } else if (pill.dataset.type !== "project_status") {
+        pill.removeAttribute("title");
+      }
       bindToggle(input, pill);                   // enabled: wire the write endpoint
     }
   });

@@ -505,3 +505,108 @@ def test_bad_graph_produces_no_sensor(agents_dir):
     _write(agents_dir, "cy", _asset("cy", "c/y", depends_on=["b/x"]))
     out = _discover(agents_dir)
     assert out["sensors"] == []
+
+
+# ── spec 016: the on_project_status trigger wiring + load-time rejection ─────
+
+PS_JOB_AGENT = """\
+    name: board-job
+    harness: api
+    model: cheap
+    prompt_file: x.md
+    output_dir: /data/outputs/board-job
+    job: true
+    triggers:
+      on_project_status:
+        owner: vortexbox001
+        project: 1
+        status: In progress
+"""
+
+PS_ASSET_AGENT = """\
+    name: board-asset
+    harness: api
+    model: cheap
+    prompt_file: x.md
+    output_dir: /data/outputs/board-asset
+    produces:
+      asset: board/asset
+      partition: none
+    triggers:
+      on_project_status:
+        owner: vortexbox001
+        project: 1
+        status: In progress
+"""
+
+
+def test_project_status_builds_sensor_for_job_and_asset(agents_dir):
+    _write(agents_dir, "board-job", PS_JOB_AGENT)
+    _write(agents_dir, "board-asset", PS_ASSET_AGENT)
+    out = _discover(agents_dir)
+    names = {s.name for s in out["sensors"]}
+    assert "project_status_board_job" in names
+    assert "project_status_board_asset" in names
+
+
+def test_project_status_composes_with_existing_triggers(agents_dir):
+    # An asset agent with both asset_schedule and on_project_status gets BOTH the autocond sensor
+    # and the project-status sensor (composition, FR-002).
+    body = PS_ASSET_AGENT.replace(
+        "    triggers:\n      on_project_status:",
+        "    triggers:\n      asset_schedule: \"0 9 * * *\"\n      on_project_status:")
+    _write(agents_dir, "board-asset", body)
+    out = _discover(agents_dir)
+    names = {s.name for s in out["sensors"]}
+    assert {"autocond_board_asset", "project_status_board_asset"} <= names
+
+
+# ── US8: a malformed block rejects only that agent (FR-023) ─────────────────
+
+@pytest.mark.parametrize("bad_block,frag", [
+    ("        owner: o\n        status: In progress\n", "project"),      # missing project
+    ("        owner: o\n        project: 0\n        status: In progress\n", "positive integer"),
+    ("        owner: o\n        project: 1\n        status: In progress\n        interval_seconds: 10\n",
+     "interval_seconds"),
+    ("        owner: o\n        project: 1\n", "status"),                # missing status
+])
+def test_bad_block_rejects_only_that_agent(agents_dir, caplog, bad_block, frag):
+    import logging
+    bad = ("name: bad-board\nharness: api\nmodel: cheap\nprompt_file: x.md\n"
+           "output_dir: /data/outputs/bad-board\njob: true\ntriggers:\n"
+           "      on_project_status:\n" + bad_block)
+    (agents_dir / "bad-board.yaml").write_text(bad)
+    _write(agents_dir, "plain-job", JOB_AGENT)   # an unrelated, valid agent
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    # the bad agent is skipped by name; the good one still loads
+    assert "agents/bad-board.yaml" in caplog.text
+    assert frag in caplog.text
+    job_names = {j.name for j in out["jobs"]}
+    assert "agent_plain_job" in job_names
+    assert "agent_bad_board" not in job_names
+
+
+def test_non_int_interval_rejected(agents_dir, caplog):
+    import logging
+    bad = ("name: bad-board\nharness: api\nmodel: cheap\nprompt_file: x.md\n"
+           "output_dir: /data/outputs/bad-board\njob: true\ntriggers:\n"
+           "      on_project_status:\n        owner: o\n        project: 1\n"
+           "        status: In progress\n        interval_seconds: sixty\n")
+    (agents_dir / "bad-board.yaml").write_text(bad)
+    with caplog.at_level(logging.WARNING):
+        out = _discover(agents_dir)
+    assert "interval_seconds" in caplog.text
+    assert "agent_bad_board" not in {j.name for j in out["jobs"]}
+
+
+def test_bad_repo_shape_rejected(agents_dir, caplog):
+    import logging
+    bad = ("name: bad-board\nharness: api\nmodel: cheap\nprompt_file: x.md\n"
+           "output_dir: /data/outputs/bad-board\njob: true\ntriggers:\n"
+           "      on_project_status:\n        owner: o\n        project: 1\n"
+           "        status: In progress\n        repo: not-a-full-name\n")
+    (agents_dir / "bad-board.yaml").write_text(bad)
+    with caplog.at_level(logging.WARNING):
+        _discover(agents_dir)
+    assert "repo must be a full owner/repo name" in caplog.text

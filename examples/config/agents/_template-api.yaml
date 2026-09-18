@@ -1,4 +1,4 @@
-# agentbox-schema: 7
+# agentbox-schema: 8
 # Template: api harness (LiteLLM)
 # Lightweight agent that sends a prompt to LiteLLM and writes the response.
 
@@ -23,6 +23,14 @@ job: true                       # this agent has a launchable/schedulable job ag
 #  asset_schedule: "0 7 * * *"   # cron — materializes the asset on a schedule (only when produces is set)
 #  on_upstream: true             # materialize when any declared upstream materializes and passes its blocking checks (asset only; spec 013)
 #  on_missing: true              # materialize the current/latest partition when it has never been produced — no history backfill (asset only; spec 013)
+#  on_project_status:            # launch this agent when an issue enters a GitHub Projects board status (spec 016)
+#    owner: vortexbox001         # GitHub org (or user) that owns the Projects board (required)
+#    project: 1                  # the Projects board number, a positive integer (required)
+#    status: In progress         # the Status option name; entering it launches this agent, matched case-insensitively (required)
+#    label: brief                # optional — only issues carrying this label launch
+#    repo: vortexbox001/agentbox # optional — only issues from this owner/repo launch (case-insensitive)
+#    interval_seconds: 60        # optional — poll cadence in seconds (default 60, minimum 30)
+#                                # read by the paused project_status_<name> sensor via GITHUB_PROJECT_TOKEN (board-read scope, sensor-only, no GITHUB_TOKEN fallback)
 
 # --- Produces (optional) ---
 #produces:                       # declare an output asset so this agent becomes a tracked Dagster asset (omit to stay a plain job)

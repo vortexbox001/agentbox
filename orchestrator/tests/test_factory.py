@@ -581,3 +581,235 @@ def test_daily_success_materialization_records_partition(tmp_path, stub_launch, 
     assert result.success
     mat = result.get_asset_materialization_events()[0].step_materialization_data.materialization
     assert mat.partition == "2026-09-09"
+
+
+# ── spec 016: the project-status sensor + issue handoff ─────────────────────
+
+import json as _json2
+from dagster import build_sensor_context, build_op_context
+import github_projects as gp
+
+
+def _ps_job_cfg(tmp_path, **over):
+    """A job-kind agent carrying an on_project_status trigger."""
+    cfg = {"name": "board-job", "harness": "api", "model": "cheap", "prompt_file": "x.md",
+           "output_dir": str(tmp_path / "out"), "job": True,
+           "triggers": {"on_project_status": {"owner": "o", "project": 1,
+                                              "status": "In progress"}}}
+    cfg.update(over)
+    return cfg
+
+
+def _ps_asset_cfg(tmp_path, **over):
+    """An asset-kind agent carrying an on_project_status trigger."""
+    cfg = _api_cfg(tmp_path, name="board-asset",
+                   produces={"asset": "board/asset", "partition": "none"})
+    cfg["triggers"] = {"on_project_status": {"owner": "o", "project": 1, "status": "In progress"}}
+    cfg.update(over)
+    return cfg
+
+
+def _issue_item(item_id="i1", number=5, status="In progress", repo="o/r", title="t", body="b",
+                labels=None):
+    return gp.BoardItem(item_id=item_id, content_type="Issue", status=status, number=number,
+                        repo=repo, url=f"https://github.com/{repo}/issues/{number}", title=title,
+                        body=body, labels=list(labels or []))
+
+
+def _fake_client(board, calls=None):
+    """A stand-in for GitHubProjectsClient(token) whose fetch_board returns ``board`` and records
+    each (owner, project) into ``calls`` (so a shared-board cache test can count raw fetches)."""
+    class _Fake:
+        def __init__(self, token):
+            pass
+        def fetch_board(self, owner, project):
+            if calls is not None:
+                calls.append((owner, project))
+            return list(board)
+    return _Fake
+
+
+@pytest.fixture(autouse=True)
+def _clear_board_cache():
+    factory._BOARD_CACHE.clear()
+    yield
+    factory._BOARD_CACHE.clear()
+
+
+def _eval(sensor_def, monkeypatch, board, cursor="{}", calls=None, token="github_pat_secret"):
+    monkeypatch.setattr(factory, "GitHubProjectsClient", _fake_client(board, calls))
+    if token is None:
+        monkeypatch.delenv("GITHUB_PROJECT_TOKEN", raising=False)
+    else:
+        monkeypatch.setenv("GITHUB_PROJECT_TOKEN", token)
+    ctx = build_sensor_context(instance=DagsterInstance.ephemeral(), cursor=cursor)
+    return sensor_def.evaluate_tick(ctx)
+
+
+def test_sensor_is_named_and_paused_stopped(tmp_path):
+    from dagster import DefaultSensorStatus
+    s = factory.build_project_status_sensor(_ps_job_cfg(tmp_path))
+    assert s.name == "project_status_board_job"
+    assert s.default_status == DefaultSensorStatus.STOPPED
+
+
+def test_matching_issue_launches_job_kind_by_job_name(tmp_path, monkeypatch):
+    s = factory.build_project_status_sensor(_ps_job_cfg(tmp_path))
+    res = _eval(s, monkeypatch, [_issue_item(number=5)], cursor='{"version":1,"seen":{}}')
+    assert len(res.run_requests) == 1
+    rr = res.run_requests[0]
+    assert rr.job_name == "agent_board_job"
+    # the five identity tags, and title/body never in tags (FR-015)
+    assert set(k for k in rr.tags if k.startswith("agentbox/")) == set(gp.ISSUE_TAG_NAMES)
+    assert "title" not in rr.tags and "body" not in rr.tags
+
+
+def test_matching_issue_launches_asset_kind_by_asset_selection(tmp_path, monkeypatch):
+    from dagster import Definitions
+    cfg = _ps_asset_cfg(tmp_path)
+    ad = factory.build_asset(cfg)
+    s = factory.build_project_status_sensor(cfg)
+    repo = Definitions(assets=[ad], sensors=[s]).get_repository_def()
+    monkeypatch.setattr(factory, "GitHubProjectsClient", _fake_client([_issue_item(number=5)]))
+    monkeypatch.setenv("GITHUB_PROJECT_TOKEN", "github_pat_secret")
+    ctx = build_sensor_context(instance=DagsterInstance.ephemeral(),
+                               cursor='{"version":1,"seen":{}}', repository_def=repo)
+    res = s.evaluate_tick(ctx)
+    assert len(res.run_requests) == 1
+    # an asset-kind agent is targeted by asset selection (records a materialization, FR-002)
+    assert res.run_requests[0].asset_selection == [AssetKey(["board", "asset"])]
+
+
+def test_issue_handoff_sets_env_and_ro_mount_body_only_in_file(tmp_path, stub_launch, monkeypatch):
+    # Materialize the job with the sensor's run_config; assert the launch carries the AGENTBOX_ISSUE_*
+    # env values and the read-only /issue mount, and the body appears ONLY in the :ro file.
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    cfg = _ps_job_cfg(tmp_path)
+    os.makedirs(cfg["output_dir"], exist_ok=True)
+    issue = {"number": 5, "repo": "o/r", "url": "https://github.com/o/r/issues/5",
+             "title": "Fix\x07 the bug", "feature_key": "005-fix-the-bug",
+             "body": "SECRET-BODY-LINE do the work"}
+    job = factory.build_job(cfg)
+    result = job.execute_in_process(
+        run_config={"ops": {"run_board_job": {"config": {"issue": issue}}}})
+    assert result.success
+    argv = stub_launch.cmd
+    joined = " ".join(str(a) for a in argv)
+    assert any(str(a).endswith(":/issue:ro") for a in argv)
+    assert "AGENTBOX_ISSUE_NUMBER=5" in joined
+    assert "AGENTBOX_ISSUE_REPO=o/r" in joined
+    assert "AGENTBOX_FEATURE_KEY=005-fix-the-bug" in joined
+    assert "AGENTBOX_ISSUE_BODY_FILE=/issue/body.md" in joined
+    # title is control-stripped in the env value
+    assert "AGENTBOX_ISSUE_TITLE=Fix the bug" in joined
+    # the body is NEVER on the command line or in an env value (FR-014)
+    assert "SECRET-BODY-LINE" not in joined
+
+
+def test_prepare_issue_handoff_writes_body_file_0644(tmp_path, monkeypatch):
+    monkeypatch.setattr(factory, "STAGING_ROOT", str(tmp_path / "staging"))
+    ctx = build_op_context(op_config={"issue": {
+        "number": 7, "repo": "o/r", "url": "u", "title": "hi", "feature_key": "007-hi",
+        "body": "the body"}})
+    d, env = factory._prepare_issue_handoff({"name": "x"}, ctx)
+    assert env["AGENTBOX_ISSUE_NUMBER"] == "7"
+    assert env["AGENTBOX_ISSUE_BODY_FILE"] == "/issue/body.md"
+    body = open(os.path.join(d, "body.md")).read()
+    assert body == "the body"
+    assert (os.stat(os.path.join(d, "body.md")).st_mode & 0o644) == 0o644
+
+
+def test_no_issue_config_is_unchanged_path(tmp_path):
+    ctx = build_op_context(op_config={})
+    assert factory._prepare_issue_handoff({"name": "x"}, ctx) == (None, {})
+
+
+# ── US6: token isolation (FR-016/FR-017) ────────────────────────────────────
+
+def test_missing_token_skips_naming_it_no_fallback(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_should_not_be_used")
+    s = factory.build_project_status_sensor(_ps_job_cfg(tmp_path))
+    res = _eval(s, monkeypatch, [_issue_item()], token=None)
+    assert not res.run_requests
+    assert "GITHUB_PROJECT_TOKEN" in res.skip_message
+    assert "GITHUB_TOKEN" in res.skip_message  # names the no-fallback rule
+
+
+def test_token_value_never_in_tags_run_config_or_env(tmp_path, stub_launch, monkeypatch):
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    token = "github_pat_TOPSECRETVALUE1234567890"
+    s = factory.build_project_status_sensor(_ps_job_cfg(tmp_path))
+    res = _eval(s, monkeypatch, [_issue_item()], cursor='{"version":1,"seen":{}}', token=token)
+    rr = res.run_requests[0]
+    blob = _json2.dumps(rr.tags) + _json2.dumps(rr.run_config)
+    assert token not in blob
+    # and the launched container env carries no token value
+    cfg = _ps_job_cfg(tmp_path)
+    os.makedirs(cfg["output_dir"], exist_ok=True)
+    job = factory.build_job(cfg)
+    result = job.execute_in_process(run_config=rr.run_config)
+    assert result.success
+    assert token not in " ".join(str(a) for a in stub_launch.cmd)
+
+
+# ── US7: shared per-tick board cache (FR-021) ───────────────────────────────
+
+def test_board_cache_serves_one_fetch_across_two_sensors_same_board(tmp_path, monkeypatch):
+    calls: list = []
+    board = [_issue_item("i1", number=1, status="In progress"),
+             _issue_item("i2", number=2, status="Done")]
+    monkeypatch.setattr(factory, "GitHubProjectsClient", _fake_client(board, calls))
+    monkeypatch.setenv("GITHUB_PROJECT_TOKEN", "github_pat_x")
+    # two sensors on the same (owner, project) but different statuses
+    s1 = factory.build_project_status_sensor(_ps_job_cfg(
+        tmp_path, name="a", triggers={"on_project_status": {"owner": "o", "project": 1, "status": "In progress"}}))
+    s2 = factory.build_project_status_sensor(_ps_job_cfg(
+        tmp_path, name="b", triggers={"on_project_status": {"owner": "o", "project": 1, "status": "Done"}}))
+    inst = DagsterInstance.ephemeral()
+    r1 = s1.evaluate_tick(build_sensor_context(instance=inst, cursor='{"version":1,"seen":{}}'))
+    r2 = s2.evaluate_tick(build_sensor_context(instance=inst, cursor='{"version":1,"seen":{}}'))
+    assert len(calls) == 1                       # one raw fetch shared across both sensors
+    # each sensor sees only its own status's item (filter_items is per-sensor)
+    assert r1.run_requests[0].tags["agentbox/issue_number"] == "1"
+    assert r2.run_requests[0].tags["agentbox/issue_number"] == "2"
+
+
+# ── US7: resilience — a GitHub error/unresolvable leaves the cursor untouched ─
+
+def test_board_error_skips_and_leaves_cursor_untouched(tmp_path, monkeypatch):
+    class _Boom:
+        def __init__(self, token): pass
+        def fetch_board(self, o, p): raise gp.BoardError("HTTP 502")
+    monkeypatch.setattr(factory, "GitHubProjectsClient", _Boom)
+    monkeypatch.setenv("GITHUB_PROJECT_TOKEN", "github_pat_x")
+    s = factory.build_project_status_sensor(_ps_job_cfg(tmp_path))
+    ctx = build_sensor_context(instance=DagsterInstance.ephemeral(), cursor='{"version":1,"seen":{"keep":1}}')
+    res = s.evaluate_tick(ctx)
+    assert not res.run_requests
+    assert "GitHub unavailable" in res.skip_message
+    assert res.cursor == '{"version":1,"seen":{"keep":1}}'   # cursor untouched (FR-019)
+
+
+def test_unresolvable_status_skips_naming_option(tmp_path, monkeypatch):
+    board = [_issue_item("i1", number=1, status="Todo")]  # no "In progress" option present
+    s = factory.build_project_status_sensor(_ps_job_cfg(tmp_path))
+    res = _eval(s, monkeypatch, board, cursor='{"version":1,"seen":{}}')
+    assert not res.run_requests
+    assert "could not resolve" in res.skip_message
+    assert "status option" in res.skip_message
+
+
+# ── Polish: FR-018 — a sensor-launched run is automated, gated, chain depth 1 ─
+
+def test_sensor_launched_run_is_automated_depth_one_and_gated(tmp_path, stub_launch, monkeypatch):
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
+    cfg = _ps_job_cfg(tmp_path)
+    os.makedirs(cfg["output_dir"], exist_ok=True)
+    # A run carrying dagster/sensor_name is automated; is_automated_run reads the run tags.
+    ctx = build_op_context(instance=DagsterInstance.ephemeral())
+    # derive_chain_depth on a no-upstream agent is a root → 1
+    assert factory.derive_chain_depth(cfg, ctx) == 1
+    # is_automated_run keys off the dagster/sensor_name tag
+    from unittest.mock import patch
+    with patch.object(factory, "_run_tags", return_value={"dagster/sensor_name": "project_status_board_job"}):
+        assert factory.is_automated_run(ctx) is True

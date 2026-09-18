@@ -29,9 +29,11 @@
 <td class="ax-col-schedules">
   {% if show_crons %}
     {% for c in show_crons %}
+      {# a board pill (spec 016) carries the plain-words description as its tooltip (FR-025) #}
+      {% set pill_attrs = {"data-agent": a.name or stem, "data-dagster-name": c.dagster_name} %}
+      {% if c.description %}{% set pill_attrs = dict(pill_attrs, **{"title": c.description}) %}{% endif %}
       {{ ui.schedule_pill(type=c.type, label=(c.label if c.label else cron_text(c.expr)),
-                          name=c.dagster_name,
-                          attrs={"data-agent": a.name or stem, "data-dagster-name": c.dagster_name}) }}
+                          name=c.dagster_name, attrs=pill_attrs) }}
     {% endfor %}
   {% else %}<span class="ax-muted">—</span>{% endif %}
 </td>

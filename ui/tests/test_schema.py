@@ -168,7 +168,7 @@ def test_partition_field_shape():
 
 def test_public_payload_exposes_produces():
     pub = schema.to_public()
-    assert pub["schema_version"] == 7
+    assert pub["schema_version"] == 8
     assert {"id": "produces", "label": "Produces", "group": "runs"} in pub["sections"]
     by_id = {f["id"]: f for f in pub["fields"]}
     assert by_id["asset"]["pattern"] == schema.ASSET_KEY_RE
@@ -487,8 +487,8 @@ def test_output_dir_no_longer_required(monkeypatch):
 
 
 # ── Migrations ──────────────────────────────────────────
-def test_schema_version_is_seven():
-    assert schema.SCHEMA_VERSION == 7
+def test_schema_version_is_eight():
+    assert schema.SCHEMA_VERSION == 8
 
 
 def test_migrate_6_to_7_is_identity():
@@ -583,7 +583,7 @@ def test_schema_6_file_reads_as_7_and_restamps_only_on_save(settings):
     assert open(path).read() == before                        # read never rewrote the file
 
     st.write_agent("was-six", info["agent"])                  # saving re-stamps to the current version
-    assert "# agentbox-schema: 7" in open(path).read()
+    assert "# agentbox-schema: 8" in open(path).read()
 
 
 # ── litellm aliases ─────────────────────────────────────
@@ -639,6 +639,12 @@ _FIELD_SECTION = {
     "on_upstream": "triggers",
     "on_missing": "triggers",
     "job_schedule": "triggers",
+    "owner": "project_status",
+    "project": "project_status",
+    "status": "project_status",
+    "label": "project_status",
+    "repo": "project_status",
+    "interval_seconds": "project_status",
     "job": "run_as_job",
     "prompt_file": "prompt",
     "append_system_prompt": "prompt",
@@ -705,3 +711,74 @@ def test_to_public_exposes_groups_and_section_group():
         assert "group" in s
     identity = next(s for s in pub["sections"] if s["id"] == "identity")
     assert identity["group"] is None
+
+
+# ── spec 016: the GitHub Projects trigger (on_project_status) ───────────────
+
+def _ps_base(**ps):
+    """A valid job agent carrying the on_project_status block's flat fields."""
+    a = _base("api", job=True)
+    a.update(ps)
+    return a
+
+
+def test_project_status_group_present_in_fields():
+    by_id = {f.id: f for f in schema.FIELDS}
+    for fid in schema.PROJECT_STATUS_FIELDS:
+        assert fid in by_id, fid
+        assert by_id[fid].section == "project_status"
+        assert by_id[fid].block == "triggers.on_project_status"
+    assert {"id": "project_status", "label": "GitHub Projects", "group": "runs"} in schema.SECTIONS
+
+
+def test_project_status_group_in_public_payload():
+    pub = schema.to_public()
+    by_id = {f["id"]: f for f in pub["fields"]}
+    for fid in schema.PROJECT_STATUS_FIELDS:
+        assert by_id[fid]["section"] == "project_status"
+    assert {"id": "project_status", "label": "GitHub Projects", "group": "runs"} in pub["sections"]
+
+
+def test_validate_requires_owner_project_status_when_block_on():
+    errors = schema.validate(_ps_base(label="brief"), prompt_exists=ALWAYS_TRUE)
+    assert errors["owner"] and errors["project"] and errors["status"]
+
+
+def test_validate_rejects_non_positive_project():
+    errors = schema.validate(_ps_base(owner="o", project=0, status="In progress"),
+                             prompt_exists=ALWAYS_TRUE)
+    assert errors["project"] == "project must be a positive integer."
+
+
+def test_validate_rejects_interval_below_thirty():
+    errors = schema.validate(_ps_base(owner="o", project=1, status="In progress", interval_seconds=10),
+                             prompt_exists=ALWAYS_TRUE)
+    assert errors["interval_seconds"] == "interval_seconds must be an integer of at least 30."
+
+
+def test_validate_rejects_bad_repo_shape():
+    errors = schema.validate(_ps_base(owner="o", project=1, status="In progress", repo="notfull"),
+                             prompt_exists=ALWAYS_TRUE)
+    assert errors["repo"] == "repo must be a full owner/repo name."
+
+
+def test_validate_accepts_a_full_valid_block():
+    a = _ps_base(owner="vortexbox001", project=1, status="In progress", label="brief",
+                 repo="vortexbox001/agentbox", interval_seconds=60)
+    assert schema.validate(a, prompt_exists=ALWAYS_TRUE) == {}
+
+
+def test_validate_block_off_needs_no_fields():
+    # No on_project_status field set → block off → no error (a plain job agent).
+    assert schema.validate(_base("api", job=True), prompt_exists=ALWAYS_TRUE) == {}
+
+
+def test_migrate_7_to_8_is_identity():
+    data = {"name": "x", "harness": "api", "produces": {"asset": "a/b"},
+            "triggers": {"on_project_status": {"owner": "o", "project": 1, "status": "In progress"}}}
+    assert schema.migrate_7_to_8(dict(data)) == data
+
+
+def test_schema_version_is_eight_and_migration_registered():
+    assert schema.SCHEMA_VERSION == 8
+    assert (8, schema.migrate_7_to_8) in schema.MIGRATIONS

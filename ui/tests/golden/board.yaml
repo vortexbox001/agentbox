@@ -3,7 +3,7 @@
 # agentbox-schema: 8
 
 # --- Identity ---
-name: sample-api  # Unique kebab-case identifier. Becomes the Dagster job agent_<name> (hyphens become underscores).
+name: sample-board  # Unique kebab-case identifier. Becomes the Dagster job agent_<name> (hyphens become underscores).
 
 # --- Enabled ---
 enabled: true  # Whether Dagster registers this agent at all (as a job/asset). Disabled agents are skipped at load. This does NOT control scheduling — set when it runs in the Automation view. true or false; default true.
@@ -17,15 +17,15 @@ timeout_seconds: 600  # The run is killed after this many seconds. 1 to 86400; d
 #  partition: none  # Partition set for the asset: none (single) or daily. A tracking label only — it does not change the run or output. Default none.
 
 # --- Triggers ---
-#triggers:  # When this agent runs on its own. Optional per-kind cron(s); leave commented for manual/on-demand only.
+triggers:  # When this agent runs on its own. Optional per-kind cron(s); leave commented for manual/on-demand only.
 #  job_schedule:  # Cron that launches the agent's job on a schedule. Five fields, no @-macros. Applies only when the agent has a job; blank = manual/launchable only.
-#  on_project_status:  # Launch this agent when an issue enters a GitHub Projects board status. owner/project/status are required; label/repo/interval_seconds are optional. Read by the paused project_status_<name> sensor using GITHUB_PROJECT_TOKEN.
-#    owner:  # GitHub org (or user) that owns the Projects board.
-#    project:  # The Projects board number (positive integer).
-#    status:  # The Status column option name; an issue entering it launches this agent (matched case-insensitively).
-#    label:  # Optional — only issues carrying this label launch.
-#    repo:  # Optional — only issues from this owner/repo launch (matched case-insensitively).
-#    interval_seconds:  # Poll cadence in seconds (default 60, minimum 30).
+  on_project_status:  # Launch this agent when an issue enters a GitHub Projects board status. owner/project/status are required; label/repo/interval_seconds are optional. Read by the paused project_status_<name> sensor using GITHUB_PROJECT_TOKEN.
+    owner: vortexbox001  # GitHub org (or user) that owns the Projects board.
+    project: 1  # The Projects board number (positive integer).
+    status: In progress  # The Status column option name; an issue entering it launches this agent (matched case-insensitively).
+    label: brief  # Optional — only issues carrying this label launch.
+    repo: vortexbox001/agentbox  # Optional — only issues from this owner/repo launch (matched case-insensitively).
+    interval_seconds: 60  # Poll cadence in seconds (default 60, minimum 30).
 
 # --- Job ---
 job: true  # Whether this agent has a Dagster job agent_<name> you can launch or schedule. true or false; default false. An agent must be an asset, a job, or both.
@@ -34,12 +34,7 @@ job: true  # Whether this agent has a Dagster job agent_<name> you can launch or
 prompt_file: hello-example.md  # File in prompts/ read at launch and given to the agent as its prompt.
 
 # --- Directories ---
-output_dir: /data/outputs/sample-api  # Host directory mounted at /output; every run writes its result files here. Must fall under the data root ($AGENTBOX_DATA). Default $AGENTBOX_DATA/outputs/<name>.
-
-# --- Environment ---
-env_file: /data/credentials/agent-secrets.env  # Host path to an env file passed to the container (keeps secrets off the command line). Applies to every harness.
-env:  # Environment variables for the container. ${NAME} forwards the host variable by name without exposing its value.
-  GITHUB_USER: example-user
+output_dir: /data/outputs/sample-board  # Host directory mounted at /output; every run writes its result files here. Must fall under the data root ($AGENTBOX_DATA). Default $AGENTBOX_DATA/outputs/<name>.
 
 # --- Harness & model ---
 harness: api  # Which runtime runs this agent; determines the available fields and models. One of claude-code, pi, api, codex.

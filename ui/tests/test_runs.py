@@ -417,3 +417,17 @@ def test_fr035_cap_note_and_older_rows_last_known(settings, tmp_runs, client, st
     for i in range(5):
         assert f"/runs/r0{i}" in html              # older rows present, not truncated
     assert "last-known" in html                    # rows beyond the cap are last-known
+
+
+# ── spec 016: a board-launched run links the issue on the run page (FR-026) ──
+
+def test_run_page_links_issue_number_to_url(settings, tmp_runs, client):
+    write_run(tmp_runs, "board-agent", "2026-09-17", "board-run",
+              report={"status": "ok"},
+              context={"issue": {"number": 42, "repo": "vortexbox001/agentbox",
+                                 "url": "https://github.com/vortexbox001/agentbox/issues/42",
+                                 "title": "Do the thing", "feature_key": "042-do-the-thing"}})
+    html = client.get("/runs/board-run").text
+    assert 'href="https://github.com/vortexbox001/agentbox/issues/42"' in html
+    assert "#42" in html
+    assert "042-do-the-thing" in html

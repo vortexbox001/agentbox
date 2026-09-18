@@ -46,6 +46,18 @@ def test_prefix_kinds_are_redacted(value, kind):
     assert f"[REDACTED:{kind}]" in out
 
 
+def test_github_project_token_shape_is_masked(monkeypatch):
+    """Defence in depth for the board token (spec 016 US6, FR-017): a GITHUB_PROJECT_TOKEN-shaped
+    value is masked by redaction wherever it might appear, and the NAME rule masks the pair too."""
+    for val in ("github_pat_11ABCDE0000fakevalue1234567890", "ghp_FAKEprojecttoken0001xyz"):
+        assert "[REDACTED:token]" in redact.redact(f"tried {val} on the board")
+    # a NAME=value pair keyed by the token's variable name is masked via the *TOKEN* name rule
+    assert redact.redact("GITHUB_PROJECT_TOKEN=github_pat_secretvalue00") == \
+        "GITHUB_PROJECT_TOKEN=[REDACTED:token]"
+    # and the env-pair classifier reports the kind for the pair (parity with is_secret_like)
+    assert redact.secret_kind_for("GITHUB_PROJECT_TOKEN", "github_pat_x") == "token"
+
+
 def test_private_key_block_redacted_whole():
     pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEabc\ndefLINE2\n-----END RSA PRIVATE KEY-----"
     out = redact.redact(f"key:\n{pem}\ndone")
