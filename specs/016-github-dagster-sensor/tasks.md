@@ -147,21 +147,30 @@ no further run; move out and back in → exactly one more run.
 ### Tests for User Story 2 ⚠️ (write first, ensure they fail)
 
 - [ ] T014 [P] [US2] In `orchestrator/tests/test_github_projects.py`, add `plan_tick` state-machine
-  tests: **first tick** (empty cursor) seeds every in-status item `{entered_at, launched:false,
-  eligible:false}` and launches nothing (FR-007); **second tick after first-tick seeding** (the same
-  seeded items still in status, no new arrivals) still launches **none** and holds nothing — the
-  seeded items are `eligible:false`, so they are never candidates (FR-007/SC-005, the case a two-field
-  cursor got wrong); **stay** (carried, already launched) does not relaunch; **leave** drops the id
-  from `seen`; **re-enter** gets a fresh `entered_at` with `eligible:true` and launches again;
-  **restart** (same cursor reloaded) produces the same run key so no relaunch (FR-005/FR-006).
+  tests: **first tick** (empty cursor `{}`) seeds every in-status item `{entered_at, launched:false,
+  eligible:false}` and launches nothing (FR-007); **empty-board first start** — first tick with `S={}`
+  seeds nothing yet still returns a **non-empty** `next_cursor = {"version":1,"seen":{}}`, and the
+  **next tick's new arrival is `eligible:true` and launches** (the US1 turn-on-then-move-in path; the
+  arrival must not be re-classified as a first tick because the cursor keys off its **presence**, not
+  off `seen` being empty — FR-007/SC-001); **second tick after first-tick seeding** (the same seeded
+  items still in status, no new arrivals) still launches **none** and holds nothing — the seeded items
+  are `eligible:false`, so they are never candidates (FR-007/SC-005, the case a two-field cursor got
+  wrong); **stay** (carried, already launched) does not relaunch; **leave** drops the id from `seen`;
+  **re-enter** gets a fresh `entered_at` with `eligible:true` and launches again; **restart** (same
+  cursor reloaded) produces the same run key so no relaunch (FR-005/FR-006). Assert every returned
+  `next_cursor` carries `{"version":1, …}`.
 
 ### Implementation for User Story 2
 
 - [ ] T015 [US2] Extend `plan_tick` in `orchestrator/github_projects.py` with the full cursor lifecycle:
-  drop **left** ids, keep **carried** ids with their stored `{entered_at, launched, eligible}`, add
-  **new** ids as `{entered_at: now, launched:false, eligible:true}`, and seed-only on the empty-cursor
-  first tick as `{entered_at: now, launched:false, eligible:false}` with
-  `skip_reason = "first tick: recorded N items already in status, launched none"` (FR-005/FR-007). The
+  detect the first tick by the **empty cursor** (`cursor_state == {}` — the sensor passes `{}` when
+  `context.cursor` is falsy), never by `seen` being empty; drop **left** ids, keep **carried** ids with
+  their stored `{entered_at, launched, eligible}`, add **new** ids as
+  `{entered_at: now, launched:false, eligible:true}`, and seed-only on the empty-cursor first tick as
+  `{entered_at: now, launched:false, eligible:false}` with
+  `skip_reason = "first tick: recorded N items already in status, launched none"` (FR-005/FR-007).
+  Always return `next_cursor = {"version": 1, "seen": {…}}` — set `version:1` when seeding and preserve
+  a carried `version` — so a seeded-but-empty board persists a non-empty cursor. The
   `eligible` flag distinguishes a genuine arrival (`true`, may launch) from a first-tick-seeded /
   pre-existing item (`false`, never a candidate), so a seeded item never launches on a later tick
   (admission uses it in T017). Keep the run key `<item_id>:<entered_at>` stable across ticks/restarts

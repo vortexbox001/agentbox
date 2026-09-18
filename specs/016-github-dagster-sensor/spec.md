@@ -52,6 +52,21 @@ Decisions taken while acting on `analysis-report.md` findings; see the report fo
   membership or substring? → A: By **exact membership** of the issue's label-name list, matched
   **case-insensitively** — consistent with the `status` and `repo` filters, both of which are
   case-insensitive. (Resolves F6/F7; applied in FR-001, `data-model.md`, and `tasks.md` T018/T019.)
+- Q: How does the sensor discriminate its **first tick** — off the **absence of the cursor** or off
+  `seen` being empty — and what must a first tick against an **empty column** do? → A: By the
+  **presence of the cursor string only** (`context.cursor` falsy ⇒ `plan_tick` gets `cursor_state ==
+  {}`), **never** by `seen` being empty. A first tick against an empty board (`S = {}`) seeds nothing
+  but still persists a non-empty `{"version": 1, "seen": {}}`, so the *next* tick reads a present
+  cursor and is a normal tick — a genuine arrival is `eligible: true` and launches. This protects the
+  US1 turn-on-then-move-in MVP path, which an `is seen empty?` reading would regress (the arrival would
+  be mis-seeded `eligible: false` and never launch). (Resolves N1; aligned across FR-007,
+  `data-model.md`, `contracts/orchestrator-model.md §2`, and covered by `tasks.md` T014/T015.)
+- Q: Does the persisted cursor's top-level `version` field get emitted and round-tripped by
+  `plan_tick`, given the orchestrator contract described the cursor only in terms of `seen`? → A: Yes —
+  `plan_tick` **always** returns `next_cursor = {"version": 1, "seen": {…}}`, setting `version: 1` when
+  seeding and preserving a carried `version`, matching the shape in `data-model.md`. Keeping the cursor
+  non-empty also makes the N1 first-tick discriminator robust. (Resolves N2; applied in
+  `contracts/orchestrator-model.md §2`, `data-model.md`, and `tasks.md` T014/T015.)
 
 ## User Scenarios & Testing *(mandatory)*
 

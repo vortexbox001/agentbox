@@ -75,10 +75,11 @@ keyed by the `project_status_<name>` sensor. Shape:
 
 | Aspect | Rule |
 |--------|------|
+| `version` | Cursor schema marker, always `1` today. `plan_tick` **always** emits it and preserves it when a cursor is carried, so a persisted cursor is never `{}` (keeps the first-tick discriminator unambiguous). |
 | `seen[item_id].entered_at` | ISO-8601 time the item was **first seen** in the status; part of the run key; drives oldest-first release (FR-006/FR-010). |
 | `seen[item_id].launched` | Whether a run has been launched for this entry; makes the item the slot holder while still in status (FR-008). |
 | `seen[item_id].eligible` | Whether this entry may ever launch: `true` for a genuine new arrival, `false` for a first-tick-seeded / pre-existing item that must never launch (FR-007). Admission candidates are exactly the `launched: false && eligible: true` ids, so a pre-existing item never launches on any later tick while a held item launches when the slot frees (FR-005/FR-010). |
-| First tick (empty cursor) | Seed every current in-status item as `{entered_at: now, launched: false, eligible: false}` and launch nothing (FR-007). |
+| First tick (no persisted cursor) | Detected by the **absence of the cursor string** (`cursor_state == {}`), never by `seen` being empty. Seed every current in-status item as `{entered_at: now, launched: false, eligible: false}` and launch nothing (FR-007). An empty-board first start still persists `{"version": 1, "seen": {}}`, so the next tick reads a present cursor and treats a genuine arrival as `eligible: true` (launches). |
 | Item newly in status | Added as `{entered_at: now, launched: false, eligible: true}` and marked eligible (FR-005). |
 | Item left status | Dropped from `seen`, so a later re-entry is a fresh entry with a new `entered_at` (FR-005 / re-entry edge). |
 | Transient/unresolvable error | Cursor **not** updated — the tick skips and the next tick retries from the unchanged cursor (FR-019/FR-020). |

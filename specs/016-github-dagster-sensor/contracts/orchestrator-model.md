@@ -53,13 +53,18 @@ where `Launch` carries `{run_key, tags, run_config, item}` ready for the sensor 
 
 Given `items` already filtered by the client to **issues in the configured status passing the `label`
 and `repo` filters** (PRs/drafts/other-status dropped, FR-004), let `S = {item.item_id}` and
-`seen = cursor_state["seen"]`:
+`seen = cursor_state.get("seen", {})`:
 
-1. **First tick** (`cursor_state` empty / no `seen`): `next_cursor.seen = {id: {entered_at: now,
-   launched: false, eligible: false} for id in S}`; `launches = []`; `skip_reason = "first tick:
-   recorded N items already in status, launched none"` (FR-007). The seeded ids are `eligible: false`,
-   so they are **never** admission candidates on any later tick — a pre-existing item cannot launch by
-   being carried forward (fixes the two-field ambiguity: "seeded" ≠ "held").
+1. **First tick** (`cursor_state == {}` — no persisted cursor): the first-tick discriminator is the
+   **absence of the cursor string** (`context.cursor` falsy, so `plan_tick` receives `{}`), **never**
+   `seen` being empty. `next_cursor = {"version": 1, "seen": {id: {entered_at: now, launched: false,
+   eligible: false} for id in S}}`; `launches = []`; `skip_reason = "first tick: recorded N items
+   already in status, launched none"` (FR-007). The seeded ids are `eligible: false`, so they are
+   **never** admission candidates on any later tick — a pre-existing item cannot launch by being
+   carried forward (fixes the two-field ambiguity: "seeded" ≠ "held"). **Empty-board first tick**: even
+   when `S = {}`, `next_cursor` is still the non-empty `{"version": 1, "seen": {}}`, so the *next* tick
+   sees a persisted cursor (`cursor_state != {}`) and is a **normal tick** — a genuine arrival is added
+   `eligible: true` and launches, never mis-seeded (this is the US1 empty-column start path).
 2. **Normal tick**:
    - **Left**: ids in `seen` not in `S` are dropped (forgotten, FR-005).
    - **Carried**: ids in both keep their stored `{entered_at, launched, eligible}` (a seeded id stays
@@ -76,8 +81,14 @@ and `repo` filters** (PRs/drafts/other-status dropped, FR-004), let `S = {item.i
      (FR-009/FR-010).
    - `skip_reason` = a held report naming the holder when there are held issues and no launch, else
      `None`.
-3. **Run key**: `f"{item_id}:{entered_at}"` (FR-006) — stable across ticks/restarts, new on re-entry.
-4. **Tags / run_config** for a `Launch` — the five identity tags (`ISSUE_TAG_NAMES`) and the payload
+   - `next_cursor` = `{"version": 1, "seen": {…}}` — see the version rule below.
+3. **Cursor version**: `plan_tick` **always** returns `next_cursor = {"version": 1, "seen": {…}}`,
+   setting `version: 1` when it seeds a fresh cursor and preserving `cursor_state["version"]` when one
+   is carried (matching the persisted shape in [data-model.md](../data-model.md)). Because `next_cursor`
+   is therefore never `{}`, a seeded-but-empty board still persists `{"version": 1, "seen": {}}`, which
+   makes the first-tick discriminator (§2 step 1) robust: only a genuinely absent cursor reads as `{}`.
+4. **Run key**: `f"{item_id}:{entered_at}"` (FR-006) — stable across ticks/restarts, new on re-entry.
+5. **Tags / run_config** for a `Launch` — the five identity tags (`ISSUE_TAG_NAMES`) and the payload
    `{number, repo, url, title, feature_key, body}` (§4). `title`/`body` are **never** in tags (FR-015).
 
 `plan_tick` is a pure function of `(cursor_state, items, cfg, now)`, so the whole state machine

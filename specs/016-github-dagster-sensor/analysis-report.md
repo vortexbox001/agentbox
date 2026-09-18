@@ -2,7 +2,7 @@
 
 **Feature**: GitHub Project Status Trigger — Board-Driven Agent Launches
 **Date**: 2026-09-17
-**Command**: `/speckit-analyze` (read-only cross-artifact consistency check)
+**Command**: `/speckit-analyze` (read-only cross-artifact consistency check) + remediation pass
 **Artifacts analyzed**: `spec.md`, `plan.md`, `tasks.md`, `data-model.md`, `research.md`,
 `contracts/{agent-model,orchestrator-model,github-projects-query,ui-automation-and-runs}.md`,
 `.specify/memory/constitution.md`
@@ -10,34 +10,34 @@
 --include-tasks` → `FEATURE_DIR` resolved, all required files present. `.specify/extensions.yml`
 registers no `before_analyze` / `after_analyze` hooks (empty `hooks: {}`), so none were run.
 
-> **Scope of this run**: This is an **independent re-analysis**, not a re-print of the prior report.
-> The seven findings from the earlier pass (F1–F7) were re-checked and are **confirmed resolved**
-> (see §A), including spot-verification of the code-reality claims against the actual repository.
-> This pass then ran fresh detection over all artifacts and surfaced **two new findings** (N1, N2)
-> that the prior report did not catch — one MEDIUM (touching the MVP launch path) and one LOW.
-> Because this command is **read-only**, no artifact was edited; §Next Actions lists the recommended
-> remediation for a follow-up `/speckit-specify` / `/speckit-tasks` edit.
+> **Scope of this run**: This report records the **post-remediation** state. A prior read-only pass
+> surfaced two findings (N1 MEDIUM, N2 LOW) on top of the earlier F1–F7 (all previously resolved).
+> N1 and N2 have now been **acted on** by editing the artifacts (spec/plan/tasks/contracts are the
+> only things touched — no feature code), and a re-analysis confirms **zero open findings**. §A
+> records the F1–F7 re-verification; §B records the N1/N2 remediation.
 
 ## Summary verdict
 
-The artifact set is strongly aligned: all 26 functional requirements map to at least one task,
+The artifact set is fully aligned: all 26 functional requirements map to at least one task,
 terminology is consistent, the plan/contracts/data-model reinforce the spec, and the constitution
-check is accurate. **No CRITICAL or constitution-violating issues were found.**
-
-However, one **MEDIUM** ambiguity remains in how the sensor's **first tick** is discriminated
-(`empty cursor` vs `no seen`). The natural `not seen` reading regresses the primary MVP flow — the
-US1 independent test turns the sensor on against an *empty* column and *then* moves an issue in — so
-it is worth pinning before `/speckit-implement`. One additional **LOW** inconsistency exists around
-the cursor `version` field.
+check is accurate. **No CRITICAL, HIGH, MEDIUM, or LOW open issues remain, and no constitution
+violation was found.** The MVP launch path (US1: turn the sensor on against an empty column, then
+move an issue in) is now explicitly pinned and covered by a task.
 
 ---
 
-## New Findings (this run)
+## Open Findings (this run)
 
-| ID | Category | Severity | Location(s) | Summary | Recommendation |
-|----|----------|----------|-------------|---------|----------------|
-| N1 | Ambiguity / Coverage Gap | **MEDIUM** | contracts/orchestrator-model.md §2 step 1 ("`cursor_state` empty / no `seen`"); data-model.md:81; spec.md FR-007/US1 Independent Test; tasks.md T014/T015 | The "first tick" discriminator is stated two ways: **"empty cursor"** (data-model, tasks) vs **"cursor_state empty / no `seen`"** (orchestrator-model §2.1). These diverge for a sensor **started against an empty column**: on the true first tick `S = {}`, so `next_cursor.seen = {}`; if first-tick detection keys off `not seen` (empty dict is falsy), the *next* populated tick is misclassified as another "first tick" and seeds the genuine arrival `eligible: false` — so it **never launches**. This is exactly the US1 Independent Test path ("turn the sensor on … move an issue into the target status"), which is **not** covered by any task (T014 only tests a first tick with items *already present*). | Pin the discriminator to **presence of the cursor string** (`context.cursor` falsy / `cursor_state == {}`), never to `seen` being empty; ensure `plan_tick` always returns a non-empty `next_cursor` (e.g. carrying `version`, see N2) so a later empty-board tick is unambiguous. Add a `plan_tick` test: **first tick with an empty board seeds nothing; the next tick's new arrival is `eligible: true` and launches** (extend T014). |
-| N2 | Inconsistency | LOW | data-model.md:73 (`{"version": 1, "seen": {…}}`) vs contracts/orchestrator-model.md §1–§2 (`plan_tick` / `next_cursor` described only in terms of `seen`) | The persisted cursor shape in `data-model.md` includes a top-level `"version": 1` field, but the orchestrator contract's `plan_tick` / `next_cursor` description never mentions `version` — leaving it unspecified whether `plan_tick` must emit and round-trip it. (A stable `version` marker also makes the N1 first-tick discriminator robust, since a seeded-but-empty board would still persist `{"version":1,"seen":{}}` → non-empty.) | State in orchestrator-model §2 that `next_cursor` always carries `{"version": 1, "seen": {…}}` and that `plan_tick` preserves/sets `version`; optionally assert it in a T014/T015 test. |
+**None.** N1 and N2 are resolved (see §B).
+
+---
+
+## §B N1–N2 — remediation applied (this pass)
+
+| ID | Category | Prior severity | Resolution |
+|----|----------|----------------|------------|
+| N1 | Ambiguity / Coverage Gap | MEDIUM | **Resolved.** The first-tick discriminator is pinned to the **presence of the cursor string** (`context.cursor` falsy ⇒ `plan_tick` receives `cursor_state == {}`), **never** to `seen` being empty. `contracts/orchestrator-model.md §2` step 1 was reworded from "`cursor_state` empty / no `seen`" to "`cursor_state == {}` — no persisted cursor", and now explicitly handles the empty-board first start (`S = {}` still persists `{"version":1,"seen":{}}`, so the next tick is a normal tick and a genuine arrival is `eligible: true`). `data-model.md` first-tick row and `tasks.md` T015 align on the same discriminator. **Coverage gap closed**: `tasks.md` T014 now adds the empty-board start test (first tick with `S={}` seeds nothing; next tick's new arrival is `eligible:true` and launches — the US1 turn-on-then-move-in path). Decision recorded in `spec.md` Clarifications (Session 2026-09-17, analysis remediation). Consistent with FR-007's existing "first tick with no cursor" wording. |
+| N2 | Inconsistency | LOW | **Resolved.** `contracts/orchestrator-model.md §2` now states (new step 3) that `plan_tick` **always** returns `next_cursor = {"version": 1, "seen": {…}}`, setting `version:1` when seeding and preserving a carried `version` — matching the persisted shape at `data-model.md`. A `version` row was added to the cursor table in `data-model.md`, and T014/T015 assert/emit it. This also hardens the N1 discriminator (a seeded-but-empty board persists a non-empty cursor). Decision recorded in `spec.md` Clarifications. |
 
 ---
 
@@ -72,9 +72,9 @@ masks `ghp_` / `github_pat_` / `gho_` prefixes and a `TOKEN`/`AUTH` name rule, s
 | FR-002 both kinds / composes | ✅ | T006, T007, T012, T013 | per-kind RunRequest (`asset_selection` / `job_name`) |
 | FR-003 dedicated polling sensor | ✅ | T012 | `project_status_<name>`, STOPPED |
 | FR-004 filter issues/status/label/repo | ✅ | T008, T018, T019 | excluded items never reach `plan_tick` (never hold slot) |
-| FR-005 once-per-entry cursor | ✅ | T009, T014, T015 | three-field cursor w/ `eligible` (F1); **see N1** |
+| FR-005 once-per-entry cursor | ✅ | T009, T014, T015 | three-field cursor w/ `eligible` (F1) |
 | FR-006 run key | ✅ | T009, T014, T015 | `<item_id>:<entered_at>` |
-| FR-007 first-tick suppression | ✅ | T014, T015, T017 | seeded ids `eligible:false`; **N1: empty-board first tick under-covered** |
+| FR-007 first-tick suppression | ✅ | T014, T015, T017 | seeded ids `eligible:false`; discriminator = cursor presence; empty-board start covered (N1) |
 | FR-008 one-feature slot | ✅ | T016, T017 | per-agent |
 | FR-009 held reported | ✅ | T016, T017 | holder named |
 | FR-010 oldest-first release | ✅ | T016, T017 | held = `eligible:true` |
@@ -96,9 +96,9 @@ masks `ghp_` / `github_pat_` / `gho_` prefixes and a `TOKEN`/`AUTH` name rule, s
 | FR-026 run page issue link | ✅ | T032, T039, T042 | |
 
 **Success Criteria (buildable):** SC-001…SC-009 map to their user-story test tasks (T005–T029);
-SC-010 (full behaviour unit-tested, GitHub faked, no network call) maps to T002 + T047. **N1** notes
-that SC-001/SC-002's implied empty-board-start path (turn sensor on, then move an issue in) lacks a
-dedicated test. No post-launch/outcome KPIs are present (nothing to exclude).
+SC-010 (full behaviour unit-tested, GitHub faked, no network call) maps to T002 + T047. The
+SC-001/SC-002 empty-board-start path (turn sensor on, then move an issue in) is now covered by the
+extended T014 (N1 remediation).
 
 ---
 
@@ -134,39 +134,20 @@ task references a file or component absent from the plan/spec.
 - **Total Success Criteria**: 10 (SC-001…SC-010; all buildable/testable, no KPI exclusions)
 - **Total Tasks**: 47 (T001…T047)
 - **Requirement coverage**: 26/26 FRs have ≥1 task = **100%** mapped
-- **Ambiguity count**: 1 open (N1 — first-tick discriminator)
-- **Inconsistency count**: 1 open (N2 — cursor `version` field)
+- **Ambiguity count**: 0 open (N1 resolved)
+- **Inconsistency count**: 0 open (N2 resolved)
 - **Duplication count**: 0 defects — the three cross-package duplications in plan.md Complexity
   Tracking are deliberate, documented, and pinned by tests
 - **Critical issues count**: **0**
 - **High issues count**: **0**
-- **Medium issues count**: **1** (N1)
-- **Low issues count**: **1** (N2)
-- **Prior findings (F1–F7)**: all re-verified **resolved**
+- **Medium issues count**: **0** (N1 resolved)
+- **Low issues count**: **0** (N2 resolved)
+- **Prior findings (F1–F7)**: all re-verified **resolved**; **N1–N2**: **resolved this pass**
 
 ---
 
 ## Next Actions
 
-No CRITICAL or constitution issues block `/speckit-implement`. Two items are worth closing first;
-because `/speckit-analyze` is read-only, none were applied here.
-
-1. **N1 (MEDIUM, recommended before implement)** — Pin the first-tick discriminator to the
-   **absence of the cursor** (`context.cursor` falsy / `cursor_state == {}`), *not* to `seen` being
-   empty, in `contracts/orchestrator-model.md §2 step 1` (align its "empty cursor / no `seen`"
-   wording with data-model.md/tasks.md "empty cursor"). Add a `plan_tick` test in **T014** for the
-   empty-board start: first tick with `S = {}` seeds nothing; the next tick's new arrival is
-   `eligible: true` and launches. This protects the US1 MVP path.
-2. **N2 (LOW)** — State in `orchestrator-model.md §2` that `plan_tick` always returns
-   `next_cursor = {"version": 1, "seen": {…}}` and preserves `version`, matching `data-model.md:73`;
-   optionally assert it in T014/T015.
-
-Suggested commands: `/speckit-specify` (or a manual edit of `contracts/orchestrator-model.md` +
-`tasks.md` T014) to close N1/N2, then re-run `/speckit-analyze` to confirm zero open findings before
-`/speckit-implement`.
-
-## Offer to remediate
-
-Would you like concrete remediation edits drafted for N1 and N2 (the orchestrator-model wording +
-the new T014 empty-board test)? They are **not** applied automatically. *(Running unattended: no
-edits were made; this report is the durable record of the read-only analysis.)*
+**No open findings.** No CRITICAL or constitution issues block `/speckit-implement`; the previously
+open N1 (MEDIUM) and N2 (LOW) are resolved and recorded in `spec.md` Clarifications. The artifact set
+is ready for `/speckit-implement`.
