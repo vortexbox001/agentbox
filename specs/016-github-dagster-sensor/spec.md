@@ -35,6 +35,24 @@ adopting the most reasonable default consistent with the plan and contracts:
 - Q: Can the same item re-enter the status before its prior run's slot is released? → A: No — leaving the status forgets the item and frees the slot in the same tick, so a re-entry is always a fresh entry observed after release (CHK030).
 - Q: What happens to an issue that is closed or deleted while sitting in the target status? → A: A closed issue still shown in the column is treated as in-status until it leaves; once the board no longer returns it in-status it is forgotten and frees the slot like any other leave (CHK031).
 
+### Session 2026-09-17 (analysis remediation)
+
+Decisions taken while acting on `analysis-report.md` findings; see the report for the full rationale.
+
+- Q: How does the sensor cursor tell a **held** item (entered while the slot was busy — must launch
+  when the slot frees, FR-010) apart from a **first-tick-seeded / pre-existing** item (must never
+  launch, FR-007) when both are carried unlaunched? → A: The cursor entry gains a third field,
+  `eligible`. First-tick-seeded items are recorded `{entered_at, launched: false, eligible: false}`
+  and are **never** admission candidates; a genuine new arrival is recorded
+  `{entered_at, launched: false, eligible: true}`. Admission considers only `launched: false && eligible: true`
+  ids, so a pre-existing item never launches on any later tick while a held item launches oldest-first
+  when the slot frees. A leave-then-re-enter is a fresh `eligible: true` entry, so re-entry still
+  launches. (Resolves F1; applied in `data-model.md` and `contracts/orchestrator-model.md`.)
+- Q: Is the optional `label` filter matched case-sensitively or case-insensitively, and by list
+  membership or substring? → A: By **exact membership** of the issue's label-name list, matched
+  **case-insensitively** — consistent with the `status` and `repo` filters, both of which are
+  case-insensitive. (Resolves F6/F7; applied in FR-001, `data-model.md`, and `tasks.md` T018/T019.)
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Launch an agent when an issue enters a status (Priority: P1)
@@ -335,7 +353,8 @@ launched run and confirm the sensor is named as launcher and the issue number li
 
 - **FR-001**: An agent's `triggers` block MUST accept an optional `on_project_status` entry with
   fields `owner` (board owner), `project` (board number), `status` (Status option name, matched
-  case-insensitively), optional `label` (only issues carrying it), optional `repo` (only issues from
+  case-insensitively), optional `label` (only issues carrying it — matched by exact membership of the
+  issue's label-name list, case-insensitively), optional `repo` (only issues from
   it, given as the full `owner/repo` name and matched case-insensitively), and optional
   `interval_seconds` (default 60, minimum 30).
 - **FR-002**: The `on_project_status` trigger MUST be valid for both agent kinds — a job-kind agent is

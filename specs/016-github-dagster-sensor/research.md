@@ -75,18 +75,21 @@ over the paged items.
 `update_cursor`, mapping the durable **project item id** to `{entered_at, launched}`:
 
 ```json
-{"version": 1, "seen": {"<item_id>": {"entered_at": "<iso8601>", "launched": true}}}
+{"version": 1, "seen": {"<item_id>": {"entered_at": "<iso8601>", "launched": true, "eligible": true}}}
 ```
 
 Per tick, over the set `S` of item ids currently in the target status (issues passing filters):
 
 1. **First tick** (no cursor, or after a reset): seed `seen` with every id in `S` as
-   `{entered_at: now, launched: false}` and **launch nothing** — pre-existing items are recorded
-   seen-and-not-eligible (FR-007 / US2 #4). (Kept distinct from a normal tick by "cursor was empty".)
+   `{entered_at: now, launched: false, eligible: false}` and **launch nothing** — pre-existing items
+   are recorded seen-and-**not**-eligible, so they are never admission candidates on a later tick
+   (FR-007 / US2 #4). (Kept distinct from a normal tick by "cursor was empty".)
 2. **Normal tick**: an id in `S` **not** in `seen` is a new entry → add `{entered_at: now,
-   launched: false}` and mark it **eligible**. An id in `seen` but no longer in `S` has **left** the
-   status → drop it from `seen` (so a later re-entry is a fresh new entry, FR-005 / re-entry edge).
-   An id in both carries its stored `entered_at` unchanged.
+   launched: false, eligible: true}` and mark it **eligible**. An id in `seen` but no longer in `S`
+   has **left** the status → drop it from `seen` (so a later re-entry is a fresh new entry with a new
+   `eligible: true`, FR-005 / re-entry edge). An id in both carries its stored
+   `{entered_at, launched, eligible}` unchanged. Admission considers only `launched: false && eligible: true`
+   ids, so a seeded item never launches and a held item launches when the slot frees (F1 resolution).
 3. **Run key** for a launch = `f"{item_id}:{entered_at}"` (FR-006). Dagster remembers run keys per
    sensor, so a repeated tick or a daemon restart with the same `(item, entered_at)` never
    double-launches. `entered_at` changes on re-entry, so re-entry gets a new key and launches again.

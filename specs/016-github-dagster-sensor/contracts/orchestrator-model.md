@@ -23,7 +23,10 @@ class GitHubProjectsClient:
 # --- Filtering (PURE, no I/O) ---
 def filter_items(items: list[BoardItem], cfg: ProjectStatusCfg) -> list[BoardItem]:
     """Keep only issues (drop PRs/drafts) whose Status equals cfg.status case-insensitively and
-    that pass the optional label + owner/repo filters (FR-004). Applied per sensor AFTER the shared
+    that pass the optional label + owner/repo filters (FR-004). The `label` filter is exact
+    membership of the issue's label-name list, matched case-insensitively (like `status`/`repo`); it
+    is NOT a substring match. An issue whose `repository.nameWithOwner` is absent/blank is skipped
+    defensively rather than launched with a blank repo (CHK005). Applied per sensor AFTER the shared
     fetch, so two agents on the same board with different statuses never cross-contaminate. Raises
     Unresolvable("status option '<status>'") when the configured status matches no option present
     anywhere on the board (FR-020)."""
@@ -53,18 +56,24 @@ and `repo` filters** (PRs/drafts/other-status dropped, FR-004), let `S = {item.i
 `seen = cursor_state["seen"]`:
 
 1. **First tick** (`cursor_state` empty / no `seen`): `next_cursor.seen = {id: {entered_at: now,
-   launched: false} for id in S}`; `launches = []`; `skip_reason = "first tick: recorded N items
-   already in status, launched none"` (FR-007).
+   launched: false, eligible: false} for id in S}`; `launches = []`; `skip_reason = "first tick:
+   recorded N items already in status, launched none"` (FR-007). The seeded ids are `eligible: false`,
+   so they are **never** admission candidates on any later tick — a pre-existing item cannot launch by
+   being carried forward (fixes the two-field ambiguity: "seeded" ≠ "held").
 2. **Normal tick**:
    - **Left**: ids in `seen` not in `S` are dropped (forgotten, FR-005).
-   - **Carried**: ids in both keep their stored `{entered_at, launched}`.
-   - **New**: ids in `S` not in `seen` are added `{entered_at: now, launched: false}`.
+   - **Carried**: ids in both keep their stored `{entered_at, launched, eligible}` (a seeded id stays
+     `eligible: false`; a held id stays `eligible: true`).
+   - **New**: ids in `S` not in `seen` are added `{entered_at: now, launched: false, eligible: true}` —
+     a genuine arrival, edge-triggered against the previous tick (FR-005).
    - **Slot**: occupied iff any carried id has `launched: true` (the active issue is still in status,
      FR-008). `holder` = that id's issue number.
-   - **Admit**: candidates = ids with `launched: false` (new + carried-unlaunched), ordered by
-     `entered_at` then number. If the slot is free, take the **oldest** candidate, mark its
-     `launched: true`, and emit one `Launch`; the remaining candidates become `held`. If the slot is
-     occupied, emit no launch and all candidates are `held` (FR-009/FR-010).
+   - **Admit**: candidates = ids with `launched: false` **and** `eligible: true` (genuine arrivals
+     still awaiting the slot — new plus carried-held; first-tick-seeded `eligible: false` ids are
+     **never** candidates), ordered by `entered_at` then number. If the slot is free, take the
+     **oldest** candidate, mark its `launched: true`, and emit one `Launch`; the remaining candidates
+     become `held`. If the slot is occupied, emit no launch and all candidates are `held`
+     (FR-009/FR-010).
    - `skip_reason` = a held report naming the holder when there are held issues and no launch, else
      `None`.
 3. **Run key**: `f"{item_id}:{entered_at}"` (FR-006) — stable across ticks/restarts, new on re-entry.

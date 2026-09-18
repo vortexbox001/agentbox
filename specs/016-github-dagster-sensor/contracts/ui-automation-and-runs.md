@@ -31,7 +31,9 @@ operable from the Automation view.
 - **Listing + toggle**: the `project_status_<name>` sensor appears alongside the agent's other
   instigators (schedules, `autocond_<name>`), STOPPED by default, started/stopped by the existing
   sensor toggle — `POST /api/schedules/toggle` with `kind: "sensor"`, routed to
-  `ui/dagster.py:set_instigation(name, kind="sensor", running)`. `ui/static/agents-list.js` recognises
+  `ui/dagster.py:set_instigation(kind="sensor", name=…, running=…)` (the real signature is
+  `set_instigation(kind, name, running)` — `ui/dagster.py:632`, called positionally at
+  `ui/main.py:735`). `ui/static/agents-list.js` recognises
   `project_status` for the automation-column pill; `ui/templates/agents/list.html` renders a "board"
   pill.
 - **Plain-words description**: a small formatter renders the block as

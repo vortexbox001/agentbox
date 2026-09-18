@@ -27,7 +27,7 @@ block.
 | `owner` | string | yes | The board owner (org login; a user login may work — spec Assumption "Board ownership"). |
 | `project` | integer | yes | The board number; MUST be a positive integer (FR-001/FR-023). |
 | `status` | string | yes | The Status single-select **option name**, matched case-insensitively (FR-001; spec Assumption "Status matching"). |
-| `label` | string | no | Only issues carrying this label launch (FR-001/US4). |
+| `label` | string | no | Only issues whose label-name list includes this name launch; matched by exact membership, case-insensitively (FR-001/US4). |
 | `repo` | string | no | Only issues from this repository launch; the full `owner/repo`, matched case-insensitively (FR-001, spec clarification). |
 | `interval_seconds` | integer | no | Poll cadence; default 60, minimum 30 (FR-001/FR-023). |
 
@@ -54,11 +54,11 @@ An item on the GitHub Projects board, read from the GraphQL query (not persisted
 | `content_type` | `Issue` \| `PullRequest` \| `DraftIssue` | Only `Issue` is a launch candidate; PRs and drafts are dropped before admission and never hold the slot (FR-004). |
 | `status` | the item's Status single-select option name | Kept only when it equals the configured `status` case-insensitively. |
 | `number` | issue number | Feeds the feature key and `AGENTBOX_ISSUE_NUMBER`. |
-| `repo` | `repository.nameWithOwner` (`owner/repo`) | The `repo` filter and `AGENTBOX_ISSUE_REPO`; matched case-insensitively. |
+| `repo` | `repository.nameWithOwner` (`owner/repo`) | The `repo` filter and `AGENTBOX_ISSUE_REPO`; matched case-insensitively. An issue whose `repository.nameWithOwner` is absent/blank is skipped defensively rather than launched with a blank repo (CHK005). |
 | `url` | issue URL | `AGENTBOX_ISSUE_URL` + `agentbox/issue_url`; the run-page link. |
 | `title` | issue title | Sanitized into `AGENTBOX_ISSUE_TITLE` and slugged into the feature key. |
 | `body` | issue body | Written to the read-only body file; never on a command line, env value, or tag. |
-| `labels` | issue label names | The `label` filter. |
+| `labels` | issue label names | The `label` filter (exact membership, case-insensitive). |
 
 Only issues in the configured status passing the optional `label` and `repo` filters reach admission.
 
@@ -70,15 +70,16 @@ The durable record of items currently seen in the target status, persisted via `
 keyed by the `project_status_<name>` sensor. Shape:
 
 ```json
-{"version": 1, "seen": {"<item_id>": {"entered_at": "2026-09-17T21:20:00Z", "launched": true}}}
+{"version": 1, "seen": {"<item_id>": {"entered_at": "2026-09-17T21:20:00Z", "launched": true, "eligible": true}}}
 ```
 
 | Aspect | Rule |
 |--------|------|
 | `seen[item_id].entered_at` | ISO-8601 time the item was **first seen** in the status; part of the run key; drives oldest-first release (FR-006/FR-010). |
 | `seen[item_id].launched` | Whether a run has been launched for this entry; makes the item the slot holder while still in status (FR-008). |
-| First tick (empty cursor) | Seed every current in-status item as `{entered_at: now, launched: false}` and launch nothing (FR-007). |
-| Item newly in status | Added as `{entered_at: now, launched: false}` and marked eligible (FR-005). |
+| `seen[item_id].eligible` | Whether this entry may ever launch: `true` for a genuine new arrival, `false` for a first-tick-seeded / pre-existing item that must never launch (FR-007). Admission candidates are exactly the `launched: false && eligible: true` ids, so a pre-existing item never launches on any later tick while a held item launches when the slot frees (FR-005/FR-010). |
+| First tick (empty cursor) | Seed every current in-status item as `{entered_at: now, launched: false, eligible: false}` and launch nothing (FR-007). |
+| Item newly in status | Added as `{entered_at: now, launched: false, eligible: true}` and marked eligible (FR-005). |
 | Item left status | Dropped from `seen`, so a later re-entry is a fresh entry with a new `entered_at` (FR-005 / re-entry edge). |
 | Transient/unresolvable error | Cursor **not** updated — the tick skips and the next tick retries from the unchanged cursor (FR-019/FR-020). |
 
@@ -95,7 +96,7 @@ The one issue whose run is in flight for an agent, from launch until it leaves t
 |--------|------|
 | Active | An item with `launched: true` in `seen` that is still in the current board's in-status set (FR-008). |
 | Slot | Held while any active item exists; the slot is **per agent** (per sensor), independent across agents (FR-008, spec clarification). |
-| Held issue | An eligible (or previously eligible, still-in-status, unlaunched) item that cannot launch because the slot is held; reported on the tick naming the holder (FR-009). |
+| Held issue | An unlaunched item with `eligible: true` that cannot launch because the slot is held; reported on the tick naming the holder (FR-009). First-tick-seeded items (`eligible: false`) are neither held nor candidates. |
 | Release | The active item leaving the status frees the slot; the next held issue (oldest by `entered_at`) launches on the following tick (FR-010). Release needs only the board move — no downstream knowledge (US3 #4). |
 
 ---

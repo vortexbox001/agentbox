@@ -147,18 +147,25 @@ no further run; move out and back in → exactly one more run.
 ### Tests for User Story 2 ⚠️ (write first, ensure they fail)
 
 - [ ] T014 [P] [US2] In `orchestrator/tests/test_github_projects.py`, add `plan_tick` state-machine
-  tests: **first tick** (empty cursor) seeds every in-status item `{entered_at, launched:false}` and
-  launches nothing (FR-007); **stay** (carried, already launched) does not relaunch; **leave** drops
-  the id from `seen`; **re-enter** gets a fresh `entered_at` and launches again; **restart** (same
-  cursor reloaded) produces the same run key so no relaunch (FR-005/FR-006).
+  tests: **first tick** (empty cursor) seeds every in-status item `{entered_at, launched:false,
+  eligible:false}` and launches nothing (FR-007); **second tick after first-tick seeding** (the same
+  seeded items still in status, no new arrivals) still launches **none** and holds nothing — the
+  seeded items are `eligible:false`, so they are never candidates (FR-007/SC-005, the case a two-field
+  cursor got wrong); **stay** (carried, already launched) does not relaunch; **leave** drops the id
+  from `seen`; **re-enter** gets a fresh `entered_at` with `eligible:true` and launches again;
+  **restart** (same cursor reloaded) produces the same run key so no relaunch (FR-005/FR-006).
 
 ### Implementation for User Story 2
 
 - [ ] T015 [US2] Extend `plan_tick` in `orchestrator/github_projects.py` with the full cursor lifecycle:
-  drop **left** ids, keep **carried** ids with their stored `{entered_at, launched}`, add **new** ids
-  as `{entered_at: now, launched:false}`, and seed-only on the empty-cursor first tick with
-  `skip_reason = "first tick: recorded N items already in status, launched none"` (FR-005/FR-007). Keep
-  the run key `<item_id>:<entered_at>` stable across ticks/restarts and new on re-entry (FR-006).
+  drop **left** ids, keep **carried** ids with their stored `{entered_at, launched, eligible}`, add
+  **new** ids as `{entered_at: now, launched:false, eligible:true}`, and seed-only on the empty-cursor
+  first tick as `{entered_at: now, launched:false, eligible:false}` with
+  `skip_reason = "first tick: recorded N items already in status, launched none"` (FR-005/FR-007). The
+  `eligible` flag distinguishes a genuine arrival (`true`, may launch) from a first-tick-seeded /
+  pre-existing item (`false`, never a candidate), so a seeded item never launches on a later tick
+  (admission uses it in T017). Keep the run key `<item_id>:<entered_at>` stable across ticks/restarts
+  and new on re-entry (FR-006).
 
 **Checkpoint**: Exactly-once-per-entry holds across ticks, restarts, and re-entries.
 
@@ -184,10 +191,12 @@ first.
 ### Implementation for User Story 3
 
 - [ ] T017 [US3] Extend `plan_tick` in `orchestrator/github_projects.py` with the per-agent slot: the
-  slot is occupied iff any carried id has `launched:true`; candidates are `launched:false` ids ordered
-  by `(entered_at, number)`; if free, launch the oldest and mark it launched, else launch none; all
-  non-launched candidates become `Held{item, holder_number}`; set `skip_reason` to the held report when
-  there are held issues and no launch (FR-008/FR-009/FR-010). Release requires only the board move.
+  slot is occupied iff any carried id has `launched:true`; candidates are ids with `launched:false`
+  **and** `eligible:true` ordered by `(entered_at, number)` (first-tick-seeded `eligible:false` ids are
+  never candidates, so a pre-existing item never launches — FR-007); if free, launch the oldest and
+  mark it launched, else launch none; all non-launched candidates become `Held{item, holder_number}`;
+  set `skip_reason` to the held report when there are held issues and no launch (FR-008/FR-009/FR-010).
+  Release requires only the board move.
 
 **Checkpoint**: All three P1 stories complete — the single-slot board-driven launcher is fully
 functional and independently testable.
@@ -206,16 +215,24 @@ not launch or hold.
 ### Tests for User Story 4 ⚠️ (write first, ensure they fail)
 
 - [ ] T018 [P] [US4] In `orchestrator/tests/test_github_projects.py`, add `filter_items` tests: PRs and
-  drafts are dropped; the `label` filter and the `owner/repo` **case-insensitive** filter keep only
-  matching issues; a null-Status item never matches; excluded items never reach `plan_tick`, so they
-  never launch and never appear in `held` (FR-004 / US4 #3).
+  drafts are dropped; the `label` filter matches by **exact membership** of the label-name list,
+  **case-insensitively** (a substring of a label name does NOT match — F6/F7) and the `owner/repo`
+  **case-insensitive** filter keep only matching issues; a null-Status item never matches; an issue
+  whose `repository.nameWithOwner` is absent/blank is **skipped defensively** and never launches
+  (CHK005 — F5); excluded items never reach `plan_tick`, so they never launch and never appear in
+  `held` (FR-004 / US4 #3).
 
 ### Implementation for User Story 4
 
 - [ ] T019 [US4] Extend the pure `filter_items(items, cfg)` in `orchestrator/github_projects.py`
-  (contracts/github-projects-query.md §4) with the optional filters: `label` (issue
-  `labels.nodes[].name` contains it) and `repo` (`repository.nameWithOwner` equals `repo`,
-  case-insensitive). Return only issues-in-status passing all filters.
+  (contracts/github-projects-query.md §4) with the optional filters: `label` (the issue's
+  `labels.nodes[].name` list **includes** `label` by exact membership, matched **case-insensitively** —
+  not a substring match, F6/F7) and `repo` (`repository.nameWithOwner` equals `repo`,
+  case-insensitively). Also, in the same pure function: raise
+  `Unresolvable("status option '<status>'")` when the configured `status` matches no option present
+  anywhere on the board (FR-020 — this owns T024's status-option expectation, F2), and **defensively
+  skip** any issue whose `repository.nameWithOwner` is absent/blank rather than launching it with a
+  blank repo (CHK005 — F5). Return only issues-in-status passing all filters.
 
 **Checkpoint**: The trigger only ever launches the intended issues.
 
@@ -378,8 +395,9 @@ as launcher and issue number links to the issue.
   comments), optional sub-fields only when set; lift `triggers.on_project_status.*` on read; preserve
   unknown keys (contracts/agent-model.md §4).
 - [ ] T038 [P] [US9] In `ui/dagster.py`: read the `project_status_<name>` sensor's latest tick
-  status/`SkipReason` (held issues) for the Automation view; confirm `set_instigation(name,
-  kind="sensor", running)` toggles the sensor by name (contracts/ui-automation-and-runs.md §3).
+  status/`SkipReason` (held issues) for the Automation view; confirm
+  `set_instigation(kind="sensor", name=…, running=…)` toggles the sensor by name (the real signature
+  is `set_instigation(kind, name, running)` — `ui/dagster.py:632`) (contracts/ui-automation-and-runs.md §3).
 - [ ] T039 [US9] In `ui/main.py`: pass the plain-words description
   (*"When an issue enters {status} on {owner}/{project}"*) and the latest-tick held issues into the
   Automation view; expose the issue link (`agentbox/issue_number` → `agentbox/issue_url`) on the run
@@ -411,7 +429,13 @@ validation.
   `AGENTBOX_ISSUE_*` env values + `agentbox/issue_*` tags + read-only body file, `GITHUB_PROJECT_TOKEN`
   (board read scope, sensor-only, no fallback), the `project_status_<name>` sensor, and the feature-key
   grammar/cap.
-- [ ] T046 Run all five pytest suites from the repo root (`ui`, `orchestrator`, `images`, `litellm`,
+- [ ] T046 [P] Add an FR-018 verification test in `orchestrator/tests/test_factory.py`: a
+  sensor-launched `RunRequest` yields an **automated** run — `is_automated_run(context)` is true (it
+  carries `dagster/sensor_name`), `governor_gate` applies (the run counts toward `max_runs_per_hour`
+  and is refused past `max_chain_depth`), and `derive_chain_depth` returns **1** (a root chain at
+  depth 1). Pins FR-018's "no new code" claim so a later refactor cannot silently regress it
+  (contracts/orchestrator-model.md §7).
+- [ ] T047 Run all five pytest suites from the repo root (`ui`, `orchestrator`, `images`, `litellm`,
   `scripts`) and the quickstart §0 checks; confirm green (SC-010: no test makes a network call).
 
 ---
@@ -450,7 +474,7 @@ validation.
 - US5 (T020) can proceed in parallel with US2/US3 once Foundational T004 is done.
 - Across the UI story, T030–T033 (tests) run in parallel; among implementation, T038/T040/T041 touch
   different files and run in parallel, while T034–T036 all edit `ui/schema.py` (sequential).
-- Polish T044 and T045 run in parallel; T046 runs last.
+- Polish T044, T045, and T046 run in parallel; T047 (the full suite run) runs last.
 
 ---
 

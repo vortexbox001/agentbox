@@ -81,7 +81,8 @@ The pure `filter_items(items, cfg)` (orchestrator-model §1) then keeps only lau
 | Content type | Keep only `content_type == "Issue"`; drop PRs and drafts (FR-004). |
 | Status match | Keep only when the item's Status option name equals the configured `status`, compared **case-insensitively**; a null Status value never matches. If the configured `status` matches no option present anywhere on the board, raise `Unresolvable("status option '<status>'")` (FR-020). |
 | `repo` filter | If configured, keep only when `repository.nameWithOwner` equals `repo`, compared case-insensitively (spec clarification). |
-| `label` filter | If configured, keep only when the issue's `labels.nodes[].name` contains it. |
+| `label` filter | If configured, keep only when the issue's `labels.nodes[].name` list **includes** `label` by exact membership, compared **case-insensitively** (not a substring match; consistent with `status`/`repo` — spec clarification). |
+| Repo resolution | An issue whose `repository.nameWithOwner` is absent/blank is skipped defensively rather than launched with a blank repo (CHK005). |
 
 `filter_items` returns the issues-in-status; PRs, drafts, wrong-status, null-status, and filtered-out
 items are gone, so admission (`plan_tick`) never launches them and they never hold the slot
