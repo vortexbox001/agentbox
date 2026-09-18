@@ -8,6 +8,16 @@
 
 **Input**: User description: "Let a GitHub Projects board drive AgentBox. When an issue is moved into a chosen status on a chosen project (first use: 'In progress' on `vortexbox001` project 1), AgentBox launches an agent for that issue, once, with the issue's identity available to the run. GitHub only delivers `projects_v2_item` events to org webhooks and Apps, never to Actions, and the box is not reachable from the internet, so this is a polling sensor: outbound calls only, no tunnel, no webhook receiver. This is deliberately the smallest version that gets one real issue from the board to a pull request: one board, one feature at a time, no partitions, no templating, no project files."
 
+## Clarifications
+
+### Session 2026-09-17
+
+- Q: When a title slugs to empty (all punctuation/emoji/control characters), what feature key does the issue get? → A: The three-digit issue number alone, with no trailing hyphen (e.g. issue 38 → `038`).
+- Q: What maximum length caps the `AGENTBOX_ISSUE_TITLE` environment value after control characters are stripped? → A: 256 characters (truncate longer titles).
+- Q: Is the one-feature-in-flight slot per agent (per sensor) or shared globally across every board-driven agent? → A: Per agent — each agent's sensor holds its own single slot independently.
+- Q: What form does the `repo` filter (and the `AGENTBOX_ISSUE_REPO` value / `agentbox/issue_repo` tag) take? → A: The full `owner/repo` name, matched case-insensitively.
+- Q: In the feature-key slug, are non-ASCII letters and emoji transliterated to ASCII (e.g. `é`→`e`) or dropped? → A: Dropped — only `a-z0-9` characters survive; there is no transliteration.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Launch an agent when an issue enters a status (Priority: P1)
@@ -276,8 +286,10 @@ launched run and confirm the sensor is named as launcher and the issue number li
   seen-and-not-eligible and neither launch nor hold the slot; only moves observed after that launch.
 - **Non-issue items (PRs, drafts):** Excluded from launching and from holding the slot even when they
   sit in the target status.
-- **Title edge cases:** Punctuation, emoji, path separators, `..`, empty-after-slug titles, and very
-  long titles all still yield a key matching the grammar and length cap.
+- **Title edge cases:** Punctuation, emoji, path separators, `..`, and very long titles all still
+  yield a key matching the grammar and length cap; non-ASCII letters and emoji are dropped rather than
+  transliterated. A title that slugs to empty yields the three-digit issue number alone with no
+  trailing hyphen (e.g. `038`).
 - **Duplicate titles:** Two issues with identical titles produce different keys because the issue
   number leads the key.
 - **Missing token:** `GITHUB_PROJECT_TOKEN` unset is a skip naming the variable, with no fallback to
@@ -297,7 +309,8 @@ launched run and confirm the sensor is named as launcher and the issue number li
 - **FR-001**: An agent's `triggers` block MUST accept an optional `on_project_status` entry with
   fields `owner` (board owner), `project` (board number), `status` (Status option name, matched
   case-insensitively), optional `label` (only issues carrying it), optional `repo` (only issues from
-  it), and optional `interval_seconds` (default 60, minimum 30).
+  it, given as the full `owner/repo` name and matched case-insensitively), and optional
+  `interval_seconds` (default 60, minimum 30).
 - **FR-002**: The `on_project_status` trigger MUST be valid for both agent kinds — a job-kind agent is
   launched by job name and an asset-kind agent is materialized — using the same launch distinction the
   UI already makes, and it MUST compose with the other triggers rather than replace them.
@@ -324,6 +337,8 @@ launched run and confirm the sensor is named as launcher and the issue number li
 
 - **FR-008**: An issue MUST be treated as active from the moment its run launches until it leaves the
   target status. While any issue is active, other eligible issues MUST be held rather than launched.
+  The single in-flight slot is scoped per agent: each agent's sensor holds its own slot independently,
+  so two different board-driven agents may each have one issue active at the same time.
 - **FR-009**: Held issues MUST be reported on the tick as held, naming the issue that is holding them.
 - **FR-010**: When the active issue leaves the target status, the held issues MUST be launched
   oldest-first (by the time they entered the status), one at a time as the slot frees. Releasing the
@@ -335,7 +350,10 @@ launched run and confirm the sensor is named as launcher and the issue number li
   the issue number zero-padded to three digits, a hyphen, then a slug of the title using only
   lowercase `a-z0-9` and single hyphens, with no leading or trailing hyphen and at most 48 characters
   total (e.g. issue 38 "UI Update: Runs overview page…" → `038-ui-update-runs-overview-page`). The
-  derivation MUST take no configuration.
+  derivation MUST take no configuration. Non-ASCII letters and emoji MUST be dropped, not
+  transliterated — only `a-z0-9` characters survive slugging. When the slug is empty (a title that is
+  entirely punctuation, emoji, or control characters), the key MUST be the three-digit issue number
+  alone with no trailing hyphen (e.g. `038`).
 
 **What the run receives**
 
@@ -343,14 +361,17 @@ launched run and confirm the sensor is named as launcher and the issue number li
   `agentbox/issue_url`, `agentbox/project_item_id`, and `agentbox/feature_key`.
 - **FR-013**: The launched container MUST receive environment values `AGENTBOX_ISSUE_NUMBER`,
   `AGENTBOX_ISSUE_REPO`, `AGENTBOX_ISSUE_URL`, `AGENTBOX_ISSUE_TITLE`, and `AGENTBOX_FEATURE_KEY`.
+  `AGENTBOX_ISSUE_REPO` (and the matching `agentbox/issue_repo` tag) MUST be the full `owner/repo`
+  name.
 - **FR-014**: The issue body MUST be written to a read-only file whose path is provided as
   `AGENTBOX_ISSUE_BODY_FILE`; the body MUST never be placed on the command line or in an environment
   variable. This MUST reuse the mechanism the upstream handoff (spec 013) already uses to place files
   and env keys into a run.
 - **FR-015**: Issue title and body MUST be treated as data, not configuration: they MUST be handed to
   the agent as input only, never substituted into agent configuration, paths, commands, or tags
-  beyond the sanitized feature key; the title MUST be length-capped and stripped of control
-  characters before becoming an environment value.
+  beyond the sanitized feature key; the title MUST be stripped of control characters and length-capped
+  to at most 256 characters (longer titles truncated) before becoming the `AGENTBOX_ISSUE_TITLE`
+  environment value.
 
 **Token isolation**
 
