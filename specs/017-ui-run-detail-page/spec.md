@@ -8,6 +8,16 @@
 
 **Input**: User description: "Make the run detail page answer the operator's questions in the order they ask them — did it work, what did it produce, did the checks pass, what was it given, and only then, what exactly happened — and stop the transcript from drowning the page. Replace the raw-conversation main column of `/runs/{id}` with five collapsible sections — Summary, Output, Checks, Context, Transcript — and give the transcript a compact IN/OUT tool card (clamped, expand-on-click) modelled on the Claude VS Code extension. Presentation and read-path work only; the run record on disk (`context.json`, `events.jsonl`, `transcript.jsonl`, `report.json`) does not change."
 
+## Clarifications
+
+### Session 2026-09-18
+
+- Q: Are section open/closed states remembered per individual run, or shared across every run detail page in that browser? → A: Shared per browser across all runs — one set of section open/closed states applies to every `/runs/{id}` page (not stored per run id).
+- Q: When a search term matches only content inside a clamped tool card, does that card reveal the match? → A: Yes — a tool card that matches only on its clamped IN or OUT content auto-expands while the search is active and returns to its prior clamped state when the search is cleared.
+- Q: Is the "Expand all / Collapse all output" toggle state remembered across visits? → A: No — it is view-only and resets to the default (all cards clamped) on reload; only per-section open/closed state persists.
+- Q: How can the collapsible section headers and expandable tool rows be operated without a mouse? → A: They are keyboard-operable disclosure controls that expose their open/closed state to assistive technology (focusable, toggled with Enter/Space, `aria-expanded` reflecting state), reusing the design system's disclosure pattern.
+- Q: When several Produced-elsewhere items exist, in what order are they listed? → A: Grouped by kind — pull requests, then commits, then files — and in event-stream order within each kind.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Read a run's outcome in the order the questions arise (Priority: P1)
@@ -292,10 +302,14 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   Context MUST be collapsed.
 - **FR-003**: Each section MUST render as a bordered card with a full-width header carrying a chevron
   that indicates open/closed state, the section title, and a right-aligned muted note that summarises
-  the section's contents while it is closed.
+  the section's contents while it is closed. The header MUST be a keyboard-operable disclosure control
+  that exposes its open/closed state to assistive technology (focusable, toggled with Enter/Space,
+  `aria-expanded` reflecting state), using the design system's disclosure pattern.
 - **FR-004**: Each section's open/closed state MUST be remembered per browser and restored on the next
   visit; when no saved state exists, the defaults in FR-002 MUST apply, and unavailable persistence
-  MUST fall back to the defaults without error.
+  MUST fall back to the defaults without error. The remembered state is shared per browser across all
+  `/runs/{id}` pages — it is not keyed per run id — so a section left open or closed applies to every
+  run detail page.
 - **FR-005**: The page header and stat strip MUST be unchanged: the crumb, status tag, agent and date
   chips, the "View in Dagster" link, and the six-stat strip (Status, Harness, Model, Turns, Tokens in,
   Cost).
@@ -325,7 +339,9 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   commit/push result with a short SHA), and files written in the workspace by a write tool call.
 - **FR-012**: Each Produced-elsewhere row MUST show a kind label (Pull request, Commit, File), the
   identifier in mono, and an Open / Preview action. A row MUST appear only when the event stream
-  contains the evidence for it; detection is additive and best-effort.
+  contains the evidence for it; detection is additive and best-effort. Rows MUST be grouped by kind in
+  the order pull requests, then commits, then files, and MUST preserve event-stream order within each
+  kind.
 - **FR-013**: When the event stream cannot be mined for produced-elsewhere evidence, the Output section
   MUST show the file list or "No output artifacts" alone, as today.
 - **FR-014**: The Output section's closed-state note MUST count what was produced (files and pull
@@ -364,7 +380,9 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   gradient fade at the bottom whenever the row exceeds the clamp height; rows at or under the clamp
   height MUST NOT fade and MUST NOT show an expand link.
 - **FR-025**: Clicking either row, or the "Show all N lines" link under the box, MUST expand the card to
-  full height; clicking again MUST collapse it, and while expanded the link MUST read "Show less".
+  full height; clicking again MUST collapse it, and while expanded the link MUST read "Show less". The
+  row/link expand control MUST be keyboard-operable and expose its expanded state to assistive
+  technology (focusable, toggled with Enter/Space, `aria-expanded`).
 - **FR-026**: A tool result that is a diff MUST preserve its diff colouring inside the OUT row; if diff
   colouring cannot survive the clamped OUT row cleanly, diff cards MUST expand by default while other
   cards clamp.
@@ -375,10 +393,14 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
 
 - **FR-028**: The transcript toolbar MUST keep the search box and match count and MUST add an outlined
   ghost "Expand all output" / "Collapse all output" control that toggles every tool card on the page;
-  individual card toggles MUST continue to work while "all" is on.
+  individual card toggles MUST continue to work while "all" is on. The expand-all/collapse-all state is
+  view-only and MUST NOT persist across visits — it resets to the default (cards clamped) on reload;
+  only per-section open/closed state (FR-004) persists.
 - **FR-029**: The transcript search MUST hide entries whose text does not match the query, report the
   count of matching entries, and MUST also match the IN and OUT content of tool cards, not only message
-  text.
+  text. A tool card that matches only on its clamped IN or OUT content MUST auto-expand while the search
+  is active so the match is visible, and MUST return to its prior clamped state when the search is
+  cleared.
 - **FR-030**: The Readable / Raw-log control MUST move into the Transcript section header and no longer
   be page-level chrome; the raw `transcript.jsonl` view MUST be unchanged.
 - **FR-031**: Turn entries MUST be unchanged: gutter dot, role label (Task, Agent, Result, Error), meta
@@ -412,8 +434,8 @@ a single Result entry; confirm the run foot line sits at the bottom of the Trans
   rail, and the five main-column sections. Read entirely from the existing run record files; this
   feature adds no stored data.
 - **Section**: One collapsible unit of the main column — Summary, Output, Checks, Context, or
-  Transcript — with a title, a default open/closed state, a persisted per-browser state, a closed-state
-  summary note, and a body.
+  Transcript — with a title, a default open/closed state, a per-browser state persisted and shared
+  across all run detail pages, a closed-state summary note, and a body.
 - **Tool card**: The presentation of one tool invocation — tool name, description, exit/failed marker,
   and an IN row and OUT row, each clampable and expandable.
 - **Produced-elsewhere item**: A thing the run created outside `/output`, mined best-effort from the
